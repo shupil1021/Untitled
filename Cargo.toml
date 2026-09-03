@@ -1,0 +1,54 @@
+[package]
+name = "crackhead"
+version = "0.1.0"
+edition = "2024"
+# director/director_panel(연출·영상 제작용 별개 실행 파일)이 추가되면서 `cargo
+# run`이 "어느 걸 실행할지 모르겠다"며 --bin 을 요구하기 시작했다 — 실제 게임
+# (crackhead)을 기본으로 지정해서 예전처럼 `cargo run`만으로 게임이 바로
+# 뜨게 한다. director 를 실행하려면 `cargo run --bin director`로 명시한다.
+default-run = "crackhead"
+
+[dependencies]
+miniquad = "0.4"
+# PNG(에셋)/JPEG(Official Site 캡처, PNG보다 인코딩이 훨씬 가벼워 프레임레이트에 유리) 디코딩용.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# mp4 재생: Windows Media Foundation(OS 내장 디코더)로 데믹싱+디코딩 + WASAPI 오디오 출력.
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_Media_MediaFoundation",
+    "Win32_Media_Audio",
+    # 와이파이/인터넷 연결 상태 표시용.
+    "Win32_Networking_WinInet",
+    # 와이파이 클릭 시 SSID 등 연결 정보 조회용.
+    "Win32_NetworkManagement_WiFi",
+    # 로컬 IP 조회용(GetAdaptersAddresses) — 소켓을 직접 열지 않아서 방화벽 허용
+    # 팝업이 안 뜬다(순수 조회 API 라 실제 네트워크 통신을 안 함).
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
+    # Official Site 창을 위해 숨겨진 호스트 창을 만들고 메시지 루프를 돌리는 용도.
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_LibraryLoader",
+    "Win32_Graphics_Gdi",
+    # 지금 IME 로 조합 중인지만(문자열 내용은 안 읽음) 확인하는 용도 — src/ime.rs 참고.
+    "Win32_UI_Input_Ime",
+    "Win32_UI_Input_KeyboardAndMouse",
+    # 최신 IME(TSF/Cicero)가 화면 구석에 따로 띄우는 언어 표시줄 미니 창을 찾아
+    # 숨기는 용도(GetCurrentProcessId) — src/ime.rs::hide_cicero_windows 참고.
+    "Win32_System_Threading",
+] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+# Terrarum Sans Bitmap(한/영 겸용 비트맵 폰트) 를 시작할 때 래스터라이즈해서 폰트
+# 아틀라스를 만드는 용도 — gfx.rs::build_font_atlas 참고.
+fontdue = "0.9"
+# Official Site 창 안에 실제 웹페이지를 렌더링하고 주기적으로 캡처해서 우리 텍스처로
+# 올리는 용도 — 이렇게 하면 그 이미지도 다른 모든 화면처럼 CRT 셰이더를 그대로 탄다.
+webview2-com = "0.34"
+
+# 디버그 빌드도 픽셀 루프(영상 프레임 변환)가 버벅이지 않도록 최적화 레벨을 올린다.
+# (opt-level=0 인 기본 dev 프로파일은 배열 인덱싱 등에서 릴리즈보다 수십 배 느릴 수 있음)
+[profile.dev]
+opt-level = 2
