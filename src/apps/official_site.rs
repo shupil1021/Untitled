@@ -61,7 +61,7 @@ impl App for OfficialSiteApp {
             }
         }
 
-        r.rect(area.x, area.y, area.w, area.h, [0.0, 0.0, 0.0, 1.0]);
+        r.rect(area.x, area.y, area.w, area.h, BLACK);
         if let Some(tex) = self.tex {
             let scale = (area.w / self.cw as f32).min(area.h / self.ch as f32);
             let (dw, dh) = (self.cw as f32 * scale, self.ch as f32 * scale);

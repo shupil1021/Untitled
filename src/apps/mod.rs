@@ -221,7 +221,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (150.0, 90.0), // resizable 이 꺼져있어 실제로는 안 쓰임
         },
-        FileKind::Folder { children } if raw_name == "Recycle Bin" => {
+        FileKind::Folder { children } if raw_name == crate::foundation::RECYCLE_BIN_NAME => {
             let items = folder_items(fs, children);
             Opened {
                 app: Box::new(RecycleBinApp::new(items, settings.clone())),

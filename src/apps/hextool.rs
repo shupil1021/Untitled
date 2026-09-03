@@ -109,7 +109,7 @@ impl HexToolApp {
         sunken(r, area.x, area.y, area.w, area.h);
         let inner = Rect::new(area.x + 3.0, area.y + 3.0, area.w - 6.0, area.h - 6.0);
         // 이미지가 못 채우는 자리는 sunken 배경 대신 검은색으로.
-        r.rect(inner.x, inner.y, inner.w, inner.h, [0.0, 0.0, 0.0, 1.0]);
+        r.rect(inner.x, inner.y, inner.w, inner.h, BLACK);
 
         if !self.tex_tried {
             self.tex_tried = true;

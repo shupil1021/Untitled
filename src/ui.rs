@@ -467,7 +467,7 @@ pub fn icon_of(node: &FileNode) -> IconType {
         FileKind::Txt(_) => IconType::Txt,
         FileKind::Mp4 => IconType::Mp4,
         FileKind::Lock { .. } => IconType::Lock,
-        FileKind::Folder { children } if node.name == "Recycle Bin" => {
+        FileKind::Folder { children } if node.name == crate::foundation::RECYCLE_BIN_NAME => {
             if children.is_empty() { IconType::RecycleEmpty } else { IconType::RecycleFull }
         }
         FileKind::Folder { .. } => IconType::Folder,

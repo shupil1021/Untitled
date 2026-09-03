@@ -33,6 +33,17 @@ pub enum FileKind {
     Deleted,                                             // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
 }
 
+// 일부 fs 노드는 이름 자체가 "이건 특수 노드다"라는 표식으로 쓰인다(전용
+// FileKind 대신 이름 문자열로 구분) — 예: Folder 중에서 이름이 정확히
+// RECYCLE_BIN_NAME 인 것만 휴지통 취급. 화면엔 display_name()/strings.rs::t()
+// 로 언어별 문구가 나가지만, fs 안에 실제로 저장되는 원문은 항상 이 영어
+// 상수 그대로다. 리터럴 "My Computer"/"Recycle Bin"/"HexTool Setup.exe" 를
+// 여러 파일에 따로 타이핑하면 오타 하나로 매칭이 조용히 깨질 수 있어 상수로
+// 모아뒀다.
+pub const MY_COMPUTER_NAME: &str = "My Computer";
+pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
+pub const HEXTOOL_SETUP_EXE_NAME: &str = "HexTool Setup.exe";
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FileNode {
     pub name: String,
@@ -154,7 +165,7 @@ impl FileSystem {
         };
 
         // 바탕화면엔 고정 아이콘 두 개만 둔다 — 나머지 예제 파일들은 다 치웠다.
-        let explorer = fs.add("My Computer", FileKind::Explorer);
+        let explorer = fs.add(MY_COMPUTER_NAME, FileKind::Explorer);
         // Photos.tar/Photos.lock/HexTool Setup.exe 로 이어지던 첫 챕터용 플레이스홀더
         // 사진 콘텐츠(photo01/02.jpg)를 걷어냈다 — 실제 검수 로직 없이 그냥 열어볼
         // 수 있는 사진 두 장뿐이던 임시 내용이라, 진짜 Chapter 1 콘텐츠로 다시 채울
@@ -177,7 +188,7 @@ impl FileSystem {
         // desktop_folder_drop_target_at 이 다른 폴더와 똑같이 인식하고, 더블클릭하면
         // apps/mod.rs 의 Explorer 열기 경로도 그대로 탄다. 아이콘만 icon_of() 에서
         // 이름으로 특수 취급(비었으면 RecycleEmpty, 아니면 RecycleFull).
-        let recycle_bin = fs.add("Recycle Bin", FileKind::Folder { children: vec![] });
+        let recycle_bin = fs.add(RECYCLE_BIN_NAME, FileKind::Folder { children: vec![] });
 
         fs.desktop = vec![recycle_bin, explorer, mail, photos];
 
@@ -187,7 +198,7 @@ impl FileSystem {
         // Installer) installer.rs 의 마법사가 뜬다 — Finish 까지 마쳐야 바탕화면에
         // 진짜 HexTool 이 생긴다(완성된 프로그램을 곧장 쥐여주던 이전 방식 대신,
         // 이제 원래 있던 설치 마법사 흐름을 그대로 탄다).
-        fs.mail_hextool_attachment = fs.add("HexTool Setup.exe", FileKind::Installer);
+        fs.mail_hextool_attachment = fs.add(HEXTOOL_SETUP_EXE_NAME, FileKind::Installer);
         fs
     }
 
@@ -327,7 +338,7 @@ impl FileSystem {
     // "휴지통 안에도 있고 Images 탭에도 그대로 보이는" 것처럼 보이는 문제를 막는다.
     pub fn in_recycle_bin(&self, id: FileId) -> bool {
         self.nodes.iter().any(|n| match &n.kind {
-            FileKind::Folder { children } => n.name == "Recycle Bin" && children.contains(&id),
+            FileKind::Folder { children } => n.name == RECYCLE_BIN_NAME && children.contains(&id),
             _ => false,
         })
     }
@@ -361,9 +372,13 @@ pub const TABS: [&str; 3] = ["Graphics", "Audio", "Interface"];
 pub const OFFICIAL_SITE_URL: &str = "https://kkinomalo.com/?category=Notes";
 
 // Interface 탭의 바탕화면 색상 선택지. (표시용 라벨, 색상)
+// "Teal"/"Navy" 는 ui.rs::TEAL/NAVY(기본 바탕화면색/타이틀바색으로도 쓰이는
+// 상수)와 같은 값이어야 한다 — desktop.rs 가 BG_COLORS 조회 실패 시 TEAL 을
+// 기본값으로 쓰기 때문에, 리터럴을 따로 두면 둘이 몰래 어긋날 수 있어 상수를
+// 그대로 참조한다.
 pub const BG_COLORS: [(&str, [f32; 4]); 5] = [
-    ("Teal", [0.0, 0.5, 0.5, 1.0]),
-    ("Navy", [0.0, 0.0, 0.5, 1.0]),
+    ("Teal", crate::ui::TEAL),
+    ("Navy", crate::ui::NAVY),
     ("Forest", [0.0, 0.35, 0.15, 1.0]),
     ("Plum", [0.35, 0.0, 0.35, 1.0]),
     ("Charcoal", [0.15, 0.15, 0.15, 1.0]),
@@ -404,8 +419,8 @@ pub fn category_label<'a>(lang: Language, name: &'a str) -> std::borrow::Cow<'a,
 pub fn display_name<'a>(lang: Language, name: &'a str) -> std::borrow::Cow<'a, str> {
     use crate::strings::{foundation as s, t};
     match name {
-        "My Computer" => std::borrow::Cow::Borrowed(t(lang, s::MY_COMPUTER)),
-        "Recycle Bin" => std::borrow::Cow::Borrowed(t(lang, s::RECYCLE_BIN)),
+        MY_COMPUTER_NAME => std::borrow::Cow::Borrowed(t(lang, s::MY_COMPUTER)),
+        RECYCLE_BIN_NAME => std::borrow::Cow::Borrowed(t(lang, s::RECYCLE_BIN)),
         "Mail" => std::borrow::Cow::Borrowed(t(lang, s::MAIL)),
         "(deleted)" => std::borrow::Cow::Borrowed(t(lang, s::DELETED)),
         _ => std::borrow::Cow::Borrowed(name),

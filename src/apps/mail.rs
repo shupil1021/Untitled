@@ -62,7 +62,7 @@ fn seed_messages(arrived: bool, lang: Language, hextool_id: FileId) -> Vec<MailM
         cc: "",
         subject: t(lang, secrets::PALACE_MAIL_SUBJECT),
         body: t(lang, secrets::PALACE_MAIL_BODY),
-        attachment: Some((hextool_id, "HexTool Setup.exe".to_string())),
+        attachment: Some((hextool_id, crate::foundation::HEXTOOL_SETUP_EXE_NAME.to_string())),
     }]
 }
 

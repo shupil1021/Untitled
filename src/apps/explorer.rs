@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use miniquad::RenderingBackend;
 
-use crate::foundation::{category_label, display_name, FileId, Language, Settings};
+use crate::foundation::{category_label, display_name, FileId, Language, Settings, MY_COMPUTER_NAME};
 use crate::gfx::{Assets, Color, Rect, Renderer, CELL_H};
 use crate::strings::{common, explorer as s, t};
 use crate::ui::*;
@@ -385,7 +385,7 @@ impl ExplorerApp {
         let lw = r.text_width(label, 0.8) + 8.0;
         let field = Rect::new(area.x + lw, area.y + 2.0, area.w - lw - 4.0, ADDR_H - 6.0);
         sunken(r, field.x, field.y, field.w, field.h);
-        let my_computer = display_name(lang, "My Computer");
+        let my_computer = display_name(lang, MY_COMPUTER_NAME);
         let path = match self.tabs.get(self.tab) {
             Some((name, _, Some(parent), _)) => format!("{my_computer}\\{}\\{}", category_label(lang, parent), category_label(lang, name)),
             Some((name, _, None, _)) if !name.is_empty() => format!("{my_computer}\\{}", category_label(lang, name)),
@@ -409,7 +409,7 @@ impl ExplorerApp {
         sunken(r, area.x, area.y, seg_w, STATUS_H);
         r.text_clipped(area.x + 8.0, ty, &text, 0.8, BLACK, seg_w - 16.0);
         sunken(r, area.x + seg_w + 2.0, area.y, area.w - seg_w - 2.0, STATUS_H);
-        r.text_clipped(area.x + seg_w + 10.0, ty, &display_name(lang, "My Computer"), 0.8, BLACK, area.w - seg_w - 20.0);
+        r.text_clipped(area.x + seg_w + 10.0, ty, &display_name(lang, MY_COMPUTER_NAME), 0.8, BLACK, area.w - seg_w - 20.0);
     }
 }
 

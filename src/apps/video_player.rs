@@ -248,7 +248,7 @@ impl App for VideoApp {
         let ended = self.video.as_ref().is_some_and(|v| v.ended);
 
         let vh = area.h - VIDEO_PANEL_H;
-        r.rect(area.x, area.y, area.w, vh, [0.0, 0.0, 0.0, 1.0]);
+        r.rect(area.x, area.y, area.w, vh, BLACK);
         if let (Some(tex), Some(v)) = (self.tex, &self.video) {
             // 비율 유지하며 영역에 맞춤
             let scale = (area.w / v.w as f32).min(vh / v.h as f32);

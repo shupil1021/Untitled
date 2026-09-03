@@ -31,7 +31,7 @@ use miniquad::{FilterMode, MipmapFilterMode, RenderingBackend, TextureId};
 
 use crate::foundation::FileSystem;
 use crate::gfx::{Assets, Rect, Renderer};
-use crate::ui::{self, WHITE};
+use crate::ui::{self, BLACK, WHITE};
 
 use super::widgets::scrollbar;
 use super::{App, AppAction, WinInput};
@@ -243,7 +243,7 @@ impl App for PhotosApp {
     }
 
     fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, _assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
-        r.rect(area.x, area.y, area.w, area.h, [0.0, 0.0, 0.0, 1.0]);
+        r.rect(area.x, area.y, area.w, area.h, BLACK);
 
         if self.files.is_empty() {
             r.text(area.x + 10.0, area.y + 10.0, "(no photos in assets/photo)", 0.8, ui::GRAY);

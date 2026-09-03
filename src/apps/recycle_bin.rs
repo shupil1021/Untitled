@@ -15,7 +15,7 @@ use std::rc::Rc;
 
 use miniquad::RenderingBackend;
 
-use crate::foundation::{display_name, FileId, Language, Settings};
+use crate::foundation::{display_name, FileId, Language, Settings, MY_COMPUTER_NAME, RECYCLE_BIN_NAME};
 use crate::gfx::{Assets, Color, Rect, Renderer, CELL_H};
 use crate::strings::{common, recycle_bin as s, t};
 use crate::ui::*;
@@ -106,7 +106,7 @@ impl RecycleBinApp {
         sunken(r, field.x, field.y, field.w, field.h);
         let icon = if self.items.is_empty() { IconType::RecycleEmpty } else { IconType::RecycleFull };
         draw_icon(r, assets, &icon, field.x + 4.0, field.y + (field.h - 14.0) / 2.0, 14.0);
-        r.text(field.x + 22.0, field.y + (field.h - CELL_H * 0.8) / 2.0, &display_name(lang, "Recycle Bin"), 0.8, BLACK);
+        r.text(field.x + 22.0, field.y + (field.h - CELL_H * 0.8) / 2.0, &display_name(lang, RECYCLE_BIN_NAME), 0.8, BLACK);
         r.rect(area.x, area.y + ADDR_H - 1.0, area.w, 1.0, GRAY);
     }
 
@@ -156,7 +156,7 @@ impl RecycleBinApp {
         let icon = if self.items.is_empty() { IconType::RecycleEmpty } else { IconType::RecycleFull };
         draw_icon(r, assets, &icon, cx - ICON_S / 2.0, ty0 + icon_y_local, ICON_S);
 
-        let title = display_name(lang, "Recycle Bin");
+        let title = display_name(lang, RECYCLE_BIN_NAME);
         let tw = r.text_width(&title, 1.0);
         r.text(cx - tw / 2.0, ty0 + title_y_local, &title, 1.0, BLACK);
 
@@ -229,7 +229,7 @@ impl RecycleBinApp {
         sunken(r, area.x, area.y, seg_w, STATUS_H);
         r.text_clipped(area.x + 8.0, ty, &text, 0.8, BLACK, seg_w - 16.0);
         sunken(r, area.x + seg_w + 2.0, area.y, area.w - seg_w - 2.0, STATUS_H);
-        r.text_clipped(area.x + seg_w + 10.0, ty, &display_name(lang, "My Computer"), 0.8, BLACK, area.w - seg_w - 20.0);
+        r.text_clipped(area.x + seg_w + 10.0, ty, &display_name(lang, MY_COMPUTER_NAME), 0.8, BLACK, area.w - seg_w - 20.0);
     }
 }
 
@@ -240,7 +240,7 @@ impl App for RecycleBinApp {
 
     fn title(&self) -> Option<String> {
         let lang = self.settings.borrow().language;
-        Some(display_name(lang, "Recycle Bin").into_owned())
+        Some(display_name(lang, RECYCLE_BIN_NAME).into_owned())
     }
 
     fn update(&mut self, _ctx: &mut dyn RenderingBackend, r: &mut Renderer, assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
