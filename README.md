@@ -4667,3 +4667,59 @@ Download/Restore/Delete/Name/Size/Address/Yes/No 처럼 여러 파일에서
 `cargo build`/`cargo clippy` 모두 기존 5개 경고 그대로 통과했고,
 `grep`으로 두 placeholder 문자열이 `secrets.rs` 밖에 더 이상
 남아있지 않은 것도 확인했다.
+
+## → 리팩터: 하드코딩 제거 1차 작업 (git 저장소 신설 + 색상/매직 문자열/화면 해상도)
+
+"장기적으로 유지보수하기 쉽게 하드코딩을 제거해달라"는 요청을 받았다.
+이 프로젝트는 지금까지 git 저장소가 아예 없었어서(이전부터 알려진
+사실) 실수해도 되돌릴 안전망이 없었다 — 큰 범위 리팩터를 시작하기
+전에 먼저 `git init` 하고 현재 상태를 첫 커밋으로 남겼다(`target/`,
+`production/` 은 빌드 산출물이라 `.gitignore` 로 제외). 이후 작업은
+전부 별도 커밋으로 나눠서, 중간에 뭔가 잘못돼도 그 직전 커밋으로
+돌아갈 수 있게 했다.
+
+"하드코딩"이 뭘 가리키는지 범위가 넓어서, 코드 전체를 grep 으로
+훑어 후보를 추려 사용자에게 확인받았다. 이번 1차 작업에서 처리한
+세 갈래:
+
+**① 색상 팔레트 중복.** `ui.rs` 에 이미 `BLACK`/`WHITE`/`FACE`/`NAVY`
+같은 Win9x 팔레트 상수가 있었는데도, `hextool.rs`/`official_site.rs`/
+`video_player.rs`/`photos.rs` 4개 파일이 검은색을 `[0.0, 0.0, 0.0, 1.0]`
+리터럴로 따로 타이핑하고 있었다 — 상수를 쓰도록 고쳤다. 또
+`foundation.rs::BG_COLORS`(설정 화면의 바탕화면 색 선택지)의 "Teal"/
+"Navy" 항목이 `ui.rs::TEAL`/`NAVY` 와 값은 같지만 완전히 별개로 타이핑된
+리터럴이었다 — `desktop.rs` 가 배경색 조회 실패 시 `TEAL` 을 기본값으로
+쓰기 때문에 이 둘이 어긋나면 조용히 버그가 되는 구조라, `BG_COLORS` 가
+`ui::TEAL`/`ui::NAVY` 를 직접 참조하도록 바꿨다.
+
+**② 내부적으로 "이름 자체가 타입 마커"인 fs 노드들.** `FileKind::Folder`
+중 이름이 정확히 `"Recycle Bin"` 인 것만 휴지통 취급, `"My Computer"`
+인 것만 탐색기 취급, 메일 첨부 파일명이 실제 fs 노드 이름과 정확히
+`"HexTool Setup.exe"` 로 일치해야 하는 식으로, 리터럴 문자열 자체가
+암묵적인 식별자로 쓰이고 있었다. 이 세 문자열이 `foundation.rs`,
+`ui.rs`, `apps/mod.rs`, `apps/explorer.rs`, `apps/recycle_bin.rs`,
+`apps/mail.rs`, `scenes/desktop.rs` 등 7개 파일에 걸쳐 총 15곳 넘게
+따로 타이핑돼 있었다 — 오타 하나로 매칭이 조용히 깨질 수 있는 위험한
+패턴이라, `foundation.rs` 에 `MY_COMPUTER_NAME`/`RECYCLE_BIN_NAME`/
+`HEXTOOL_SETUP_EXE_NAME` 상수 세 개를 새로 두고 모든 자리에서 이걸
+참조하도록 바꿨다.
+
+**③ 화면 해상도(640×480) 중복.** `main.rs`(실제 게임)와
+`src/bin/director.rs`(연출용 별개 실행 파일)가 각자 `const VW: u32 = 640;
+const VH: u32 = 480;` 을 독립적으로 들고 있었고, `scenes/desktop.rs`/
+`boot.rs`/`lobby.rs`/`bluescreen.rs`/`erase.rs`/`shutdown.rs` 6개 씬
+파일에서 화면 전체를 채우거나 가운데 정렬을 계산하는 자리마다
+`640.0`/`480.0` 리터럴이 약 35곳 흩어져 있었다. `gfx.rs` 에 정수형
+`VIRTUAL_W`/`VIRTUAL_H` 와, 계산에 바로 쓰기 좋은 f32 형
+`SCREEN_W`/`SCREEN_H` 를 추가하고 전부 이걸 참조하도록 바꿨다 — 나중에
+해상도를 바꿀 일이 생기면 이 두 상수만 고치면 된다. 다만 `desktop.rs`
+의 Official Site 창 기본 크기(480.0×380.0)처럼 우연히 같은 숫자일
+뿐 화면 크기와 무관한 값들은 그대로 남겨뒀다(잘못 엮으면 오히려
+의미가 왜곡된다).
+
+파일마다 고칠 때마다 `cargo build`/`cargo clippy` 로 확인했고(기존
+5개 경고 그대로 유지, 새 경고 없음), 별도 커밋 3개(baseline, 색상/
+매직문자열, 화면해상도)로 나눠 남겼다. 남은 여지: 앱별로 흩어진
+개별 레이아웃 좌표(예: 버튼 위치 90.0, 24.0 등)는 대부분 그 화면
+하나에서만 쓰이는 진짜 "그 화면 고유의 값"이라 지금은 안 건드렸다 —
+여러 곳에서 반복되며 어긋날 위험이 있는 것들 위주로 먼저 처리했다.
