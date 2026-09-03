@@ -4,6 +4,7 @@
 //! 끝나면 Transition::Quit 을 반환해서 진짜로 종료시킨다(Stage::draw() 가 그걸 보고
 //! 웹뷰 정리 + window::order_quit() 을 부른다).
 
+use crate::gfx::{SCREEN_H, SCREEN_W};
 use crate::ui::BLACK;
 
 use super::{Frame, Scene, Transition};
@@ -45,7 +46,7 @@ impl Scene for ShutdownScene {
     fn update(&mut self, f: &mut Frame) -> Transition {
         f.show_cursor = false;
         self.t += f.dt;
-        f.r.rect(0.0, 0.0, 640.0, 480.0, BLACK);
+        f.r.rect(0.0, 0.0, SCREEN_W, SCREEN_H, BLACK);
         let white = [0.85, 0.85, 0.85, 1.0];
 
         let shown = ((self.t / SHUTDOWN_LOG_LINE_INTERVAL) as usize).min(SHUTDOWN_LOG_LINES.len());

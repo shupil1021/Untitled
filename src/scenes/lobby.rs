@@ -3,7 +3,7 @@
 
 use crate::apps::{App, AppAction, SettingsApp, WinInput};
 use crate::foundation::Language;
-use crate::gfx::{Rect, Renderer, ADVANCE, CELL_H};
+use crate::gfx::{Rect, Renderer, ADVANCE, CELL_H, SCREEN_H, SCREEN_W};
 use crate::strings::{common, lobby as s, settings, t};
 use crate::ui::*;
 use crate::window_manager::draw_x;
@@ -96,8 +96,8 @@ impl LobbyScene {
     // 불러서 항상 뒤에 깔리게 한다.
     fn draw_noise(&mut self, r: &mut Renderer) {
         for _ in 0..NOISE_COUNT {
-            let x = self.rng.range_f32(0.0, 640.0);
-            let y = self.rng.range_f32(0.0, 480.0);
+            let x = self.rng.range_f32(0.0, SCREEN_W);
+            let y = self.rng.range_f32(0.0, SCREEN_H);
             let s = self.rng.range_f32(1.0, 2.0);
             let v = self.rng.range_f32(0.05, 0.35);
             r.rect(x, y, s, s, [v, v, v, 1.0]);
@@ -109,9 +109,9 @@ impl LobbyScene {
                 let y = self.rng.range_f32(0.0, 470.0);
                 let h = self.rng.range_f32(2.0, 7.0);
                 let shift = self.rng.range_f32(-18.0, 18.0);
-                let w = self.rng.range_f32(120.0, 640.0);
-                let x = (self.rng.range_f32(0.0, 640.0 - w * 0.3) + shift).clamp(0.0, 640.0 - w.min(640.0));
-                r.rect(x, y, w.min(640.0 - x), h, [0.8, 0.95, 1.0, 0.18]); // 시안 끼가 도는 밝은 찢김
+                let w = self.rng.range_f32(120.0, SCREEN_W);
+                let x = (self.rng.range_f32(0.0, SCREEN_W - w * 0.3) + shift).clamp(0.0, SCREEN_W - w.min(SCREEN_W));
+                r.rect(x, y, w.min(SCREEN_W - x), h, [0.8, 0.95, 1.0, 0.18]); // 시안 끼가 도는 밝은 찢김
             }
         }
     }
@@ -131,7 +131,7 @@ impl LobbyScene {
 
     fn draw_logo(&mut self, r: &mut Renderer) {
         let logo_w = LOGO[0].chars().count() as f32 * ADVANCE * LOGO_SCALE;
-        let logo_x = (640.0 - logo_w) / 2.0;
+        let logo_x = (SCREEN_W - logo_w) / 2.0;
         let white = [0.85, 0.85, 0.85, 1.0];
         for (i, row) in LOGO.iter().enumerate() {
             // 글리치 중엔 줄마다 제각각 좌우로 흔들리게 해서 화면이 깨지는 느낌을 낸다.
@@ -185,11 +185,11 @@ impl LobbyScene {
     // 화면이 실제로 찢어진 것처럼 보이는 연출을 계속 보여준다. 색은 안 쓰고(색수차
     // 느낌 대신) 흑백 톤으로만 찢김을 표현한다.
     fn draw_quit_intensify(&mut self, r: &mut Renderer) {
-        r.rect(0.0, 0.0, 640.0, 480.0, [0.0, 0.0, 0.0, 0.65]); // 평소보다 어둡게
+        r.rect(0.0, 0.0, SCREEN_W, SCREEN_H, [0.0, 0.0, 0.0, 0.65]); // 평소보다 어둡게
 
         for _ in 0..NOISE_COUNT {
-            let x = self.rng.range_f32(0.0, 640.0);
-            let y = self.rng.range_f32(0.0, 480.0);
+            let x = self.rng.range_f32(0.0, SCREEN_W);
+            let y = self.rng.range_f32(0.0, SCREEN_H);
             let s = self.rng.range_f32(1.0, 2.5);
             let v = self.rng.range_f32(0.08, 0.45); // 평소(0.05~0.35)보다 살짝만 밝고 굵게
             r.rect(x, y, s, s, [v, v, v, 1.0]);
@@ -203,13 +203,13 @@ impl LobbyScene {
         for _ in 0..bands {
             let y = self.rng.range_f32(0.0, 476.0);
             let h = self.rng.range_f32(2.0, 9.0);
-            r.rect(0.0, y, 640.0, h, BLACK); // 찢어진 틈
+            r.rect(0.0, y, SCREEN_W, h, BLACK); // 찢어진 틈
 
             let seg_w = self.rng.range_f32(80.0, 300.0);
-            let seg_x = self.rng.range_f32(0.0, (640.0 - seg_w).max(0.0));
+            let seg_x = self.rng.range_f32(0.0, (SCREEN_W - seg_w).max(0.0));
             let shift = self.rng.range_f32(-16.0, 16.0);
-            let cx = (seg_x + shift).clamp(0.0, 640.0 - seg_w);
-            let mx = (seg_x - shift).clamp(0.0, 640.0 - seg_w);
+            let cx = (seg_x + shift).clamp(0.0, SCREEN_W - seg_w);
+            let mx = (seg_x - shift).clamp(0.0, SCREEN_W - seg_w);
             r.rect(cx, y, seg_w, h, [0.85, 0.85, 0.85, 0.35]); // 밝은 쪽으로 어긋난 조각
             r.rect(mx, y, seg_w, h, [0.45, 0.45, 0.45, 0.28]); // 어두운 쪽으로 어긋난 조각
         }
@@ -315,7 +315,7 @@ impl Scene for LobbyScene {
         self.t += f.dt;
         self.tick_glitch(f.dt);
 
-        f.r.rect(0.0, 0.0, 640.0, 480.0, BLACK);
+        f.r.rect(0.0, 0.0, SCREEN_W, SCREEN_H, BLACK);
         self.draw_noise(f.r);
         self.draw_logo(f.r);
 

@@ -8,6 +8,7 @@
 //! (화면에 안 들어가는 오래된 줄은 위로 밀려 사라진다), 다 쏟아진 뒤에 마무리 메시지
 //! 몇 줄이 천천히 찍히면서 정리되는 두 단계 구성이다.
 
+use crate::gfx::{CELL_H, SCREEN_H, SCREEN_W};
 use crate::ui::BLACK;
 
 use super::{Frame, LobbyScene, Scene, Transition};
@@ -95,7 +96,7 @@ impl Scene for EraseScene {
         f.show_cursor = false;
         self.t += f.dt;
 
-        f.r.rect(0.0, 0.0, 640.0, 480.0, BLACK);
+        f.r.rect(0.0, 0.0, SCREEN_W, SCREEN_H, BLACK);
         let white = [0.85, 0.85, 0.85, 1.0];
 
         // 한 줄이 화면 폭을 넘으면 잘라내지 않고 진짜 콘솔처럼 다음 줄로 내려서 계속
@@ -105,8 +106,8 @@ impl Scene for EraseScene {
         // 폭을 재므로 언어와 무관하게 안전하다(경로엔 띄어쓰기가 거의 없어서 대부분
         // 글자 단위 폴백으로 접히는데, 그것도 wrap_lines 안에서 알아서 처리된다).
         let all_lines = erase_lines_at(self.t, &self.root);
-        let wrapped: Vec<String> = all_lines.iter().flat_map(|l| crate::ui::wrap_lines(f.r, l, 1.0, 640.0 - 16.0)).collect();
-        let max_visible = (480.0 / 22.0) as usize; // 화면에 들어가는 줄 수만큼만 보여주고 나머진 위로 밀려 사라진 셈
+        let wrapped: Vec<String> = all_lines.iter().flat_map(|l| crate::ui::wrap_lines(f.r, l, 1.0, SCREEN_W - 16.0)).collect();
+        let max_visible = (SCREEN_H / CELL_H) as usize; // 화면에 들어가는 줄 수만큼만 보여주고 나머진 위로 밀려 사라진 셈
         let visible = &wrapped[wrapped.len().saturating_sub(max_visible)..];
         for (row, line) in visible.iter().enumerate() {
             f.r.text(16.0, 16.0 + row as f32 * 22.0, line, 1.0, white);

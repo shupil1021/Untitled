@@ -1,6 +1,6 @@
 //! 부팅 화면 — BIOS POST 흉내 → 화면 정리 → 로고/Welcome/로딩 바, 끝나면 DesktopScene 으로.
 
-use crate::gfx::{ADVANCE, CELL_H};
+use crate::gfx::{ADVANCE, CELL_H, SCREEN_H, SCREEN_W};
 use crate::strings::{boot as s, t};
 use crate::ui::BLACK;
 
@@ -144,7 +144,7 @@ impl Scene for BootScene {
     fn update(&mut self, f: &mut Frame) -> Transition {
         f.show_cursor = false; // 부팅 화면에서는 마우스가 필요 없으니 아예 안 보이게.
         self.t += f.dt;
-        f.r.rect(0.0, 0.0, 640.0, 480.0, BLACK);
+        f.r.rect(0.0, 0.0, SCREEN_W, SCREEN_H, BLACK);
         let white = [0.85, 0.85, 0.85, 1.0];
 
         let post_end = post_end();
@@ -176,7 +176,7 @@ impl Scene for BootScene {
         } else {
             // 3단계: 로고 + Welcome + 로딩 바.
             let logo_w = LOGO[0].chars().count() as f32 * ADVANCE * LOGO_SCALE;
-            let logo_x = (640.0 - logo_w) / 2.0;
+            let logo_x = (SCREEN_W - logo_w) / 2.0;
             for (i, row) in LOGO.iter().enumerate() {
                 // 여러 줄에 걸친 정렬이 필요한 아스키 아트라 고정폭으로 그린다.
                 f.r.text_mono(logo_x, 120.0 + i as f32 * CELL_H * LOGO_SCALE, row, LOGO_SCALE, white, ADVANCE);
@@ -188,7 +188,7 @@ impl Scene for BootScene {
                 let lang = f.settings.borrow().language;
                 let msg = t(lang, s::WELCOME);
                 let mw = f.r.text_width(msg, 1.0);
-                f.r.text((640.0 - mw) / 2.0, 300.0, msg, 1.0, white);
+                f.r.text((SCREEN_W - mw) / 2.0, 300.0, msg, 1.0, white);
             }
             if self.t >= load_start {
                 const BAR_CHARS: usize = 24;
@@ -202,7 +202,7 @@ impl Scene for BootScene {
                     (frac * 100.0).round() as u32
                 );
                 let bw = f.r.text_width(&bar, 1.0);
-                f.r.text((640.0 - bw) / 2.0, 336.0, &bar, 1.0, white);
+                f.r.text((SCREEN_W - bw) / 2.0, 336.0, &bar, 1.0, white);
             }
         }
 

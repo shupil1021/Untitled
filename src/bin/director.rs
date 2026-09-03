@@ -32,13 +32,10 @@ use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitiali
 
 use crackhead::crt::{viewport_4x3, warp};
 use crackhead::foundation::{self, Settings, FPS_OPTS, RES_OPTS};
-use crackhead::gfx::{Assets, Renderer};
+use crackhead::gfx::{Assets, Renderer, VIRTUAL_H as VH, VIRTUAL_W as VW};
 use crackhead::scenes::{BlueScreenScene, BootScene, DesktopScene, EraseScene, Frame, Input, LobbyScene, Scene, SceneManager, ShutdownScene};
 use crackhead::ui;
 use crackhead::director_ipc;
-
-const VW: u32 = 640;
-const VH: u32 = 480;
 
 // 로비 화면 자체의 정전기/글리치(scenes/lobby.rs)는 실제 게임과 똑같이
 // 항상 자동으로 나오는, panel 로는 설정할 수 없는 그 화면 고유의 연출로

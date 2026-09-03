@@ -4,7 +4,7 @@
 //! 게임 흐름에도 연결하면 된다) — 화면 자체와 "아무 키나 누르면 재부팅"
 //! 동작만 먼저 만들어둔다.
 
-use crate::gfx::{ADVANCE, CELL_H};
+use crate::gfx::{ADVANCE, CELL_H, SCREEN_H, SCREEN_W};
 use crate::ui::border;
 
 use super::{BootScene, Frame, Scene, Transition};
@@ -45,14 +45,14 @@ impl Scene for BlueScreenScene {
         f.show_cursor = false; // 진짜 블루스크린엔 마우스 커서가 없다.
         self.t += f.dt;
 
-        f.r.rect(0.0, 0.0, 640.0, 480.0, BLUE);
+        f.r.rect(0.0, 0.0, SCREEN_W, SCREEN_H, BLUE);
 
         // "Windows" 라벨 상자 — 흰 바탕에 검은 글씨, 화면 위쪽 가운데.
         let title = "Windows";
         let title_w = f.r.text_width(title, 1.0);
         let box_w = title_w + 24.0;
         let box_h = CELL_H + 10.0;
-        let box_x = (640.0 - box_w) / 2.0;
+        let box_x = (SCREEN_W - box_w) / 2.0;
         let box_y = 56.0;
         f.r.rect(box_x, box_y, box_w, box_h, WHITE);
         border(f.r, box_x, box_y, box_w, box_h, [0.05, 0.05, 0.05, 1.0]);
@@ -69,7 +69,7 @@ impl Scene for BlueScreenScene {
         // 맨 아래 "Press any key to continue" — 0.5초 간격으로 깜빡이는 커서.
         let prompt = "Press any key to continue";
         let pw = f.r.text_width(prompt, 1.0);
-        let px = (640.0 - pw - ADVANCE) / 2.0;
+        let px = (SCREEN_W - pw - ADVANCE) / 2.0;
         f.r.text(px, 420.0, prompt, 1.0, WHITE);
         if (self.t % 1.0) < 0.5 {
             f.r.text(px + pw + 4.0, 420.0, "_", 1.0, WHITE);

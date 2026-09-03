@@ -37,6 +37,16 @@ impl Rect {
     }
 }
 
+// 게임의 가상 해상도(Win9x 시절 저해상도 느낌을 그대로 재현) — main.rs 와
+// director.rs(별개의 실행 파일 두 개)가 각자 똑같은 값을 따로 들고 있던 걸
+// 여기로 합쳤다. 실제 창 크기는 miniquad 가 알아서 이 비율로 스케일링한다.
+pub const VIRTUAL_W: u32 = 640;
+pub const VIRTUAL_H: u32 = 480;
+// 씬 코드가 렌더링 좌표(f32)를 계산할 때 매번 `640.0`/`480.0` 을 새로 타이핑하는
+// 대신 쓰는 f32 버전 — VIRTUAL_W/H 와 항상 같은 값임이 타입으로 보장된다.
+pub const SCREEN_W: f32 = VIRTUAL_W as f32;
+pub const SCREEN_H: f32 = VIRTUAL_H as f32;
+
 pub const CELL_H: f32 = 22.0;
 // 예전엔 미리 구워둔 ASCII 전용 고정폭 비트맵 폰트(font.png, 글자당 11px)를 썼는데,
 // 한글(Terrarum Sans Bitmap)을 지원하려고 실제 폰트 파일을 시작할 때 래스터라이즈

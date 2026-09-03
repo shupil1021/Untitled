@@ -12,14 +12,12 @@ use miniquad::*;
 use crackhead::crt::{viewport_4x3, warp, Crt};
 use crackhead::foundation;
 use crackhead::foundation::{Settings, FPS_OPTS, RES_OPTS};
-use crackhead::gfx::{Assets, Renderer};
+use crackhead::gfx::{Assets, Renderer, VIRTUAL_H as VH, VIRTUAL_W as VW};
 use crackhead::scenes::{lobby::LobbyScene, Frame, Input, SceneManager};
 use crackhead::ui::draw_cursor;
 
 // 가상 해상도. 씬/UI 는 항상 이 좌표계(640x480)에서 그린다.
 // (오프스크린 렌더 해상도는 설정에 따라 달라지지만, 레이아웃 좌표는 항상 640x480)
-const VW: u32 = 640;
-const VH: u32 = 480;
 
 struct Stage {
     ctx: Box<dyn RenderingBackend>,
