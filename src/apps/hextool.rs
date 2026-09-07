@@ -1,136 +1,143 @@
 //! HexTool — Installer 마법사를 끝까지 마치면 바탕화면에 생기는 설치된 프로그램.
-//! 실행하면 곧장 밝기/채도 편집 화면으로 열리는데, 처음엔 아직 아무 파일도 안
-//! 골라서 미리보기 자리가 비어있다 — 그 빈 자리를 클릭하면 시스템의 이미지
-//! (Photos 앱에서 다운로드한 사진)/mp4 파일 목록이 미리보기 자리 위에
-//! 펼쳐지고(picker_open), 하나를 고르면 그 자리에서 바로 미리보기로 바뀌면서
-//! 왼쪽 큰 미리보기 + 오른쪽 밝기/채도 슬라이더 + 미니맵으로 "자세히 들여다볼"
-//! 수 있다. 이미지를 한 번 고르고 나면 이미지 자체를 클릭해도 더는 목록이
-//! 안 뜬다(왼쪽 드래그가 이제 그 자리를 대신 차지하기 때문) — 다른 파일로
-//! 바꾸려면 미니맵 밑의 "새로 선택" 글자 링크를 눌러야 한다. 예전엔 여기서
-//! 이상현상 종류를 체크리스트로 골라 제출하는 채점 단계(+ 다 보면 Done 으로
-//! 넘어가는 삭제 확인 창)까지 있었는데, 재연구 업무 메일이 말하는 "체크리스트를
-//! 작성해 파일로 뽑는" 절차는 나중에 진짜 콘텐츠로 다시 만들 예정이라 지금은
-//! 전부 걷어내고 그냥 훑어보는 도구로만 남겨뒀다.
+//! 임의 파일을 골라 훑어보던 예전의 범용 뷰어 기능은 없앴다 — 이제 이 프로그램은
+//! 오직 ????? 사진 순차 검수 하나만 한다:
 //!
-//! 미리보기는 photos.rs 와 같은 요령으로 원본 파일을 그때그때 디코드해 텍스처로
-//! 올린다(고른 파일이 바뀔 때만 한 번, PhotoViewerApp::tried 와 같은 지연 로딩
-//! 패턴). 밝기/채도 슬라이더는 이 렌더러에 셰이더 유니폼이 없어서 진짜 픽셀
-//! 단위 보정은 못 하고, 밝기는 스프라이트 곱연산 틴트로(1.0 을 넘는 값은
-//! 렌더러가 알아서 흰색 쪽으로 잘라내니 "밝게"도 어느 정도 먹힌다), 채도는 그
-//! 위에 회색 반투명을 덧씌우는 방식으로 흉내만 낸다. 미리보기 위에서 휠을
-//! 굴리면 마우스가 가리키는 지점을 기준으로 확대/축소되고(zoom/center 로 뷰포트
-//! 상태를 들고 있다가, 휠이 들어오면 그 지점의 이미지 좌표가 화면상 같은 자리에
-//! 그대로 남도록 center 를 역산한다), 좌클릭 드래그로는 그 자리에서 원하는
-//! 방향으로 이동(pan)할 수 있다. 이미지가 미리보기 자리를 다 못 채우는 부분
-//! (레터박스 여백이든 확대해서 잘려나간 부분이든)은 전부 검은색이다. 슬라이더
-//! 밑에는 지금 보고 있는 영역을 정사각형 전체 이미지 축소판 위에 노란 테두리
-//! 상자로 표시하는 미니맵이 있다.
+//! - fs.photos_pending_review 가 true(지금 ?????에 떠 있는 배치를 아직 검수
+//!   안 함 — 새 게임이거나, 재연구 업무 보고 메일로 피드가 막 갱신됐을 때)면,
+//!   실행하는 순간 곧장 설치 마법사 진행바 같은 로딩 게이지가 잠깐 차오른 뒤
+//!   (Stage::Loading) 자동으로 검수 화면(Stage::Reviewing)으로 넘어간다.
+//! - 검수 화면은 지금 ?????에 떠 있는 사진(fs.photos_current)을 한 장씩 순서대로
+//!   보여주며 "이상현상 있음" 체크를 받는다. 이미지 표시는 photos.rs 와 같은
+//!   요령으로 원본을 그때그때 디코드해 텍스처로 올리고, 휠로 확대/축소, 좌클릭
+//!   드래그로 이동할 수 있다.
+//! - 마지막 장에서 "검수 완료"를 누르면 체크된 사진들로 AppAction::
+//!   ExportPhotoReport 를 보낸다(desktop.rs 가 받아서 압축파일을 만들고
+//!   fs.photos_pending_review 를 false 로 되돌린다) — 체크된 게 하나도 없어도
+//!   이 액션은 보낸다(빈 Vec — 압축파일은 안 만들지만 "검수는 끝났다"는 기록은
+//!   필요하다).
+//! - pending_review 가 false 면(이미 검수를 끝낸 배치) 게이지 없이 곧장
+//!   Stage::Done 으로 열려서 지난 결과 요약만 보여준다.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use miniquad::{RenderingBackend, TextureId};
 
-use crate::foundation::{FileId, Language, Settings};
+use crate::foundation::{Language, Settings};
 use crate::gfx::{Assets, Rect, Renderer};
 use crate::secrets;
 use crate::strings::{hextool as s, t};
 use crate::ui::*;
 
 use super::photos::{find_photo_dir, load_scaled_texture};
-use super::widgets::{draw_slider, ease_scroll, scrollbar};
 use super::{App, AppAction, WinInput};
 
 const MIN_ZOOM: f32 = 1.0;
 const MAX_ZOOM: f32 = 8.0;
-// update()/update_reviewing() 양쪽에서 같은 위쪽 한 줄 높이/오른쪽 패널 폭
-// 기준으로 레이아웃을 잡아야 해서 상수로 공유한다(update_reviewing 인자 개수도
-// 줄어든다).
 const LABEL_H: f32 = 20.0;
 const PANEL_W: f32 = 130.0;
 const SLIDER_GAP: f32 = 8.0;
+const LOADING_DURATION: f32 = 1.6; // 로딩 게이지가 다 차는 데 걸리는 시간(초) — 설치 마법사보다 훨씬 짧다(가짜 스캔이라 굳이 오래 끌 이유가 없다)
+
+// 검수를 시작하기 전(로딩 게이지) / 검수 중 / 검수를 끝낸 뒤(요약) — 세 값 다
+// Copy 라 `match self.stage { ... }` 로 값을 복사해 쓰고 나서 그 안에서 다시
+// self 를 (재)대여하는 메서드를 자유롭게 부를 수 있다(참조를 들고 있으면
+// борrow 충돌이 난다).
+#[derive(Clone, Copy)]
+enum Stage {
+    Loading(f32),      // 경과 시간(초) — LOADING_DURATION 에 도달하면 자동으로 Reviewing 으로
+    Reviewing,
+    Done(Option<usize>), // 압축파일에 담긴 장수(0장이면 None 과 화면상 구분 안 함 — 둘 다 "이상현상 없음" 문구)
+}
 
 pub struct HexToolApp {
-    review_files: Vec<(FileId, String, IconType, Option<String>)>, // 고를 수 있는 파일 목록 — desktop.rs 가 open() 시점에 스냅샷으로 넘겨줌
-    loaded_name: String, // 지금 미리보기 중인 파일 이름 — 아직 안 골랐으면 빈 문자열
-    loaded_id: Option<FileId>,
-    loaded_photo_id: Option<String>, // assets/photo/ 안의 실제 식별자 — 원본을 불러올 때 씀(하위 폴더 없으면 None)
+    loaded_photo_id: Option<String>, // 지금 미리보기 중인 assets/photo 식별자
     tex: Option<(TextureId, u32, u32)>, // 지연 로딩된 원본 텍스처
-    tex_tried: bool,                    // 지금 고른 파일에 대해 한 번 로딩을 시도했는지
-    picker_open: bool,                  // 미리보기 자리 위에 파일 목록이 펼쳐져 있는지
-    zoom: f32,                // 1.0 = 전체가 다 보이게 맞춘 배율, 커질수록 확대
-    center: (f32, f32),       // 지금 뷰포트 중심의 이미지 내 정규화 좌표(0..1)
-    view_frac: (f32, f32),    // 지금 뷰포트에 이미지의 몇 %(0..1)가 보이는지 — 미니맵 상자 크기용
+    tex_tried: bool,                    // 지금 고른 사진에 대해 한 번 로딩을 시도했는지
+    zoom: f32,             // 1.0 = 전체가 다 보이게 맞춘 배율, 커질수록 확대
+    center: (f32, f32),    // 지금 뷰포트 중심의 이미지 내 정규화 좌표(0..1)
     drag_last: Option<(f32, f32)>, // 좌클릭 드래그 중이면 지난 프레임 마우스 위치
-    brightness: f32,
-    saturation: f32,
-    active_slider: i32,
-    // 파일 목록(picker)이 화면보다 길어지면 스크롤해서 봐야 한다 — 예전엔 넘치는
-    // 항목이 그냥 잘려나가고 스크롤할 방법이 아예 없었다(사용성 문제로 지적받아
-    // 추가).
-    picker_scroll: f32,
-    picker_scroll_disp: f32,
-    picker_sb_drag: bool,
     settings: Rc<RefCell<Settings>>,
-    // ????? 사진 순차 검수 흐름(아래 "다운로드" 버튼 → draw_review) 에 쓰는 상태.
-    photos_current: Vec<String>, // ????? 에 지금 떠 있는 사진 식별자 스냅샷 — "다운로드" 버튼용
-    review_queue: Vec<String>,   // 검수 중인 사진 식별자들 — 비어있으면 검수 중이 아니다
+    photos_current: Vec<String>, // ????? 에 지금 떠 있는 사진 식별자 스냅샷 — 로딩이 끝나면 이걸로 검수 대기열을 채운다
+    review_queue: Vec<String>,   // 검수 중인 사진 식별자들
     review_flags: Vec<bool>,     // review_queue 와 길이가 같다 — 인덱스별 "이상현상 있음" 체크
     review_index: usize,        // 지금 보고 있는 검수 순번
-    review_result: Option<usize>, // 검수를 막 끝냈을 때 압축파일에 담긴 장수(요약 문구용) — None 이면 요약 화면이 아니다
+    stage: Stage,
 }
 
 impl HexToolApp {
-    pub(super) fn new(
-        review_files: Vec<(FileId, String, IconType, Option<String>)>, photos_current: Vec<String>, settings: Rc<RefCell<Settings>>,
-    ) -> HexToolApp {
-        // 처음부터 아무것도 없는 목록이면 어차피 고를 게 없으니, 빈 미리보기 대신
-        // 바로 "파일이 없습니다" 안내가 뜨는 게 낫다 — picker 를 열어둔 채로 시작.
-        let picker_open = review_files.is_empty();
+    pub(super) fn new(photos_current: Vec<String>, pending_review: bool, last_report_count: Option<usize>, settings: Rc<RefCell<Settings>>) -> HexToolApp {
+        let stage = if pending_review { Stage::Loading(0.0) } else { Stage::Done(last_report_count) };
         HexToolApp {
-            review_files,
-            loaded_name: String::new(),
-            loaded_id: None,
             loaded_photo_id: None,
             tex: None,
             tex_tried: false,
-            picker_open,
             zoom: MIN_ZOOM,
             center: (0.5, 0.5),
-            view_frac: (1.0, 1.0),
             drag_last: None,
-            brightness: 0.5,
-            saturation: 0.5,
-            active_slider: -1,
-            picker_scroll: 0.0,
-            picker_scroll_disp: 0.0,
-            picker_sb_drag: false,
             settings,
             photos_current,
             review_queue: Vec::new(),
             review_flags: Vec::new(),
             review_index: 0,
-            review_result: None,
+            stage,
         }
     }
 
-    // 다운로드/이동/삭제 등으로 fs 가 바뀐 뒤 desktop.rs 가 불러준다 — 지금 보고
-    // 있는 미리보기/확대/슬라이더 상태는 그대로 두고 고를 수 있는 목록만 최신화
-    // 한다(그래서 HexTool 을 열어둔 채로 다른 창에서 파일을 받아도 다시 열지
-    // 않고 바로 목록에 나타난다).
-    pub(crate) fn refresh_review_files(&mut self, review_files: Vec<(FileId, String, IconType, Option<String>)>) {
-        self.review_files = review_files;
+    // 로딩 게이지가 다 찼을 때 부른다 — photos_current 스냅샷으로 검수 대기열을
+    // 채우고 첫 장을 미리보기에 건다. photos_current 가(있을 수 없지만 방어적으로)
+    // 비어있으면 검수할 게 없으니 곧장 Done(None) 으로 끝낸다.
+    fn start_review(&mut self) {
+        if self.photos_current.is_empty() {
+            self.stage = Stage::Done(None);
+            return;
+        }
+        self.review_queue.clone_from(&self.photos_current);
+        self.review_flags = vec![false; self.review_queue.len()];
+        self.review_index = 0;
+        self.loaded_photo_id = self.review_queue.first().cloned();
+        self.tex = None;
+        self.tex_tried = false;
+        self.zoom = MIN_ZOOM;
+        self.center = (0.5, 0.5);
+        self.drag_last = None;
+        self.stage = Stage::Reviewing;
     }
 
-    // ????? 피드가 새로 갱신되면(재연구 업무 보고 메일을 실제로 보내서) desktop.rs
-    // 가 같이 불러준다 — "다운로드" 버튼이 다음에 눌렸을 때 최신 사진 목록을 받도록.
-    pub(crate) fn refresh_photos_current(&mut self, photos_current: Vec<String>) {
-        self.photos_current = photos_current;
+    // 설치 마법사(installer.rs)의 진행바와 같은 느낌의 로딩 게이지 — 실제로 뭘
+    // 하는 건 아니고, "?????를 스캔하는 중" 이라는 연출 한 박자만 준다.
+    fn draw_loading(&self, r: &mut Renderer, body: Rect, lang: Language, progress: f32) {
+        let title = t(lang, s::SCANNING).replace("{app}", secrets::PHOTOS_APP_NAME);
+        r.text_clipped(body.x + 4.0, body.y + 4.0, &title, 0.9, BLACK, body.w - 8.0);
+
+        let bar_y = body.y + 34.0;
+        const BAR_H: f32 = 18.0;
+        sunken(r, body.x, bar_y, body.w, BAR_H);
+        let fill_w = (body.w - 4.0) * progress;
+        if fill_w > 0.0 {
+            r.rect(body.x + 2.0, bar_y + 2.0, fill_w, BAR_H - 4.0, NAVY);
+        }
+        let pct = format!("{}%", (progress * 100.0) as i32);
+        r.text(body.x, bar_y + BAR_H + 8.0, &pct, 0.8, GRAY);
     }
 
-    // 미리보기 패널 — 원본을 지연 디코드해서(고른 파일이 바뀔 때만 한 번) 실제
-    // 이미지를 그대로 그리고, 밝기/채도 슬라이더 값을 틴트/반투명 오버레이로
-    // 흉내내 반영한다. 미리보기 위에서 휠을 굴리면 그 지점을 기준으로 확대/축소.
+    // 검수를 이미 끝낸 배치를 다시 열었을 때(또는 방금 검수를 끝낸 직후) 보여주는
+    // 요약 — 압축파일에 담긴 장수만 알려준다.
+    fn draw_done(&self, r: &mut Renderer, body: Rect, lang: Language, count: Option<usize>) {
+        let msg = match count {
+            Some(n) if n > 0 => {
+                t(lang, s::REVIEW_DONE_FOUND).replace("{n}", &n.to_string()).replace("{file}", crate::foundation::PHOTO_REPORT_NAME)
+            }
+            _ => t(lang, s::REVIEW_DONE_NONE).to_string(),
+        };
+        r.text_clipped(body.x + 4.0, body.y + 4.0, &msg, 0.85, GRAY, body.w - 8.0);
+    }
+
+    // 미리보기 패널 — 원본을 지연 디코드해서(고른 사진이 바뀔 때만 한 번) 그대로
+    // 그린다. 미리보기 위에서 휠을 굴리면 마우스가 가리키는 지점을 기준으로
+    // 확대/축소되고(zoom/center 로 뷰포트 상태를 들고 있다가, 휠이 들어오면 그
+    // 지점의 이미지 좌표가 화면상 같은 자리에 그대로 남도록 center 를 역산한다),
+    // 좌클릭 드래그로는 그 자리에서 원하는 방향으로 이동(pan)할 수 있다.
     fn draw_preview(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, area: Rect, win: &WinInput, lang: Language) {
         sunken(r, area.x, area.y, area.w, area.h);
         let inner = Rect::new(area.x + 3.0, area.y + 3.0, area.w - 6.0, area.h - 6.0);
@@ -197,15 +204,9 @@ impl HexToolApp {
 
         let dx = cx - self.center.0 * dw;
         let dy = cy - self.center.1 * dh;
-        self.view_frac = ((inner.w / dw).clamp(0.0, 1.0), (inner.h / dh).clamp(0.0, 1.0));
 
         r.set_clip(Some(inner));
-        let b = 0.35 + self.brightness.clamp(0.0, 1.0) * 1.3;
-        r.sprite(tex, dx, dy, dw, dh, [b, b, b, 1.0]);
-        let wash = (1.0 - self.saturation.clamp(0.0, 1.0)) * 0.7;
-        if wash > 0.02 {
-            r.rect(dx, dy, dw, dh, [0.5, 0.5, 0.5, wash]);
-        }
+        r.sprite(tex, dx, dy, dw, dh, WHITE);
 
         // 아직 한 번도 확대/이동을 안 써본 상태(zoom 이 처음 그대로)에만 조작법을
         // 살짝 알려준다 — 한 번이라도 만지면 다시 안 보인다(계속 떠 있으면
@@ -221,95 +222,11 @@ impl HexToolApp {
         r.set_clip(None);
     }
 
-    // 슬라이더 밑 미니맵 — 전체 이미지 축소판 위에 지금 뷰포트가 어디를 보고
-    // 있는지 노란 테두리 상자로 표시한다.
-    fn draw_minimap(&self, r: &mut Renderer, area: Rect) {
-        if area.h < 24.0 {
-            return;
-        }
-        sunken(r, area.x, area.y, area.w, area.h);
-        let Some((tex, w, h)) = self.tex else {
-            return;
-        };
-        let inner = Rect::new(area.x + 2.0, area.y + 2.0, area.w - 4.0, area.h - 4.0);
-        r.rect(inner.x, inner.y, inner.w, inner.h, [0.0, 0.0, 0.0, 1.0]);
-        let (iw, ih) = (w as f32, h as f32);
-        let scale = (inner.w / iw).min(inner.h / ih);
-        let (tw, th) = (iw * scale, ih * scale);
-        let tx = inner.x + (inner.w - tw) / 2.0;
-        let ty = inner.y + (inner.h - th) / 2.0;
-        r.sprite(tex, tx, ty, tw, th, WHITE);
-
-        let (fw, fh) = (self.view_frac.0.min(1.0), self.view_frac.1.min(1.0));
-        let vx = tx + (self.center.0 - fw / 2.0).clamp(0.0, 1.0 - fw) * tw;
-        let vy = ty + (self.center.1 - fh / 2.0).clamp(0.0, 1.0 - fh) * th;
-        border(r, vx, vy, (fw * tw).max(2.0), (fh * th).max(2.0), [1.0, 0.9, 0.2, 1.0]);
-    }
-
-    // 미리보기 자리 위에 펼쳐지는 파일 목록 — 처음엔 빈 미리보기를 클릭하면,
-    // 이미지를 이미 고른 뒤로는 "새로 선택" 링크를 눌러야만 여기로 온다. 하나를
-    // 고르면 그 자리에서 바로 미리보기로 바뀐다(picker_open = false). 목록이
-    // 자리보다 길면 휠/스크롤바로 넘겨볼 수 있다.
-    fn draw_picker(&mut self, r: &mut Renderer, assets: &Assets, area: Rect, win: &WinInput, lang: Language) {
-        sunken(r, area.x, area.y, area.w, area.h);
-        if self.review_files.is_empty() {
-            label(r, area.x + 8.0, area.y + 8.0, t(lang, s::NO_FILES_FOUND), GRAY);
-            return;
-        }
-        const ROW_H: f32 = 24.0;
-        const SB_W: f32 = 10.0;
-        let content_h = self.review_files.len() as f32 * ROW_H;
-        let max_scroll = (content_h - area.h).max(0.0);
-        if area.contains(win.mouse.0, win.mouse.1) {
-            self.picker_scroll -= win.wheel / 120.0 * 3.0 * ROW_H;
-        }
-        self.picker_scroll = self.picker_scroll.clamp(0.0, max_scroll);
-        let smooth = self.settings.borrow().smooth_scroll;
-        ease_scroll(&mut self.picker_scroll_disp, self.picker_scroll, win.dt, smooth);
-
-        let list_w = if max_scroll > 0.0 { area.w - SB_W } else { area.w };
-        r.set_clip(Some(area));
-        for (i, (id, name, icon, photo_id)) in self.review_files.iter().enumerate() {
-            let row = Rect::new(area.x + 2.0, area.y + 2.0 + i as f32 * ROW_H - self.picker_scroll_disp, list_w - 4.0, ROW_H - 2.0);
-            if row.y + row.h < area.y || row.y > area.y + area.h {
-                continue;
-            }
-            let hover = row.contains(win.mouse.0, win.mouse.1);
-            if hover {
-                r.rect(row.x, row.y, row.w, row.h, [0.82, 0.88, 0.98, 1.0]);
-            }
-            draw_icon(r, assets, icon, row.x + 3.0, row.y + 2.0, 18.0);
-            r.text_clipped(row.x + 26.0, row.y + 3.0, name, 0.85, BLACK, row.w - 30.0);
-            if hover && win.mouse_clicked {
-                self.loaded_name.clone_from(name);
-                self.loaded_id = Some(*id);
-                self.loaded_photo_id = photo_id.clone();
-                self.tex = None;
-                self.tex_tried = false;
-                self.picker_open = false;
-                self.zoom = MIN_ZOOM;
-                self.center = (0.5, 0.5);
-                self.drag_last = None;
-                self.brightness = 0.5;
-                self.saturation = 0.5;
-            }
-        }
-        r.set_clip(None);
-        if max_scroll > 0.0 {
-            let visible_frac = (area.h / content_h).clamp(0.05, 1.0);
-            scrollbar(
-                r, win, area.x + list_w + 1.0, area.y + 2.0, SB_W - 2.0, area.h - 4.0, visible_frac, self.picker_scroll_disp,
-                &mut self.picker_scroll, max_scroll, &mut self.picker_sb_drag,
-            );
-        }
-    }
-
-    // ????? 사진을 순서대로 한 장씩 보여주며 "이상현상 있음" 체크를 받는 화면 —
-    // "다운로드" 버튼을 누르면 시작한다(update() 참고). 이미지 표시 자체는
-    // draw_preview() 를 그대로 재사용해서 확대/이동은 검수 중에도 그대로 쓸 수
-    // 있다. 마지막 장에서 "검수 완료"를 누르면 체크된 사진들로 AppAction::
-    // ExportPhotoReport 를 돌려준다(체크된 게 하나도 없으면 액션 없이 요약만
-    // 보여준다 — 빈 압축파일은 안 만든다).
+    // ????? 사진을 순서대로 한 장씩 보여주며 "이상현상 있음" 체크를 받는 화면.
+    // 마지막 장에서 "검수 완료"를 누르면 체크된 사진들로 AppAction::
+    // ExportPhotoReport 를 돌려준다(체크된 게 하나도 없어도 빈 Vec 으로 보낸다 —
+    // desktop.rs 가 이 액션을 받으면 fs.photos_pending_review 를 항상 false 로
+    // 되돌리기 때문에, "검수는 끝났다"는 기록을 남기려면 빈 경우에도 보내야 한다).
     fn update_reviewing(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, body: Rect, win: &WinInput, lang: Language) -> AppAction {
         let total = self.review_queue.len();
         let progress = t(lang, s::REVIEW_PROGRESS).replace("{i}", &(self.review_index + 1).to_string()).replace("{n}", &total.to_string());
@@ -339,20 +256,14 @@ impl HexToolApp {
             if self.review_index >= total {
                 let flagged: Vec<String> =
                     self.review_queue.iter().zip(self.review_flags.iter()).filter(|&(_, &checked)| checked).map(|(id, _)| id.clone()).collect();
-                self.review_result = Some(flagged.len());
+                self.stage = Stage::Done(Some(flagged.len()));
                 self.review_queue.clear();
                 self.review_flags.clear();
                 self.review_index = 0;
                 self.loaded_photo_id = None;
-                self.loaded_name.clear();
-                self.loaded_id = None;
-                self.picker_open = self.review_files.is_empty();
-                if !flagged.is_empty() {
-                    return AppAction::ExportPhotoReport(flagged);
-                }
-            } else {
-                self.loaded_photo_id = self.review_queue.get(self.review_index).cloned();
+                return AppAction::ExportPhotoReport(flagged);
             }
+            self.loaded_photo_id = self.review_queue.get(self.review_index).cloned();
         }
         AppAction::None
     }
@@ -363,142 +274,32 @@ impl App for HexToolApp {
         self
     }
 
-    fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
+    fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, _assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
         r.rect(area.x, area.y, area.w, area.h, FACE);
         let lang = self.settings.borrow().language;
-
         let body = Rect::new(area.x + 6.0, area.y + 6.0, area.w - 12.0, area.h - 12.0);
-        const SLIDER_ROW_H: f32 = 40.0; // 슬라이더 두 개 사이 마진
 
-        // 검수 중이면(review_queue 가 안 비어있으면) 완전히 다른 화면(진행 상황 +
-        // 이상현상 체크 + 다음 버튼)을 그린다 — 아래 picker/preview/슬라이더 화면과
-        // 겹치지 않게 여기서 분기해서 끝낸다.
-        if !self.review_queue.is_empty() {
-            return self.update_reviewing(ctx, r, body, win, lang);
-        }
-
-        // 위쪽 한 줄 — 검수를 막 끝냈으면 그 요약을(사라지지 않고 계속 보이다가
-        // 다음 검수를 시작하면 새로 갈아끼워진다), 아니면 지금 보고 있는 파일명
-        // (아직 안 골랐으면 안내 문구)을 보여준다. "다운로드" 버튼은 둘 중
-        // 어느 경우든 오른쪽에 항상 떠 있다 — 요약 화면일 때만 숨겨버리면 검수를
-        // 다시 시작할 방법이 없어져 막다른 화면이 된다.
-        {
-            let dl_label = t(lang, s::DOWNLOAD_ALL).replace("{app}", secrets::PHOTOS_APP_NAME);
-            let dl_w = r.text_width(&dl_label, 0.75) + 14.0;
-            let name_w = (body.w - dl_w - 6.0).max(20.0);
-            if let Some(count) = self.review_result {
-                let msg = if count > 0 {
-                    t(lang, s::REVIEW_DONE_FOUND).replace("{n}", &count.to_string()).replace("{file}", crate::foundation::PHOTO_REPORT_NAME)
+        // self.stage 는 Copy 라 여기서 값을 복사해 매치한다 — 그래야 각 분기
+        // 안에서 self.draw_loading()/self.start_review() 처럼 self 를 다시
+        // (가변) 대여하는 호출을 해도 self.stage 를 향한 대여와 겹치지 않는다.
+        match self.stage {
+            Stage::Loading(elapsed) => {
+                let elapsed = elapsed + win.dt;
+                let t_frac = (elapsed / LOADING_DURATION).min(1.0);
+                let progress = 1.0 - (1.0 - t_frac) * (1.0 - t_frac); // ease-out — 끝에서 살짝 느려지는 정도만
+                self.draw_loading(r, body, lang, progress);
+                if t_frac >= 1.0 {
+                    self.start_review();
                 } else {
-                    t(lang, s::REVIEW_DONE_NONE).to_string()
-                };
-                r.text_clipped(body.x + 4.0, body.y + 4.0, &msg, 0.8, if count > 0 { NAVY } else { GRAY }, name_w);
-            } else {
-                let placeholder = t(lang, s::NO_FILE_SELECTED);
-                let name_text = if self.loaded_name.is_empty() { placeholder } else { &self.loaded_name };
-                r.text_clipped(body.x + 4.0, body.y + 4.0, name_text, 0.8, GRAY, name_w);
+                    self.stage = Stage::Loading(elapsed);
+                }
+                AppAction::None
             }
-            let enabled = !self.photos_current.is_empty();
-            if button(r, body.x + body.w - dl_w, body.y, dl_w, LABEL_H - 2.0, &dl_label, win) && enabled {
-                self.review_queue.clone_from(&self.photos_current);
-                self.review_flags = vec![false; self.review_queue.len()];
-                self.review_index = 0;
-                self.review_result = None;
-                self.loaded_photo_id = self.review_queue.first().cloned();
-                self.tex = None;
-                self.tex_tried = false;
-                self.zoom = MIN_ZOOM;
-                self.center = (0.5, 0.5);
-                self.drag_last = None;
+            Stage::Reviewing => self.update_reviewing(ctx, r, body, win, lang),
+            Stage::Done(count) => {
+                self.draw_done(r, body, lang, count);
+                AppAction::None
             }
         }
-
-        // 그 아래는 왼쪽 큰 미리보기 + 오른쪽 좁은 패널(슬라이더 + 미니맵)로 나눈다.
-        let content = Rect::new(body.x, body.y + LABEL_H, body.w, body.h - LABEL_H);
-        let panel_w = PANEL_W.min(content.w * 0.4).max(90.0);
-        let preview = Rect::new(content.x, content.y, content.w - panel_w - SLIDER_GAP, content.h);
-        let panel = Rect::new(preview.x + preview.w + SLIDER_GAP, content.y, panel_w, content.h);
-
-        if self.picker_open {
-            self.draw_picker(r, assets, preview, win, lang);
-        } else if self.loaded_id.is_some() {
-            // 이미지를 한 번 고르고 나면 그 자리는 드래그(이동)용이라, 클릭해도
-            // 더는 목록이 안 뜬다 — 미니맵 밑의 "새로 선택" 링크로만 바꿔 고른다.
-            self.draw_preview(ctx, r, preview, win, lang);
-        } else {
-            // 아직 아무 파일도 안 골랐다 — 빈 미리보기 자리를 보여주고, 클릭하면
-            // 바로 파일 목록이 그 자리에 펼쳐진다.
-            sunken(r, preview.x, preview.y, preview.w, preview.h);
-            let hint = t(lang, s::CLICK_TO_SELECT);
-            let tw = r.text_width(hint, 0.8);
-            r.text(preview.x + (preview.w - tw) / 2.0, preview.y + preview.h / 2.0 - 6.0, hint, 0.8, GRAY);
-            if preview.contains(win.mouse.0, win.mouse.1) && win.mouse_clicked {
-                self.picker_open = true;
-            }
-        }
-
-        // 지금 확대 배율(%) — 이미지를 고른 뒤에만 보이고, 클릭하면 확대/이동을
-        // 한 번에 원래대로 되돌린다("새로 선택"으로 같은 파일을 다시 골라야만
-        // 초기화되던 것보다 훨씬 빠른 지름길).
-        const ZOOM_ROW_H: f32 = 16.0;
-        let panel_top = panel.y + 4.0;
-        if self.loaded_id.is_some() && !self.picker_open {
-            let zoom_text = format!("{}: {}%", t(lang, s::ZOOM), (self.zoom * 100.0).round() as i32);
-            let at_default = self.zoom <= MIN_ZOOM + 0.001 && (self.center.0 - 0.5).abs() < 0.001 && (self.center.1 - 0.5).abs() < 0.001;
-            let hover = !at_default
-                && win.mouse.0 >= panel.x
-                && win.mouse.0 <= panel.x + panel.w
-                && win.mouse.1 >= panel_top
-                && win.mouse.1 <= panel_top + ZOOM_ROW_H;
-            let color = if at_default { GRAY } else if hover { NAVY } else { [0.35, 0.35, 0.35, 1.0] };
-            r.text(panel.x, panel_top + 1.0, &zoom_text, 0.75, color);
-            if hover {
-                let tw = r.text_width(&zoom_text, 0.75);
-                r.rect(panel.x, panel_top + 12.0, tw, 1.0, color);
-            }
-            if hover && win.mouse_clicked {
-                self.zoom = MIN_ZOOM;
-                self.center = (0.5, 0.5);
-            }
-        }
-
-        let sliders_y = panel_top + ZOOM_ROW_H;
-        let slider_w = (panel.w - 42.0).max(40.0);
-        let brightness_label = t(lang, s::BRIGHTNESS);
-        let saturation_label = t(lang, s::SATURATION);
-        draw_slider(r, win, panel.x, sliders_y, slider_w, brightness_label, 0, &mut self.brightness, &mut self.active_slider);
-        draw_slider(r, win, panel.x, sliders_y + SLIDER_ROW_H, slider_w, saturation_label, 1, &mut self.saturation, &mut self.active_slider);
-        if !win.mouse_down {
-            self.active_slider = -1;
-        }
-
-        // 미니맵은 항상 정사각형(1:1) — 패널 폭과, 밑에 "새로 선택" 링크 한 줄을
-        // 뺀 나머지 세로 공간 중 더 좁은 쪽에 맞춰서 정사각형 한 변을 정한다.
-        const LINK_ROW_H: f32 = 16.0;
-        let minimap_y = sliders_y + SLIDER_ROW_H * 2.0 + SLIDER_GAP;
-        let avail_h = (panel.y + panel.h - minimap_y - LINK_ROW_H).max(0.0);
-        let side = panel.w.min(avail_h);
-        let minimap = Rect::new(panel.x + (panel.w - side) / 2.0, minimap_y, side, side);
-        self.draw_minimap(r, minimap);
-
-        // 이미지를 이미 고른 상태에서만 보인다 — "새로 선택"을 눌러야만 다시
-        // 파일 목록이 뜨도록(이미지 자체 클릭으로는 더 이상 안 뜬다).
-        if self.loaded_id.is_some() && !self.picker_open && side > 0.0 {
-            let relink_label = t(lang, s::NEW_SELECTION);
-            let tw = r.text_width(relink_label, 0.75);
-            let lx = panel.x + (panel.w - tw) / 2.0;
-            let ly = minimap.y + minimap.h + 3.0;
-            let hover = win.mouse.0 >= lx - 2.0 && win.mouse.0 <= lx + tw + 2.0 && win.mouse.1 >= ly - 2.0 && win.mouse.1 <= ly + 14.0;
-            let color = if hover { NAVY } else { GRAY };
-            r.text(lx, ly, relink_label, 0.75, color);
-            if hover {
-                r.rect(lx, ly + 11.0, tw, 1.0, color);
-            }
-            if hover && win.mouse_clicked {
-                self.picker_open = true;
-            }
-        }
-
-        AppAction::None
     }
 }

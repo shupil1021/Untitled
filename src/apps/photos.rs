@@ -220,6 +220,9 @@ pub(crate) fn refresh_photos_feed(fs: &mut FileSystem) {
     let picked = pick_new_photos(&fs.photos_seen);
     fs.photos_seen.extend(picked.iter().cloned());
     fs.photos_current = picked;
+    // 새 배치는 아직 HexTool 로 검수 전이다 — 다음에 HexTool 을 열면 설치 마법사
+    // 게이지부터 다시 보여준다.
+    fs.photos_pending_review = true;
 }
 
 impl PhotosApp {

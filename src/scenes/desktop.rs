@@ -5,9 +5,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::apps::{
-    ensure_photos_selected, explorer_app_for_folder, explorer_app_refreshed, hextool_review_files, mail_attachable_files, open,
-    refresh_photos_feed, CreditsApp, ExplorerApp, ExplorerLocation, HexToolApp, MailApp, MoveDest, OfficialSiteApp, Opened, PhotoViewerApp,
-    SettingsApp,
+    ensure_photos_selected, explorer_app_for_folder, explorer_app_refreshed, mail_attachable_files, open, refresh_photos_feed, CreditsApp,
+    ExplorerApp, ExplorerLocation, MailApp, MoveDest, OfficialSiteApp, Opened, PhotoViewerApp, SettingsApp,
 };
 use crate::foundation::{display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, MY_COMPUTER_NAME, OFFICIAL_SITE_URL, RECYCLE_BIN_NAME};
 use crate::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
@@ -433,18 +432,6 @@ impl DesktopScene {
             && let Some(app) = self.wm.app_mut(mail_id).and_then(|app| app.as_any_mut().downcast_mut::<MailApp>())
         {
             app.refresh_attachable(mail_attachable_files(&self.fs));
-        }
-    }
-
-    // HexTool 의 파일 선택 목록도 위와 같은 이유로 그 자리에서 바꿔치기한다 —
-    // 통째로 새로 열면 지금 보고 있던 미리보기/확대/슬라이더 상태가 다 날아간다.
-    fn refresh_hextool_if_open(&mut self) {
-        if let Some(hextool_id) = self.fs.find_by_name("HexTool")
-            && self.wm.is_open(hextool_id)
-            && let Some(app) = self.wm.app_mut(hextool_id).and_then(|app| app.as_any_mut().downcast_mut::<HexToolApp>())
-        {
-            app.refresh_review_files(hextool_review_files(&self.fs));
-            app.refresh_photos_current(self.fs.photos_current.clone());
         }
     }
 
@@ -1477,7 +1464,6 @@ impl Scene for DesktopScene {
                     // (다시 열어야만 보이던 문제).
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
-                    self.refresh_hextool_if_open();
                     // 다운로드 직후 그 즉시 저장 — 5초 자동저장을 기다리는 사이 창이
                     // 닫히면 방금 다운로드한 기록이 통째로 사라지는 문제가 있었다.
                     self.write_save(&f.settings);
@@ -1487,21 +1473,26 @@ impl Scene for DesktopScene {
                     self.fs.download(id);
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
-                    self.refresh_hextool_if_open();
                     self.write_save(&f.settings);
                 }
                 DeskAction::ExportPhotoReport(photos) => {
-                    // HexTool 검수를 마쳤다 — 처음이면 바탕화면에 새 아이콘 자리를
-                    // 잡아주고(add_desktop_icon 과 같은 요령), 이미 압축파일이 있었으면
-                    // set_photo_report() 가 내용만 갈아끼우므로 자리는 그대로 둔다.
-                    let (id, is_new) = self.fs.set_photo_report(photos);
-                    if is_new {
-                        self.fs.desktop.push(id);
-                        let (fc, fr) = self.first_free_tile();
-                        self.icon_pos.push(Self::tile_to_pos(fc, fr));
+                    // HexTool 검수를 마쳤다 — 이상현상을 하나도 못 찾았으면 photos 가
+                    // 비어있는데, 그래도 "검수는 끝났다" 자체는 기록해야 다음에 HexTool
+                    // 을 열 때 로딩 게이지를 또 안 보여준다.
+                    self.fs.photos_pending_review = false;
+                    if !photos.is_empty() {
+                        // 처음이면 바탕화면에 새 아이콘 자리를 잡아주고(add_desktop_icon
+                        // 과 같은 요령), 이미 압축파일이 있었으면 set_photo_report() 가
+                        // 내용만 갈아끼우므로 자리는 그대로 둔다.
+                        let (id, is_new) = self.fs.set_photo_report(photos);
+                        if is_new {
+                            self.fs.desktop.push(id);
+                            let (fc, fr) = self.first_free_tile();
+                            self.icon_pos.push(Self::tile_to_pos(fc, fr));
+                        }
+                        self.refresh_explorer_if_open(&f.settings);
+                        self.refresh_mail_attachable_if_open();
                     }
-                    self.refresh_explorer_if_open(&f.settings);
-                    self.refresh_mail_attachable_if_open();
                     self.write_save(&f.settings);
                 }
                 DeskAction::InstallComplete => {
@@ -1525,7 +1516,6 @@ impl Scene for DesktopScene {
                     self.fs.delete_permanently(id);
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
-                    self.refresh_hextool_if_open();
                     self.write_save(&f.settings);
                 }
                 DeskAction::MoveFiles(ids, dest) => {
@@ -1560,7 +1550,6 @@ impl Scene for DesktopScene {
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_recycle_bin_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
-                    self.refresh_hextool_if_open();
                     self.write_save(&f.settings);
                 }
                 DeskAction::Restore(ids) => {
@@ -1568,7 +1557,6 @@ impl Scene for DesktopScene {
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_recycle_bin_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
-                    self.refresh_hextool_if_open();
                     self.write_save(&f.settings);
                 }
                 DeskAction::MarkMailRead(i) => {
@@ -1598,7 +1586,6 @@ impl Scene for DesktopScene {
                     if sent_report {
                         refresh_photos_feed(&mut self.fs);
                         self.refresh_photos_if_open(&f.settings);
-                        self.refresh_hextool_if_open();
                     }
                     self.write_save(&f.settings);
                 }
@@ -1617,7 +1604,6 @@ impl Scene for DesktopScene {
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_recycle_bin_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
-                    self.refresh_hextool_if_open();
                     self.write_save(&f.settings);
                 }
             }

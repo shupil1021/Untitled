@@ -298,17 +298,11 @@ pub mod hextool {
         ko: "휠로 확대/축소, 드래그로 이동",
         ja: "スクロールで拡大縮小、ドラッグで移動",
     };
-    pub const NO_FILES_FOUND: S = S { en: "No files found.", ko: "파일이 없습니다.", ja: "ファイルが見つかりません。" };
-    pub const NO_FILE_SELECTED: S = S { en: "(no file selected)", ko: "(선택한 파일 없음)", ja: "(ファイル未選択)" };
-    pub const CLICK_TO_SELECT: S = S { en: "Click to select a file", ko: "클릭해서 파일 선택", ja: "クリックしてファイルを選択" };
-    pub const ZOOM: S = S { en: "Zoom", ko: "확대", ja: "拡大" };
-    pub const BRIGHTNESS: S = S { en: "Brightness", ko: "밝기", ja: "明るさ" };
-    pub const SATURATION: S = S { en: "Saturation", ko: "채도", ja: "彩度" };
-    pub const NEW_SELECTION: S = S { en: "New selection", ko: "새로 선택", ja: "選び直す" };
-
     // ????? 사진 순차 검수 흐름 — {app} 은 render 시점에 secrets::PHOTOS_APP_NAME
-    // 으로 치환한다(스토리 스포일러라 이 파일엔 원문을 직접 못 적어둔다).
-    pub const DOWNLOAD_ALL: S = S { en: "Download from {app}", ko: "{app}에서 다운로드", ja: "{app}からダウンロード" };
+    // 으로 치환한다(스토리 스포일러라 이 파일엔 원문을 직접 못 적어둔다). HexTool
+    // 을 실행하면 이 문구와 함께 게이지가 차오르다가 자동으로 검수로 넘어간다 —
+    // 설치 마법사(installer.rs)의 진행바와 같은 느낌을 내려는 의도.
+    pub const SCANNING: S = S { en: "Scanning {app} feed...", ko: "{app} 피드를 스캔하는 중...", ja: "{app}フィードをスキャン中..." };
     pub const REVIEW_PROGRESS: S = S { en: "Reviewing {i} / {n}", ko: "검수 중 {i} / {n}", ja: "検収中 {i} / {n}" };
     pub const ANOMALY_CHECK: S = S { en: "Anomaly present", ko: "이상현상 있음", ja: "異常現象あり" };
     pub const NEXT: S = S { en: "Next", ko: "다음", ja: "次へ" };
