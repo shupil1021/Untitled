@@ -304,7 +304,15 @@ pub mod hextool {
     // 설치 마법사(installer.rs)의 진행바와 같은 느낌을 내려는 의도.
     pub const SCANNING: S = S { en: "Scanning {app} feed...", ko: "{app} 피드를 스캔하는 중...", ja: "{app}フィードをスキャン中..." };
     pub const REVIEW_PROGRESS: S = S { en: "Reviewing {i} / {n}", ko: "검수 중 {i} / {n}", ja: "検収中 {i} / {n}" };
-    pub const ANOMALY_CHECK: S = S { en: "Anomaly present", ko: "이상현상 있음", ja: "異常現象あり" };
+    // 세 개 중 하나를 고르는 체크박스(시체/글리치 중 하나라도 고르면 압축파일에
+    // 담긴다) — "이상현상 없음"을 고르면 나머지 둘은 자동으로 해제된다(반대도
+    // 마찬가지), update_reviewing() 의 상호 배타 처리 참고.
+    pub const ANOMALY_CORPSE: S = S { en: "Corpse", ko: "시체", ja: "死体" };
+    pub const ANOMALY_GLITCH: S = S { en: "Glitch", ko: "글리치", ja: "グリッチ" };
+    pub const ANOMALY_NONE: S = S { en: "No anomaly", ko: "이상현상 없음", ja: "異常現象なし" };
+    pub const ZOOM: S = S { en: "Zoom", ko: "확대", ja: "拡大" };
+    pub const BRIGHTNESS: S = S { en: "Brightness", ko: "밝기", ja: "明るさ" };
+    pub const SATURATION: S = S { en: "Saturation", ko: "채도", ja: "彩度" };
     pub const NEXT: S = S { en: "Next", ko: "다음", ja: "次へ" };
     pub const FINISH_REVIEW: S = S { en: "Finish", ko: "검수 완료", ja: "検収完了" };
     pub const REVIEW_DONE_FOUND: S = S {

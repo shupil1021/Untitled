@@ -319,12 +319,15 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             // 그 장수, 하나도 못 찾았으면 None).
             app: Box::new(HexToolApp::new(fs.photos_current.clone(), fs.photos_pending_review, fs.photo_report_count(), settings.clone())),
             title: name,
-            size: (420.0, 320.0),
+            // 검수 화면 오른쪽 패널에 확대%/밝기·채도 슬라이더/이상현상 체크박스
+            // 3개/미니맵/다음 버튼이 전부 들어가야 해서 예전 뷰어보다 세로로
+            // 넉넉하게 잡았다.
+            size: (460.0, 420.0),
             maximized: false,
             resizable: true,
             maximizable: true,
             movable: true,
-            min_size: (360.0, 260.0),
+            min_size: (380.0, 340.0),
         },
         FileKind::Photo(filename) => Opened {
             // 이 경로(open())는 Explorer/Downloads 탭에서 더블클릭해서 여는
