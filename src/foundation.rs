@@ -111,19 +111,6 @@ pub struct FileSystem {
     // 이미 봤던 사진이 또 나오지 않도록 제외하는 데 쓴다.
     #[serde(default)]
     pub photos_seen: Vec<String>,
-    // 지금 photos_current 배치를 HexTool 로 아직 검수하지 않았는지 — true 면
-    // HexTool 을 실행할 때 곧장 검수 화면으로 가는 대신 설치 마법사 같은 로딩
-    // 게이지를 먼저 보여준 뒤 검수를 시작한다(apps/hextool.rs::Stage::Loading).
-    // 새 게임/새 배치 모두 "아직 검수 안 함" 이 기본이라 true 로 시작하고,
-    // HexTool 이 검수를 끝내면(이상현상을 못 찾았어도) false 로 바뀐다. 예전
-    // 저장 파일엔 이 필드가 없어서 #[serde(default = "default_true")] 로
-    // 없으면 "검수 필요"로 취급한다.
-    #[serde(default = "default_true")]
-    pub photos_pending_review: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 // Mail 의 "Write Mail" 탭에서 보낸 메일 한 통 — fs.sent_mail 에 쌓인다. 첨부는
@@ -181,7 +168,6 @@ impl FileSystem {
             mail_hextool_attachment: 0, // 아래에서 실제 노드를 만들고 바로 채운다
             photos_current: Vec::new(), // DesktopScene::new() 가 ensure_photos_selected() 로 채운다
             photos_seen: Vec::new(),
-            photos_pending_review: true,
         };
 
         // 바탕화면엔 고정 아이콘 두 개만 둔다 — 나머지 예제 파일들은 다 치웠다.
@@ -270,17 +256,6 @@ impl FileSystem {
             return (id, false);
         }
         (self.add(PHOTO_REPORT_NAME, FileKind::PhotoReport(photos)), true)
-    }
-
-    // 지금 존재하는 보고용 압축파일에 담긴 사진 장수 — HexTool 을 다시 열었을 때
-    // (photos_pending_review 가 false 라 곧장 검수로 안 들어갈 때) "지난번엔 몇
-    // 장을 찾았는지" 요약 문구에 쓴다. 아직 한 번도 압축파일을 안 만들었으면(예:
-    // 지난 검수에서 이상현상을 하나도 못 찾았을 때) None.
-    pub fn photo_report_count(&self) -> Option<usize> {
-        self.nodes.iter().find_map(|n| match &n.kind {
-            FileKind::PhotoReport(photos) => Some(photos.len()),
-            _ => None,
-        })
     }
 
     // 폴더 위치와 상관없이 전체에서 조건에 맞는 파일들을 찾는다 — File Explorer 의

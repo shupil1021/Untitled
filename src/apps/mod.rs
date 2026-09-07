@@ -81,11 +81,9 @@ pub enum AppAction {
     // 첨부는 여러 개를 붙일 수 있어서 Vec(순서대로 붙인 순서).
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
     // HexTool 이 ????? 사진 검수(순차 검수 + "이상현상 있음" 체크)를 끝냈다 —
-    // 체크된 게 있으면 그 식별자 목록으로 FileKind::PhotoReport 압축파일을
-    // 만들고(이미 있으면 내용만 갱신), 하나도 없으면 빈 Vec 을 보낸다(압축파일은
-    // 안 만들지만, fs.photos_pending_review 는 이 액션이 오면 항상 false 로
-    // 바뀐다 — 검수 자체는 끝났으므로 다음에 HexTool 을 열 때 로딩 게이지를
-    // 다시 보여줄 필요가 없다).
+    // 체크된 사진 식별자 목록으로 FileKind::PhotoReport 압축파일을 만들어(이미
+    // 있으면 내용만 갱신) 바탕화면에 둔다. 체크된 게 하나도 없으면 HexTool 이
+    // 애초에 이 액션을 안 보낸다(빈 압축파일은 안 만든다).
     ExportPhotoReport(Vec<String>),
 }
 
@@ -158,6 +156,23 @@ pub(crate) fn mail_attachable_files(fs: &FileSystem) -> Vec<(FileId, String, Ico
         ids
     };
     folder_items(fs, &attachable_ids)
+}
+
+// HexTool 에서 검토 대상으로 고를 수 있는 파일 — mail_attachable_files() 와 같은
+// 이유로 open() 과 desktop.rs 의 새로고침 양쪽에서 재사용한다.
+pub(crate) fn hextool_review_files(fs: &FileSystem) -> Vec<(FileId, String, IconType, Option<String>)> {
+    fs.all_of_kind(|k| matches!(k, FileKind::Photo(_) | FileKind::Img(_) | FileKind::Mp4))
+        .into_iter()
+        .filter(|&id| !fs.in_recycle_bin(id))
+        .map(|id| {
+            let node = fs.get(id);
+            let photo_id = match &node.kind {
+                FileKind::Photo(filename) => Some(filename.clone()),
+                _ => None,
+            };
+            (id, node.name.clone(), icon_of(node), photo_id)
+        })
+        .collect()
 }
 
 pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Opened {
@@ -313,19 +328,21 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (150.0, 90.0), // resizable 이 꺼져있어 실제로는 안 쓰임
         },
-        FileKind::HexTool => Opened {
-            // pending 이면 곧장 로딩 게이지 → 검수로, 아니면 지난 결과 요약만
-            // 보여준다(photo_report_count: 지난 검수에서 압축파일을 만들었으면
-            // 그 장수, 하나도 못 찾았으면 None).
-            app: Box::new(HexToolApp::new(fs.photos_current.clone(), fs.photos_pending_review, fs.photo_report_count(), settings.clone())),
-            title: name,
-            size: (420.0, 320.0),
-            maximized: false,
-            resizable: true,
-            maximizable: true,
-            movable: true,
-            min_size: (360.0, 260.0),
-        },
+        FileKind::HexTool => {
+            let review_files = hextool_review_files(fs);
+            Opened {
+                app: Box::new(HexToolApp::new(review_files, fs.photos_current.clone(), settings.clone())),
+                title: name,
+                // 이제 파일 선택용 별도 작은 창 없이 곧장 편집 화면(빈 미리보기 +
+                // 슬라이더)으로 여니까, 처음부터 그 화면이 다 들어가는 크기로 연다.
+                size: (420.0, 320.0),
+                maximized: false,
+                resizable: true,
+                maximizable: true,
+                movable: true,
+                min_size: (360.0, 260.0),
+            }
+        }
         FileKind::Photo(filename) => Opened {
             // 이 경로(open())는 Explorer/Downloads 탭에서 더블클릭해서 여는
             // 경우에만 탄다 — Photos 피드에서 썸네일을 클릭하는 경로는
