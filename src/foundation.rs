@@ -30,11 +30,6 @@ pub enum FileKind {
     HexTool,                                             // Installer 를 끝까지 마치면 바탕화면에 생기는 설치된 프로그램 아이콘
     PhotoGallery,                                        // 바탕화면의 Photos 앱 — assets/photo/ 사진들을 피드로 훑어보고 다운로드
     Photo(String),                                       // Photos 앱에서 다운로드한 사진 한 장 — assets/photo/ 안의 파일명
-    // HexTool 로 ????? 의 사진들을 검수해 "이상현상 있음"으로 체크한 것들만 담은
-    // 압축파일 — 담긴 목록은 apps/hextool.rs 의 검수 결과, Vec 안 문자열은
-    // Photo(String) 과 같은 assets/photo/ 식별자. 재연구 업무 보고 메일에 이
-    // 파일을 첨부해 보내면(desktop.rs::REPORT_EMAIL) ????? 피드가 새로 갱신된다.
-    PhotoReport(Vec<String>),
     Deleted,                                             // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
 }
 
@@ -48,7 +43,6 @@ pub enum FileKind {
 pub const MY_COMPUTER_NAME: &str = "My Computer";
 pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
 pub const HEXTOOL_SETUP_EXE_NAME: &str = "HexTool Setup.exe";
-pub const PHOTO_REPORT_NAME: &str = "Report.zip";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FileNode {
@@ -242,20 +236,6 @@ impl FileSystem {
         // 탭에 보여줄 이름(name)은 그 마지막 조각(파일명)만 쓴다.
         let display = filename.rsplit('/').next().unwrap_or(filename);
         self.add(display, FileKind::Photo(filename.to_string()))
-    }
-
-    // HexTool 검수를 마치면 부른다 — 이미 만들어둔 보고서 압축파일이 있으면
-    // 내용만 최신 걸로 갈아끼우고(검수를 다시 할 때마다 바탕화면에 압축파일이
-    // 중복으로 쌓이지 않게), 없으면 새 노드만 만들어 id 를 돌려준다(바탕화면에
-    // 실제로 놓는 건 desktop.rs 가 처음 한 번만 한다 — 여기선 아이콘 위치를
-    // 모른다). 두 번째 반환값은 "새로 만들었는지"(true 면 desktop.rs 가 아이콘
-    // 자리를 새로 잡아줘야 한다).
-    pub fn set_photo_report(&mut self, photos: Vec<String>) -> (FileId, bool) {
-        if let Some(id) = (0..self.nodes.len()).find(|&i| matches!(&self.nodes[i].kind, FileKind::PhotoReport(_))) {
-            self.nodes[id].kind = FileKind::PhotoReport(photos);
-            return (id, false);
-        }
-        (self.add(PHOTO_REPORT_NAME, FileKind::PhotoReport(photos)), true)
     }
 
     // 폴더 위치와 상관없이 전체에서 조건에 맞는 파일들을 찾는다 — File Explorer 의

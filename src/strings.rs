@@ -79,21 +79,6 @@ pub mod archive {
     pub const OPENED_LINE2: S = S { en: "No notable contents found.", ko: "특별한 내용은 발견되지 않았습니다.", ja: "特に注目すべき内容は見つかりませんでした。" };
     pub const NOT_INSTALLED_LINE1: S = S { en: "No extraction utility installed.", ko: "설치된 압축 해제 프로그램이 없습니다.", ja: "解凍ユーティリティがインストールされていません。" };
     pub const NOT_INSTALLED_LINE2: S = S { en: "This archive can't be opened.", ko: "이 압축파일을 열 수 없습니다.", ja: "このアーカイブは開けません。" };
-
-    // HexTool 로 ????? 사진을 검수해 만든 보고용 압축파일(FileKind::PhotoReport) 을
-    // 열었을 때 — {n}/{app} 은 render 시점에 실제 값으로 치환한다. {app} 은
-    // secrets::PHOTOS_APP_NAME(????? 이름) 이 들어갈 자리 — 스토리 스포일러라
-    // secrets.rs 밖인 이 파일엔 원문을 직접 못 적어두고 치환으로 처리한다.
-    pub const REPORT_LINE1: S = S {
-        en: "Contains {n} photo(s) marked as anomalies.",
-        ko: "이상현상으로 체크한 사진 {n}장이 들어 있습니다.",
-        ja: "異常現象としてチェックした写真{n}枚が入っています。",
-    };
-    pub const REPORT_LINE2: S = S {
-        en: "Attach it to the re-investigation report mail to refresh {app}.",
-        ko: "재연구 업무 보고 메일에 첨부해서 보내면 {app}가 새로 갱신됩니다.",
-        ja: "再調査業務の報告メールに添付して送ると{app}が更新されます。",
-    };
 }
 
 // apps/official_site.rs — WebView2 캡처 창.
@@ -305,24 +290,6 @@ pub mod hextool {
     pub const BRIGHTNESS: S = S { en: "Brightness", ko: "밝기", ja: "明るさ" };
     pub const SATURATION: S = S { en: "Saturation", ko: "채도", ja: "彩度" };
     pub const NEW_SELECTION: S = S { en: "New selection", ko: "새로 선택", ja: "選び直す" };
-
-    // ????? 사진 순차 검수 흐름 — {app} 은 render 시점에 secrets::PHOTOS_APP_NAME
-    // 으로 치환한다(스토리 스포일러라 이 파일엔 원문을 직접 못 적어둔다).
-    pub const DOWNLOAD_ALL: S = S { en: "Download from {app}", ko: "{app}에서 다운로드", ja: "{app}からダウンロード" };
-    pub const REVIEW_PROGRESS: S = S { en: "Reviewing {i} / {n}", ko: "검수 중 {i} / {n}", ja: "検収中 {i} / {n}" };
-    pub const ANOMALY_CHECK: S = S { en: "Anomaly present", ko: "이상현상 있음", ja: "異常現象あり" };
-    pub const NEXT: S = S { en: "Next", ko: "다음", ja: "次へ" };
-    pub const FINISH_REVIEW: S = S { en: "Finish", ko: "검수 완료", ja: "検収完了" };
-    pub const REVIEW_DONE_FOUND: S = S {
-        en: "Archived {n} anomaly photo(s) as {file}.",
-        ko: "이상현상 사진 {n}장을 {file} 로 압축했습니다.",
-        ja: "異常現象の写真{n}枚を{file}として圧縮しました。",
-    };
-    pub const REVIEW_DONE_NONE: S = S {
-        en: "No anomalies found — nothing archived.",
-        ko: "이상현상이 발견되지 않았습니다 — 압축파일을 만들지 않았습니다.",
-        ja: "異常現象は見つかりませんでした — 圧縮ファイルは作成していません。",
-    };
 }
 
 // apps/recycle_bin.rs — 왼쪽 안내 패널 문단.
