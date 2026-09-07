@@ -444,6 +444,7 @@ impl DesktopScene {
             && let Some(app) = self.wm.app_mut(hextool_id).and_then(|app| app.as_any_mut().downcast_mut::<HexToolApp>())
         {
             app.refresh_review_files(hextool_review_files(&self.fs));
+            app.refresh_photos_current(self.fs.photos_current.clone());
         }
     }
 
@@ -1489,6 +1490,20 @@ impl Scene for DesktopScene {
                     self.refresh_hextool_if_open();
                     self.write_save(&f.settings);
                 }
+                DeskAction::ExportPhotoReport(photos) => {
+                    // HexTool 검수를 마쳤다 — 처음이면 바탕화면에 새 아이콘 자리를
+                    // 잡아주고(add_desktop_icon 과 같은 요령), 이미 압축파일이 있었으면
+                    // set_photo_report() 가 내용만 갈아끼우므로 자리는 그대로 둔다.
+                    let (id, is_new) = self.fs.set_photo_report(photos);
+                    if is_new {
+                        self.fs.desktop.push(id);
+                        let (fc, fr) = self.first_free_tile();
+                        self.icon_pos.push(Self::tile_to_pos(fc, fr));
+                    }
+                    self.refresh_explorer_if_open(&f.settings);
+                    self.refresh_mail_attachable_if_open();
+                    self.write_save(&f.settings);
+                }
                 DeskAction::InstallComplete => {
                     // HexTool Setup.exe 마법사를 Finish 까지 끝냈다 — 이제부터 .tar 를
                     // 열면 archive.rs 가 "설치 안 됨" 대신 다른 안내를 보여주고, 실제
@@ -1567,22 +1582,23 @@ impl Scene for DesktopScene {
                     }
                 }
                 DeskAction::SendNewMail { to, subject, body, attachments } => {
-                    // 재연구 업무 메일이 시킨 "이상 현상이 있는 사진을 회사 이메일로
-                    // 보고"를 실제로 해내면(REPORT_EMAIL 앞으로, normalImage 가 아닌
-                    // 사진을 하나라도 첨부해 보내면) ????? 피드를 새로 갱신한다 — 이게
+                    // 재연구 업무 메일이 시킨 "이상현상 검수 보고"를 실제로 해내면
+                    // (REPORT_EMAIL 앞으로, HexTool 검수 결과 압축파일(FileKind::
+                    // PhotoReport)을 첨부해 보내면) ????? 피드를 새로 갱신한다 — 이게
                     // "?????가 완전 랜덤이 아니라 특정 조건을 만족해야 바뀐다"의 그
-                    // 조건이다. 첨부 목록을 SentMail 로 옮기기(move) 전에 먼저 확인해야
-                    // 한다.
+                    // 조건이다. 예전엔 검수 없이 이상현상 사진을 개별로 바로 첨부해도
+                    // 인정됐는데, 이제 HexTool 로 순차 검수해 압축파일로 묶어 보내는
+                    // 흐름으로 바뀌었다. 첨부 목록을 SentMail 로 옮기기(move) 전에 먼저
+                    // 확인해야 한다.
                     let sent_report = to.trim().eq_ignore_ascii_case(REPORT_EMAIL)
-                        && attachments.iter().any(|&(id, _)| {
-                            matches!(&self.fs.get(id).kind, FileKind::Photo(filename) if !filename.starts_with("normalImage/"))
-                        });
+                        && attachments.iter().any(|&(id, _)| matches!(&self.fs.get(id).kind, FileKind::PhotoReport(_)));
                     // Mail 의 "Write Mail" 탭에서 완전히 새로 작성해 보낸 메일 — 내용째
                     // fs.sent_mail 에 쌓아서 Mail 앱의 "Sent Items" 탭에 그대로 보여준다.
                     self.fs.sent_mail.push(SentMail { to, subject, body, attachments });
                     if sent_report {
                         refresh_photos_feed(&mut self.fs);
                         self.refresh_photos_if_open(&f.settings);
+                        self.refresh_hextool_if_open();
                     }
                     self.write_save(&f.settings);
                 }

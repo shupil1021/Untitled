@@ -33,6 +33,7 @@ use miniquad::{RenderingBackend, TextureId};
 
 use crate::foundation::{FileId, Language, Settings};
 use crate::gfx::{Assets, Rect, Renderer};
+use crate::secrets;
 use crate::strings::{hextool as s, t};
 use crate::ui::*;
 
@@ -42,6 +43,12 @@ use super::{App, AppAction, WinInput};
 
 const MIN_ZOOM: f32 = 1.0;
 const MAX_ZOOM: f32 = 8.0;
+// update()/update_reviewing() 양쪽에서 같은 위쪽 한 줄 높이/오른쪽 패널 폭
+// 기준으로 레이아웃을 잡아야 해서 상수로 공유한다(update_reviewing 인자 개수도
+// 줄어든다).
+const LABEL_H: f32 = 20.0;
+const PANEL_W: f32 = 130.0;
+const SLIDER_GAP: f32 = 8.0;
 
 pub struct HexToolApp {
     review_files: Vec<(FileId, String, IconType, Option<String>)>, // 고를 수 있는 파일 목록 — desktop.rs 가 open() 시점에 스냅샷으로 넘겨줌
@@ -65,10 +72,18 @@ pub struct HexToolApp {
     picker_scroll_disp: f32,
     picker_sb_drag: bool,
     settings: Rc<RefCell<Settings>>,
+    // ????? 사진 순차 검수 흐름(아래 "다운로드" 버튼 → draw_review) 에 쓰는 상태.
+    photos_current: Vec<String>, // ????? 에 지금 떠 있는 사진 식별자 스냅샷 — "다운로드" 버튼용
+    review_queue: Vec<String>,   // 검수 중인 사진 식별자들 — 비어있으면 검수 중이 아니다
+    review_flags: Vec<bool>,     // review_queue 와 길이가 같다 — 인덱스별 "이상현상 있음" 체크
+    review_index: usize,        // 지금 보고 있는 검수 순번
+    review_result: Option<usize>, // 검수를 막 끝냈을 때 압축파일에 담긴 장수(요약 문구용) — None 이면 요약 화면이 아니다
 }
 
 impl HexToolApp {
-    pub(super) fn new(review_files: Vec<(FileId, String, IconType, Option<String>)>, settings: Rc<RefCell<Settings>>) -> HexToolApp {
+    pub(super) fn new(
+        review_files: Vec<(FileId, String, IconType, Option<String>)>, photos_current: Vec<String>, settings: Rc<RefCell<Settings>>,
+    ) -> HexToolApp {
         // 처음부터 아무것도 없는 목록이면 어차피 고를 게 없으니, 빈 미리보기 대신
         // 바로 "파일이 없습니다" 안내가 뜨는 게 낫다 — picker 를 열어둔 채로 시작.
         let picker_open = review_files.is_empty();
@@ -91,6 +106,11 @@ impl HexToolApp {
             picker_scroll_disp: 0.0,
             picker_sb_drag: false,
             settings,
+            photos_current,
+            review_queue: Vec::new(),
+            review_flags: Vec::new(),
+            review_index: 0,
+            review_result: None,
         }
     }
 
@@ -100,6 +120,12 @@ impl HexToolApp {
     // 않고 바로 목록에 나타난다).
     pub(crate) fn refresh_review_files(&mut self, review_files: Vec<(FileId, String, IconType, Option<String>)>) {
         self.review_files = review_files;
+    }
+
+    // ????? 피드가 새로 갱신되면(재연구 업무 보고 메일을 실제로 보내서) desktop.rs
+    // 가 같이 불러준다 — "다운로드" 버튼이 다음에 눌렸을 때 최신 사진 목록을 받도록.
+    pub(crate) fn refresh_photos_current(&mut self, photos_current: Vec<String>) {
+        self.photos_current = photos_current;
     }
 
     // 미리보기 패널 — 원본을 지연 디코드해서(고른 파일이 바뀔 때만 한 번) 실제
@@ -277,6 +303,59 @@ impl HexToolApp {
             );
         }
     }
+
+    // ????? 사진을 순서대로 한 장씩 보여주며 "이상현상 있음" 체크를 받는 화면 —
+    // "다운로드" 버튼을 누르면 시작한다(update() 참고). 이미지 표시 자체는
+    // draw_preview() 를 그대로 재사용해서 확대/이동은 검수 중에도 그대로 쓸 수
+    // 있다. 마지막 장에서 "검수 완료"를 누르면 체크된 사진들로 AppAction::
+    // ExportPhotoReport 를 돌려준다(체크된 게 하나도 없으면 액션 없이 요약만
+    // 보여준다 — 빈 압축파일은 안 만든다).
+    fn update_reviewing(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, body: Rect, win: &WinInput, lang: Language) -> AppAction {
+        let total = self.review_queue.len();
+        let progress = t(lang, s::REVIEW_PROGRESS).replace("{i}", &(self.review_index + 1).to_string()).replace("{n}", &total.to_string());
+        r.text(body.x + 4.0, body.y + 4.0, &progress, 0.8, GRAY);
+
+        let content = Rect::new(body.x, body.y + LABEL_H, body.w, body.h - LABEL_H);
+        let panel_w = PANEL_W.min(content.w * 0.4).max(90.0);
+        let preview = Rect::new(content.x, content.y, content.w - panel_w - SLIDER_GAP, content.h);
+        let panel = Rect::new(preview.x + preview.w + SLIDER_GAP, content.y, panel_w, content.h);
+
+        self.draw_preview(ctx, r, preview, win, lang);
+
+        let mut checked = self.review_flags[self.review_index];
+        checkbox(r, panel.x, panel.y + 10.0, t(lang, s::ANOMALY_CHECK), &mut checked, win);
+        self.review_flags[self.review_index] = checked;
+
+        let is_last = self.review_index + 1 >= total;
+        let next_label = if is_last { t(lang, s::FINISH_REVIEW) } else { t(lang, s::NEXT) };
+        let btn_h = 24.0;
+        if button(r, panel.x, panel.y + panel.h - btn_h, panel.w, btn_h, next_label, win) {
+            self.review_index += 1;
+            self.tex = None;
+            self.tex_tried = false;
+            self.zoom = MIN_ZOOM;
+            self.center = (0.5, 0.5);
+            self.drag_last = None;
+            if self.review_index >= total {
+                let flagged: Vec<String> =
+                    self.review_queue.iter().zip(self.review_flags.iter()).filter(|&(_, &checked)| checked).map(|(id, _)| id.clone()).collect();
+                self.review_result = Some(flagged.len());
+                self.review_queue.clear();
+                self.review_flags.clear();
+                self.review_index = 0;
+                self.loaded_photo_id = None;
+                self.loaded_name.clear();
+                self.loaded_id = None;
+                self.picker_open = self.review_files.is_empty();
+                if !flagged.is_empty() {
+                    return AppAction::ExportPhotoReport(flagged);
+                }
+            } else {
+                self.loaded_photo_id = self.review_queue.get(self.review_index).cloned();
+            }
+        }
+        AppAction::None
+    }
 }
 
 impl App for HexToolApp {
@@ -289,17 +368,50 @@ impl App for HexToolApp {
         let lang = self.settings.borrow().language;
 
         let body = Rect::new(area.x + 6.0, area.y + 6.0, area.w - 12.0, area.h - 12.0);
-        const LABEL_H: f32 = 16.0;
-        const PANEL_W: f32 = 130.0;
-        const SLIDER_GAP: f32 = 8.0;
         const SLIDER_ROW_H: f32 = 40.0; // 슬라이더 두 개 사이 마진
 
-        // 위쪽 한 줄 — 지금 보고 있는 파일명(아직 안 골랐으면 안내 문구). 다른
-        // 파일로 바꿔 고르고 싶으면 미리보기 자체를 클릭하면 되므로 별도 버튼은
-        // 없다.
-        let placeholder = t(lang, s::NO_FILE_SELECTED);
-        let name_text = if self.loaded_name.is_empty() { placeholder } else { &self.loaded_name };
-        r.text_clipped(body.x + 4.0, body.y + 1.0, name_text, 0.8, GRAY, body.w - 8.0);
+        // 검수 중이면(review_queue 가 안 비어있으면) 완전히 다른 화면(진행 상황 +
+        // 이상현상 체크 + 다음 버튼)을 그린다 — 아래 picker/preview/슬라이더 화면과
+        // 겹치지 않게 여기서 분기해서 끝낸다.
+        if !self.review_queue.is_empty() {
+            return self.update_reviewing(ctx, r, body, win, lang);
+        }
+
+        // 위쪽 한 줄 — 검수를 막 끝냈으면 그 요약을(사라지지 않고 계속 보이다가
+        // 다음 검수를 시작하면 새로 갈아끼워진다), 아니면 지금 보고 있는 파일명
+        // (아직 안 골랐으면 안내 문구)을 보여준다. "다운로드" 버튼은 둘 중
+        // 어느 경우든 오른쪽에 항상 떠 있다 — 요약 화면일 때만 숨겨버리면 검수를
+        // 다시 시작할 방법이 없어져 막다른 화면이 된다.
+        {
+            let dl_label = t(lang, s::DOWNLOAD_ALL).replace("{app}", secrets::PHOTOS_APP_NAME);
+            let dl_w = r.text_width(&dl_label, 0.75) + 14.0;
+            let name_w = (body.w - dl_w - 6.0).max(20.0);
+            if let Some(count) = self.review_result {
+                let msg = if count > 0 {
+                    t(lang, s::REVIEW_DONE_FOUND).replace("{n}", &count.to_string()).replace("{file}", crate::foundation::PHOTO_REPORT_NAME)
+                } else {
+                    t(lang, s::REVIEW_DONE_NONE).to_string()
+                };
+                r.text_clipped(body.x + 4.0, body.y + 4.0, &msg, 0.8, if count > 0 { NAVY } else { GRAY }, name_w);
+            } else {
+                let placeholder = t(lang, s::NO_FILE_SELECTED);
+                let name_text = if self.loaded_name.is_empty() { placeholder } else { &self.loaded_name };
+                r.text_clipped(body.x + 4.0, body.y + 4.0, name_text, 0.8, GRAY, name_w);
+            }
+            let enabled = !self.photos_current.is_empty();
+            if button(r, body.x + body.w - dl_w, body.y, dl_w, LABEL_H - 2.0, &dl_label, win) && enabled {
+                self.review_queue.clone_from(&self.photos_current);
+                self.review_flags = vec![false; self.review_queue.len()];
+                self.review_index = 0;
+                self.review_result = None;
+                self.loaded_photo_id = self.review_queue.first().cloned();
+                self.tex = None;
+                self.tex_tried = false;
+                self.zoom = MIN_ZOOM;
+                self.center = (0.5, 0.5);
+                self.drag_last = None;
+            }
+        }
 
         // 그 아래는 왼쪽 큰 미리보기 + 오른쪽 좁은 패널(슬라이더 + 미니맵)로 나눈다.
         let content = Rect::new(body.x, body.y + LABEL_H, body.w, body.h - LABEL_H);

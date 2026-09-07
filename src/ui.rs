@@ -479,6 +479,7 @@ pub fn icon_of(node: &FileNode) -> IconType {
         FileKind::Img(_) => IconType::Img,
         FileKind::PhotoGallery => IconType::PhotosApp,
         FileKind::Photo(_) => IconType::Img,
+        FileKind::PhotoReport(_) => IconType::Tar,
         FileKind::Deleted => IconType::Folder, // 그 무엇에서도 더는 참조 안 되니 실제로 그려질 일이 없다
     }
 }

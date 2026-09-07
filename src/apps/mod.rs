@@ -80,6 +80,11 @@ pub enum AppAction {
     // Mail 의 "Write Mail" 탭에서 새 메일을 작성해 보냄 — fs.sent_mail 에 내용째 쌓는다.
     // 첨부는 여러 개를 붙일 수 있어서 Vec(순서대로 붙인 순서).
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
+    // HexTool 이 ????? 사진 검수(순차 검수 + "이상현상 있음" 체크)를 끝냈다 —
+    // 체크된 사진 식별자 목록으로 FileKind::PhotoReport 압축파일을 만들어(이미
+    // 있으면 내용만 갱신) 바탕화면에 둔다. 체크된 게 하나도 없으면 HexTool 이
+    // 애초에 이 액션을 안 보낸다(빈 압축파일은 안 만든다).
+    ExportPhotoReport(Vec<String>),
 }
 
 // File Explorer 사이드바 드래그로 파일을 옮길 수 있는 대상 — Desktop/Downloads 는
@@ -313,10 +318,20 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (150.0, 90.0), // resizable 이 꺼져있어 실제로는 안 쓰임
         },
+        FileKind::PhotoReport(photos) => Opened {
+            app: Box::new(ArchiveApp::new_report(photos.len(), settings.clone())),
+            title: name,
+            size: (340.0, 160.0),
+            maximized: false,
+            resizable: false,
+            maximizable: false,
+            movable: true,
+            min_size: (150.0, 90.0), // resizable 이 꺼져있어 실제로는 안 쓰임
+        },
         FileKind::HexTool => {
             let review_files = hextool_review_files(fs);
             Opened {
-                app: Box::new(HexToolApp::new(review_files, settings.clone())),
+                app: Box::new(HexToolApp::new(review_files, fs.photos_current.clone(), settings.clone())),
                 title: name,
                 // 이제 파일 선택용 별도 작은 창 없이 곧장 편집 화면(빈 미리보기 +
                 // 슬라이더)으로 여니까, 처음부터 그 화면이 다 들어가는 크기로 연다.

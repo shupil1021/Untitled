@@ -177,7 +177,8 @@ fn build_font_atlas(ctx: &mut dyn RenderingBackend) -> (TextureId, HashMap<char,
     const KANJI_CHARSET: &str =
         "一上下不中了人仕他付以件任作使依保信個像元先入全公内再写凍出切初利削前力効動去収取受同名場変外契存完定宛容少属差帰常度式強当形彩影待復必意感態憶成戻所折択抽持接数整新日旧明時景更最有未本枚果権機次正残況注消添済然特状理用画異発登目真着知短確示空箱約終続置者背能自色荷行表複要見規観解言記設許認語読諾護負責起込返送逃進違選重量録長閉開間除音響項頼\
          事会似体例修傷処判別割加務勤危可合含告員問困囲在報安実害審対念提損撃攻料断映期査検業様歓殿活無物現生的皆直研社祈移究等範級結維覧討証該説調識象貴資迎近遂部閲険難題類\
-         刻大小弊拡深縮致被覚際非";
+         刻大小弊拡深縮致被覚際非\
+         圧";
     let ascii = (0x20u32..0x7F).filter_map(char::from_u32);
     let hangul = (0xAC00u32..=0xD7A3).filter_map(char::from_u32);
     let hangul_jamo = (0x1100u32..=0x11FFu32).filter_map(char::from_u32);
