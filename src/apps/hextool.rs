@@ -7,16 +7,14 @@
 //!   실행하는 순간 곧장 설치 마법사 진행바 같은 로딩 게이지가 잠깐 차오른 뒤
 //!   (Stage::Loading) 자동으로 검수 화면(Stage::Reviewing)으로 넘어간다.
 //! - 검수 화면은 지금 ?????에 떠 있는 사진(fs.photos_current)을 한 장씩 순서대로
-//!   보여준다. 이미지 표시는 photos.rs 와 같은 요령으로 원본을 그때그때 디코드해
-//!   텍스처로 올리고, 휠로 확대/축소, 좌클릭 드래그로 이동, 밝기/채도 슬라이더로
-//!   더 자세히 들여다볼 수 있다(예전 범용 뷰어에 있던 도구들을 검수 화면 안으로
-//!   그대로 옮겨왔다). 오른쪽 패널 아래쪽엔 이상현상 종류를 고르는 체크박스
-//!   3개(시체/글리치/이상현상 없음, 서로 배타적)가 있다.
-//! - 마지막 장에서 "검수 완료"를 누르면 시체 또는 글리치로 체크된 사진들로
-//!   AppAction::ExportPhotoReport 를 보낸다(desktop.rs 가 받아서 압축파일을
-//!   만들고 fs.photos_pending_review 를 false 로 되돌린다) — 체크된 게 하나도
-//!   없어도 이 액션은 보낸다(빈 Vec — 압축파일은 안 만들지만 "검수는 끝났다"는
-//!   기록은 필요하다).
+//!   보여주며 "이상현상 있음" 체크를 받는다. 이미지 표시는 photos.rs 와 같은
+//!   요령으로 원본을 그때그때 디코드해 텍스처로 올리고, 휠로 확대/축소, 좌클릭
+//!   드래그로 이동할 수 있다.
+//! - 마지막 장에서 "검수 완료"를 누르면 체크된 사진들로 AppAction::
+//!   ExportPhotoReport 를 보낸다(desktop.rs 가 받아서 압축파일을 만들고
+//!   fs.photos_pending_review 를 false 로 되돌린다) — 체크된 게 하나도 없어도
+//!   이 액션은 보낸다(빈 Vec — 압축파일은 안 만들지만 "검수는 끝났다"는 기록은
+//!   필요하다).
 //! - pending_review 가 false 면(이미 검수를 끝낸 배치) 게이지 없이 곧장
 //!   Stage::Done 으로 열려서 지난 결과 요약만 보여준다.
 
@@ -32,7 +30,6 @@ use crate::strings::{hextool as s, t};
 use crate::ui::*;
 
 use super::photos::{find_photo_dir, load_scaled_texture};
-use super::widgets::draw_slider;
 use super::{App, AppAction, WinInput};
 
 const MIN_ZOOM: f32 = 1.0;
@@ -41,11 +38,6 @@ const LABEL_H: f32 = 20.0;
 const PANEL_W: f32 = 130.0;
 const SLIDER_GAP: f32 = 8.0;
 const LOADING_DURATION: f32 = 1.6; // 로딩 게이지가 다 차는 데 걸리는 시간(초) — 설치 마법사보다 훨씬 짧다(가짜 스캔이라 굳이 오래 끌 이유가 없다)
-const SLIDER_ROW_H: f32 = 40.0; // 슬라이더 두 개 사이 마진
-// 체크박스 세 개(시체/글리치/이상현상 없음) 배열 인덱스.
-const ANOMALY_CORPSE: usize = 0;
-const ANOMALY_GLITCH: usize = 1;
-const ANOMALY_NONE: usize = 2;
 
 // 검수를 시작하기 전(로딩 게이지) / 검수 중 / 검수를 끝낸 뒤(요약) — 세 값 다
 // Copy 라 `match self.stage { ... }` 로 값을 복사해 쓰고 나서 그 안에서 다시
@@ -64,18 +56,12 @@ pub struct HexToolApp {
     tex_tried: bool,                    // 지금 고른 사진에 대해 한 번 로딩을 시도했는지
     zoom: f32,             // 1.0 = 전체가 다 보이게 맞춘 배율, 커질수록 확대
     center: (f32, f32),    // 지금 뷰포트 중심의 이미지 내 정규화 좌표(0..1)
-    view_frac: (f32, f32), // 지금 뷰포트에 이미지의 몇 %(0..1)가 보이는지 — 미니맵 상자 크기용
     drag_last: Option<(f32, f32)>, // 좌클릭 드래그 중이면 지난 프레임 마우스 위치
-    brightness: f32,
-    saturation: f32,
-    active_slider: i32,
     settings: Rc<RefCell<Settings>>,
     photos_current: Vec<String>, // ????? 에 지금 떠 있는 사진 식별자 스냅샷 — 로딩이 끝나면 이걸로 검수 대기열을 채운다
     review_queue: Vec<String>,   // 검수 중인 사진 식별자들
-    // review_queue 와 길이가 같다 — 인덱스별 [시체, 글리치, 이상현상 없음] 체크
-    // 여부(update_reviewing() 이 세 항목을 서로 배타적으로 유지한다).
-    review_anomaly: Vec<[bool; 3]>,
-    review_index: usize, // 지금 보고 있는 검수 순번
+    review_flags: Vec<bool>,     // review_queue 와 길이가 같다 — 인덱스별 "이상현상 있음" 체크
+    review_index: usize,        // 지금 보고 있는 검수 순번
     stage: Stage,
 }
 
@@ -88,15 +74,11 @@ impl HexToolApp {
             tex_tried: false,
             zoom: MIN_ZOOM,
             center: (0.5, 0.5),
-            view_frac: (1.0, 1.0),
             drag_last: None,
-            brightness: 0.5,
-            saturation: 0.5,
-            active_slider: -1,
             settings,
             photos_current,
             review_queue: Vec::new(),
-            review_anomaly: Vec::new(),
+            review_flags: Vec::new(),
             review_index: 0,
             stage,
         }
@@ -111,7 +93,7 @@ impl HexToolApp {
             return;
         }
         self.review_queue.clone_from(&self.photos_current);
-        self.review_anomaly = vec![[false; 3]; self.review_queue.len()];
+        self.review_flags = vec![false; self.review_queue.len()];
         self.review_index = 0;
         self.loaded_photo_id = self.review_queue.first().cloned();
         self.tex = None;
@@ -119,8 +101,6 @@ impl HexToolApp {
         self.zoom = MIN_ZOOM;
         self.center = (0.5, 0.5);
         self.drag_last = None;
-        self.brightness = 0.5;
-        self.saturation = 0.5;
         self.stage = Stage::Reviewing;
     }
 
@@ -224,15 +204,9 @@ impl HexToolApp {
 
         let dx = cx - self.center.0 * dw;
         let dy = cy - self.center.1 * dh;
-        self.view_frac = ((inner.w / dw).clamp(0.0, 1.0), (inner.h / dh).clamp(0.0, 1.0));
 
         r.set_clip(Some(inner));
-        let b = 0.35 + self.brightness.clamp(0.0, 1.0) * 1.3;
-        r.sprite(tex, dx, dy, dw, dh, [b, b, b, 1.0]);
-        let wash = (1.0 - self.saturation.clamp(0.0, 1.0)) * 0.7;
-        if wash > 0.02 {
-            r.rect(dx, dy, dw, dh, [0.5, 0.5, 0.5, wash]);
-        }
+        r.sprite(tex, dx, dy, dw, dh, WHITE);
 
         // 아직 한 번도 확대/이동을 안 써본 상태(zoom 이 처음 그대로)에만 조작법을
         // 살짝 알려준다 — 한 번이라도 만지면 다시 안 보인다(계속 떠 있으면
@@ -248,32 +222,7 @@ impl HexToolApp {
         r.set_clip(None);
     }
 
-    // 슬라이더 밑 미니맵 — 전체 이미지 축소판 위에 지금 뷰포트가 어디를 보고
-    // 있는지 노란 테두리 상자로 표시한다.
-    fn draw_minimap(&self, r: &mut Renderer, area: Rect) {
-        if area.h < 24.0 {
-            return;
-        }
-        sunken(r, area.x, area.y, area.w, area.h);
-        let Some((tex, w, h)) = self.tex else {
-            return;
-        };
-        let inner = Rect::new(area.x + 2.0, area.y + 2.0, area.w - 4.0, area.h - 4.0);
-        r.rect(inner.x, inner.y, inner.w, inner.h, BLACK);
-        let (iw, ih) = (w as f32, h as f32);
-        let scale = (inner.w / iw).min(inner.h / ih);
-        let (tw, th) = (iw * scale, ih * scale);
-        let tx = inner.x + (inner.w - tw) / 2.0;
-        let ty = inner.y + (inner.h - th) / 2.0;
-        r.sprite(tex, tx, ty, tw, th, WHITE);
-
-        let (fw, fh) = (self.view_frac.0.min(1.0), self.view_frac.1.min(1.0));
-        let vx = tx + (self.center.0 - fw / 2.0).clamp(0.0, 1.0 - fw) * tw;
-        let vy = ty + (self.center.1 - fh / 2.0).clamp(0.0, 1.0 - fh) * th;
-        border(r, vx, vy, (fw * tw).max(2.0), (fh * th).max(2.0), [1.0, 0.9, 0.2, 1.0]);
-    }
-
-    // ????? 사진을 순서대로 한 장씩 보여주며 이상현상 종류를 체크받는 화면.
+    // ????? 사진을 순서대로 한 장씩 보여주며 "이상현상 있음" 체크를 받는 화면.
     // 마지막 장에서 "검수 완료"를 누르면 체크된 사진들로 AppAction::
     // ExportPhotoReport 를 돌려준다(체크된 게 하나도 없어도 빈 Vec 으로 보낸다 —
     // desktop.rs 가 이 액션을 받으면 fs.photos_pending_review 를 항상 false 로
@@ -290,67 +239,13 @@ impl HexToolApp {
 
         self.draw_preview(ctx, r, preview, win, lang);
 
-        // 확대 배율(%) — 클릭하면 확대/이동을 한 번에 원래대로 되돌린다.
-        const ZOOM_ROW_H: f32 = 16.0;
-        let panel_top = panel.y + 4.0;
-        {
-            let zoom_text = format!("{}: {}%", t(lang, s::ZOOM), (self.zoom * 100.0).round() as i32);
-            let at_default = self.zoom <= MIN_ZOOM + 0.001 && (self.center.0 - 0.5).abs() < 0.001 && (self.center.1 - 0.5).abs() < 0.001;
-            let hover = !at_default
-                && win.mouse.0 >= panel.x
-                && win.mouse.0 <= panel.x + panel.w
-                && win.mouse.1 >= panel_top
-                && win.mouse.1 <= panel_top + ZOOM_ROW_H;
-            let color = if at_default { GRAY } else if hover { NAVY } else { [0.35, 0.35, 0.35, 1.0] };
-            r.text(panel.x, panel_top + 1.0, &zoom_text, 0.75, color);
-            if hover {
-                let tw = r.text_width(&zoom_text, 0.75);
-                r.rect(panel.x, panel_top + 12.0, tw, 1.0, color);
-            }
-            if hover && win.mouse_clicked {
-                self.zoom = MIN_ZOOM;
-                self.center = (0.5, 0.5);
-            }
-        }
-
-        let sliders_y = panel_top + ZOOM_ROW_H;
-        let slider_w = (panel.w - 42.0).max(40.0);
-        draw_slider(r, win, panel.x, sliders_y, slider_w, t(lang, s::BRIGHTNESS), 0, &mut self.brightness, &mut self.active_slider);
-        draw_slider(r, win, panel.x, sliders_y + SLIDER_ROW_H, slider_w, t(lang, s::SATURATION), 1, &mut self.saturation, &mut self.active_slider);
-        if !win.mouse_down {
-            self.active_slider = -1;
-        }
-
-        // 이상현상 체크박스 3개(시체/글리치/이상현상 없음) — 서로 배타적이다:
-        // "이상현상 없음"을 체크하면 나머지 둘을 끄고, 반대로 시체/글리치 중
-        // 하나를 체크하면 "이상현상 없음"을 끈다(시체+글리치 둘 다 체크하는 건
-        // 허용 — 한 사진에 두 이상현상이 같이 나타날 수 있다).
-        const CHECK_ROW_H: f32 = 18.0;
-        let checks_y = sliders_y + SLIDER_ROW_H * 2.0 + SLIDER_GAP;
-        let labels = [t(lang, s::ANOMALY_CORPSE), t(lang, s::ANOMALY_GLITCH), t(lang, s::ANOMALY_NONE)];
-        let anomaly = &mut self.review_anomaly[self.review_index];
-        for (i, &label) in labels.iter().enumerate() {
-            let before = anomaly[i];
-            checkbox(r, panel.x, checks_y + i as f32 * CHECK_ROW_H, label, &mut anomaly[i], win);
-            if anomaly[i] && !before {
-                if i == ANOMALY_NONE {
-                    anomaly[ANOMALY_CORPSE] = false;
-                    anomaly[ANOMALY_GLITCH] = false;
-                } else {
-                    anomaly[ANOMALY_NONE] = false;
-                }
-            }
-        }
-
-        let btn_h = 24.0;
-        let minimap_y = checks_y + 3.0 * CHECK_ROW_H + 6.0;
-        let avail_h = (panel.y + panel.h - minimap_y - btn_h - 6.0).max(0.0);
-        let side = panel.w.min(avail_h);
-        let minimap = Rect::new(panel.x + (panel.w - side) / 2.0, minimap_y, side, side);
-        self.draw_minimap(r, minimap);
+        let mut checked = self.review_flags[self.review_index];
+        checkbox(r, panel.x, panel.y + 10.0, t(lang, s::ANOMALY_CHECK), &mut checked, win);
+        self.review_flags[self.review_index] = checked;
 
         let is_last = self.review_index + 1 >= total;
         let next_label = if is_last { t(lang, s::FINISH_REVIEW) } else { t(lang, s::NEXT) };
+        let btn_h = 24.0;
         if button(r, panel.x, panel.y + panel.h - btn_h, panel.w, btn_h, next_label, win) {
             self.review_index += 1;
             self.tex = None;
@@ -358,19 +253,12 @@ impl HexToolApp {
             self.zoom = MIN_ZOOM;
             self.center = (0.5, 0.5);
             self.drag_last = None;
-            self.brightness = 0.5;
-            self.saturation = 0.5;
             if self.review_index >= total {
-                let flagged: Vec<String> = self
-                    .review_queue
-                    .iter()
-                    .zip(self.review_anomaly.iter())
-                    .filter(|&(_, a)| a[ANOMALY_CORPSE] || a[ANOMALY_GLITCH])
-                    .map(|(id, _)| id.clone())
-                    .collect();
+                let flagged: Vec<String> =
+                    self.review_queue.iter().zip(self.review_flags.iter()).filter(|&(_, &checked)| checked).map(|(id, _)| id.clone()).collect();
                 self.stage = Stage::Done(Some(flagged.len()));
                 self.review_queue.clear();
-                self.review_anomaly.clear();
+                self.review_flags.clear();
                 self.review_index = 0;
                 self.loaded_photo_id = None;
                 return AppAction::ExportPhotoReport(flagged);
