@@ -25,8 +25,7 @@ pub enum FileKind {
     #[serde(rename = "Email")]
     Mail { attachment: Option<FileId> },                // 메일 앱 (첨부파일 하나까지)
     Explorer,                                           // 바탕화면의 File Explorer (탭 있는 탐색기)
-    Tar,                                                 // .tar 압축파일 — FileSystem::hex_tool_installed 가 true 여야 실제로 열어볼 수 있다
-    Installer,                                           // Tar 를 열 수 있게 해주는 프로그램의 설치 마법사(.exe)
+    Installer,                                           // HexTool 을 설치해주는 설치 마법사(.exe)
     HexTool,                                             // Installer 를 끝까지 마치면 바탕화면에 생기는 설치된 프로그램 아이콘
     PhotoGallery,                                        // 바탕화면의 Photos 앱 — assets/photo/ 사진들을 피드로 훑어보고 다운로드
     Photo(String),                                       // Photos 앱에서 다운로드한 사진 한 장 — assets/photo/ 안의 파일명
@@ -86,7 +85,7 @@ pub struct FileSystem {
     // 쪽 필드 이름만 email_* 에서 mail_* 로 바꿔서 예전 저장 파일도 계속 불러와진다.
     #[serde(rename = "email_arrived")]
     pub mail_arrived: bool,     // 첫 메일이 도착했는지 — 도착 전엔 받은편지함이 빈 상태
-    pub hex_tool_installed: bool, // HexTool Setup.exe 설치 마법사를 끝까지 마쳤는지 — 이게 true 여야 .tar 를 열 수 있다
+    pub hex_tool_installed: bool, // HexTool Setup.exe 설치 마법사를 끝까지 마쳤는지 — 이게 true 여야 바탕화면에 실제 HexTool 이 생긴다
     // 읽은 메일의 인덱스(MailApp::seed_messages 순번) — MailApp 자체는 창을 닫거나
     // 3초 주기 새로고침으로 새로 만들어질 때마다 통째로 새 인스턴스가 되므로, 읽음
     // 여부를 여기(저장 파일에 실리는 fs)에 둬야 새로고침은 물론 게임을 종료했다
@@ -195,10 +194,10 @@ impl FileSystem {
         // Photos.tar/Photos.lock/HexTool Setup.exe 로 이어지던 첫 챕터용 플레이스홀더
         // 사진 콘텐츠(photo01/02.jpg)를 걷어냈다 — 실제 검수 로직 없이 그냥 열어볼
         // 수 있는 사진 두 장뿐이던 임시 내용이라, 진짜 Chapter 1 콘텐츠로 다시 채울
-        // 예정. 이 콘텐츠를 그리던 앱(installer.rs/archive.rs/hextool.rs/
-        // image_viewer.rs)과 관련 FileKind(Installer/Tar/Lock/Img) 자체는 나중에
-        // 다른 콘텐츠로 재사용할 수 있게 그대로 남겨뒀다 — 지금은 그냥 아무 데서도
-        // 안 만들어질 뿐이다.
+        // 예정. HexTool 은 그 뒤 사진 검수 도구로 다시 만들어져 실제로 쓰이지만,
+        // 이 콘텐츠를 그리던 나머지 앱(image_viewer.rs)과 관련 FileKind(Lock/Img)
+        // 자체는 나중에 다른 콘텐츠로 재사용할 수 있게 그대로 남겨뒀다 — 지금은
+        // 그냥 아무 데서도 안 만들어질 뿐이다.
         let mail = fs.add("Mail", FileKind::Mail { attachment: None });
         // Mail 바로 아래(fs.desktop 에서 mail 다음 순번 = 같은 열의 바로 아랫칸,
         // desktop.rs::grid_pos 가 열 우선으로 채운다) 사진 피드 앱. 이름은 읽을
@@ -303,7 +302,7 @@ impl FileSystem {
         }
     }
 
-    // 파일을 영구히 지운다 — HexTool 로 검토를 끝낸 .tar 를 없앨 때 쓴다. 인덱스
+    // 파일을 영구히 지운다 — 휴지통 비우기 등에 쓴다. 인덱스
     // 기반 FileId 를 그대로 다른 곳(폴더 children, 저장 파일 등)에서 계속 쓰고
     // 있어서 아레나에서 물리적으로 빼버리면(Vec::remove) 그 뒤 인덱스가 전부
     // 밀려 다른 참조가 깨진다 — 그 대신 downloads 목록과 모든 폴더의 children 에서만

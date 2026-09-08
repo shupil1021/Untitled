@@ -5,8 +5,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::apps::{
-    ensure_photos_selected, explorer_app_for_folder, explorer_app_refreshed, mail_attachable_files, open, refresh_photos_feed, CreditsApp,
-    ExplorerApp, ExplorerLocation, HexPickerApp, HexToolApp, MailApp, MoveDest, OfficialSiteApp, Opened, PhotoViewerApp, SettingsApp,
+    draw_thumb_or_icon, ensure_photos_selected, explorer_app_for_folder, explorer_app_refreshed, mail_attachable_files, open,
+    refresh_photos_feed, CreditsApp, ExplorerApp, ExplorerLocation, HexPickerApp, HexToolApp, MailApp, MoveDest, OfficialSiteApp, Opened,
+    SettingsApp, ThumbCache,
 };
 use crate::foundation::{display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, MY_COMPUTER_NAME, OFFICIAL_SITE_URL, RECYCLE_BIN_NAME};
 use crate::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
@@ -105,21 +106,6 @@ const SETTINGS_WIN: FileId = usize::MAX - 1;
 const CREDITS_WIN: FileId = usize::MAX - 2;
 const OFFICIAL_SITE_WIN: FileId = usize::MAX - 3;
 const HEX_PICKER_WIN: FileId = usize::MAX - 4;
-
-// Photos 피드에서 미리보기로 연 사진 창을 파일명별로 구분하는 가짜 FileId 대역의 시작점.
-// 진짜 fs.nodes 인덱스(0부터 시작, 지금 최대 수백 개)와도, CREDITS_WIN/OFFICIAL_SITE_WIN
-// (usize::MAX 바로 밑)과도 절대 안 겹치는 자리에 잡아서 안전하다. 같은 파일명은 항상
-// 같은 가짜 id 로 해시되므로 wm.open() 의 기존 dedup(같은 id 면 새로 안 열고 기존 창을
-// 앞으로 당김) 이 "Photos 피드 안에서" 만 그대로 작동한다 — My Computer 쪽 진짜 FileId
-// 와는 절대 안 겹치니 서로 독립된 창이라는 원래 설계는 그대로 유지된다.
-const PHOTO_PREVIEW_WIN_BASE: FileId = usize::MAX / 2;
-
-fn photo_preview_win_id(filename: &str) -> FileId {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    filename.hash(&mut h);
-    PHOTO_PREVIEW_WIN_BASE + (h.finish() as usize % 10_000_000)
-}
 
 // 작업표시줄 와이파이 아이콘용 — 실제 이 PC 의 인터넷 연결 상태를 물어본다.
 // (와이파이인지 유선인지까지는 구분 안 하고, 그냥 "연결돼 있는지"만 확인)
@@ -276,6 +262,7 @@ pub struct DesktopScene {
     icon_glitch_timer: f32,  // 다음 아이콘 글리치까지 남은 시간
     icon_glitch_active: f32, // 지금 글리치가 진행 중이면 남은 지속시간(> 0)
     icon_glitch_offset: f32, // 이번 버스트의 색 채널 어긋남 폭(버스트 시작 때 한 번만 뽑음)
+    thumb_cache: ThumbCache, // 바탕화면의 FileKind::Photo 아이콘을 실제 사진 축소판으로 그릴 때 쓰는 지연 로딩 캐시
 }
 
 const AUTOSAVE_INTERVAL: f32 = 5.0; // 이 주기(초)마다 설정/바탕화면 상태를 자동 저장한다.
@@ -357,6 +344,7 @@ impl DesktopScene {
             icon_glitch_timer,
             icon_glitch_active: 0.0,
             icon_glitch_offset: 0.0,
+            thumb_cache: ThumbCache::new(),
         }
     }
 
@@ -922,8 +910,11 @@ impl DesktopScene {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn draw_one_icon(&self, r: &mut Renderer, assets: &Assets, x: f32, y: f32, icon: &IconType, name: &str, selected: bool) {
-        // Tar/Installer 는 텍스처가 아니라 직접 그리는 벡터 도형이라(draw_tar_icon/
+    fn draw_one_icon(
+        &mut self, ctx: &mut dyn miniquad::RenderingBackend, r: &mut Renderer, assets: &Assets, x: f32, y: f32, fid: FileId, photo_id: Option<&String>,
+        icon: &IconType, name: &str, selected: bool,
+    ) {
+        // Archive/Installer 는 텍스처가 아니라 직접 그리는 벡터 도형이라(draw_archive_icon/
         // draw_installer_icon), 실제로 칠해지는 면적이 s×s 상자 안에서 꽤 여백을
         // 두고 작게 그려져 다른(텍스처 기반) 아이콘들보다 눈에 띄게 작아 보였다 —
         // 이 둘만 조금 더 키운다. 다만 실제로 그려지는 크기가 얼마든 아이콘의 세로
@@ -931,7 +922,7 @@ impl DesktopScene {
         // 글자 시작 위치(ty0)도 항상 그 고정값 기준으로만 잡는다 — 아이콘이 커져도
         // 글자가 덩달아 밀려 내려가 다음 줄 아이콘과 겹치는 일이 없다.
         let icon_s = match icon {
-            IconType::Tar | IconType::Installer => IC_SIZE * 1.3,
+            IconType::Archive | IconType::Installer => IC_SIZE * 1.3,
             _ => IC_SIZE,
         };
         let icon_center_y = y + ICON_AREA_TOP + ICON_BASE_SIZE / 2.0;
@@ -939,7 +930,7 @@ impl DesktopScene {
         if matches!(icon, IconType::PhotosApp) && self.icon_glitch_active > 0.0 {
             Self::draw_photos_icon_glitched(r, assets, icon_x, icon_y, icon_s, self.icon_glitch_offset);
         } else {
-            draw_icon(r, assets, icon, icon_x, icon_y, icon_s);
+            draw_thumb_or_icon(ctx, r, assets, &mut self.thumb_cache, fid, photo_id, icon, icon_x, icon_y, icon_s);
         }
         let ls = LABEL_TEXT_SCALE;
         let lines = wrap_two_lines(r, name, ls, LABEL_MAX_W);
@@ -969,12 +960,16 @@ impl DesktopScene {
     // 드래그 중에도 icon_pos 는 원래 자리 그대로라(더는 실시간으로 안 움직인다 —
     // 대신 update() 가 반투명 고스트를 커서 쪽에 따로 그린다), 예전처럼 드래그 중인
     // 아이콘을 맨 위에 다시 그려줄 필요가 없어져서 한 번에 순서대로만 그리면 된다.
-    fn draw_icons(&self, r: &mut Renderer, assets: &Assets, lang: Language) {
-        for (i, &fid) in self.fs.desktop.iter().enumerate() {
+    fn draw_icons(&mut self, ctx: &mut dyn miniquad::RenderingBackend, r: &mut Renderer, assets: &Assets, lang: Language) {
+        for i in 0..self.fs.desktop.len() {
+            let fid = self.fs.desktop[i];
             let node = self.fs.get(fid);
             let (x, y) = self.icon_pos[i];
-            let name = display_name(lang, &node.name);
-            self.draw_one_icon(r, assets, x, y, &icon_of(node), &name, self.selected.contains(&i));
+            let name = display_name(lang, &node.name).into_owned();
+            let photo_id = if let FileKind::Photo(pid) = &node.kind { Some(pid.clone()) } else { None };
+            let icon = icon_of(node);
+            let selected = self.selected.contains(&i);
+            self.draw_one_icon(ctx, r, assets, x, y, fid, photo_id.as_ref(), &icon, &name, selected);
         }
     }
 
@@ -1364,7 +1359,7 @@ impl Scene for DesktopScene {
         }
 
         // 3) 바탕화면 아이콘 (창 뒤에 먼저 그림)
-        self.draw_icons(f.r, f.assets, lang);
+        self.draw_icons(f.ctx, f.r, f.assets, lang);
 
         // 고무줄 선택 박스 진행 중이면 매 프레임 선택을 갱신하고 그린다 — 창들보다 먼저
         // 그려서 항상 창 아래(뒤)에 깔리게 한다 (마우스를 떼기 전에도 실시간으로 갱신).
@@ -1437,44 +1432,14 @@ impl Scene for DesktopScene {
                     }
                 }
                 DeskAction::OpenPhoto(filename) => {
-                    // ????? 피드에서 썸네일을 클릭하면 예전엔 뷰어를 연 뒤 "Download"
-                    // 글자를 한 번 더 눌러야 받아졌는데, 이제 클릭 한 번으로 곧장
-                    // 받아지도록 DownloadPhoto 와 같은 처리(find_or_add_photo + 등록)
-                    // 를 여기서 같이 한다 — 그래서 이 뷰어 창은 열릴 때 항상 이미
-                    // 다운로드가 끝난 상태다.
+                    // ????? 피드에서 썸네일을 클릭하면 예전엔 뷰어 창이 따로 열렸는데,
+                    // 이제는 클릭 한 번으로 곧장 다운로드만 되고(Explorer 의 Downloads
+                    // 탭에서 실제로 열어보면 된다) 별도의 창은 뜨지 않는다.
                     let id = self.fs.find_or_add_photo(&filename);
                     self.fs.download(id);
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
                     self.write_save(&f.settings);
-
-                    // 이 뷰어 창 자체는 My Computer(Explorer/Downloads 탭)에서 보는
-                    // 창과는 별개로 취급한다 — 같은 사진이어도 방금 만든 실제 FileId
-                    // (id) 대신 wm.open() 에 file: None 을 넘겨서, My Computer 쪽에
-                    // 그 사진 창이 이미 열려있어도 서로 겹쳐 앞으로 당겨지는 일 없이
-                    // 완전히 독립된 새 창이 뜬다.
-                    //
-                    // 다만 같은 사진을 피드 안에서 여러 번 클릭했을 때도 매번 새 창이
-                    // 뜨는 건 원치 않으므로, 파일명에서 결정적으로 뽑아낸 가짜 FileId
-                    // (photo_preview_win_id) 를 dedup 키로 넘긴다 — 진짜 FileId 대역과
-                    // 안 겹치니 My Computer 와의 분리는 유지하면서, 피드 안에서의 중복
-                    // 클릭만 기존 창을 앞으로 당기도록 만든다.
-                    // filename 은 assets/photo 하위 폴더까지 포함한 식별자("corpseImage/
-                    // corpseImage1.jpg")일 수 있어서, 창 제목에는 마지막 조각(파일명)만
-                    // 보여준다.
-                    let lang = f.settings.borrow().language;
-                    let title_name = filename.rsplit('/').next().unwrap_or(&filename);
-                    let op = Opened {
-                        app: Box::new(PhotoViewerApp::new(filename.clone())),
-                        title: display_name(lang, title_name).into_owned(),
-                        size: (420.0, 320.0),
-                        maximized: false,
-                        resizable: true,
-                        maximizable: true,
-                        movable: true,
-                        min_size: (150.0, 90.0),
-                    };
-                    self.wm.open(op, Some(photo_preview_win_id(&filename)), work);
                 }
                 DeskAction::RequestErase => self.erase_confirm = true,
                 DeskAction::Download(id) => {
@@ -1491,18 +1456,17 @@ impl Scene for DesktopScene {
                     self.write_save(&f.settings);
                 }
                 DeskAction::InstallComplete => {
-                    // HexTool Setup.exe 마법사를 Finish 까지 끝냈다 — 이제부터 .tar 를
-                    // 열면 archive.rs 가 "설치 안 됨" 대신 다른 안내를 보여주고, 실제
-                    // 프로그램을 설치한 것처럼 바탕화면에 아이콘도 생긴다.
+                    // HexTool Setup.exe 마법사를 Finish 까지 끝냈다 — 실제 프로그램을 설치한
+                    // 것처럼 바탕화면에 HexTool 아이콘이 생긴다.
                     self.fs.hex_tool_installed = true;
                     self.add_desktop_icon("HexTool", FileKind::HexTool);
                     self.write_save(&f.settings);
                 }
                 DeskAction::DeletePermanently(id) => {
-                    // HexTool 로 검토를 끝낸 .tar 를 실제로 지운다 — 어디 있었든(바탕화면/
-                    // Downloads/폴더 안) 다 사라지므로, 열려있던 File Explorer 가 있으면
-                    // 바로 반영되도록 새로고침한다. 바탕화면에 있었을 수도 있으니(드래그로
-                    // 옮겨왔을 경우) icon_pos 와 짝을 맞춰 먼저 떼어낸다.
+                    // 파일을 실제로 지운다 — 어디 있었든(바탕화면/Downloads/폴더 안) 다
+                    // 사라지므로, 열려있던 File Explorer 가 있으면 바로 반영되도록
+                    // 새로고침한다. 바탕화면에 있었을 수도 있으니(드래그로 옮겨왔을 경우)
+                    // icon_pos 와 짝을 맞춰 먼저 떼어낸다.
                     if let Some(pos) = self.fs.desktop.iter().position(|&d| d == id) {
                         self.fs.desktop.remove(pos);
                         self.icon_pos.remove(pos);

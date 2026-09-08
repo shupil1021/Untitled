@@ -4940,3 +4940,49 @@ HexTool의 이미지 선택 방식과 검수 흐름을 다시 설계해달라는
 
 `cargo build`/`cargo clippy` 세 실행 파일 모두 확인, 경고는 기존
 5개 그대로.
+
+## → 바탕화면 사진 아이콘 실제 축소판으로 + ????? 클릭은 다운로드만 + HexTool의 옛 .tar 소품 제거
+
+세 가지를 한 번에 정리했다.
+
+1. **바탕화면에 놓인 이미지 파일 아이콘 문제.** File Explorer/휴지통/HexTool
+   picker 는 이미 `widgets::draw_thumb_or_icon`(공유 `ThumbCache`)로 사진
+   파일을 실제 축소판으로 그리는데, 바탕화면 아이콘(`DesktopScene::draw_icons`
+   /`draw_one_icon`)만 여기서 빠져 있었다 — `FileKind::Photo` 파일을 Downloads
+   에서 바탕화면으로 드래그해 놓으면 그냥 고정된 문서+연필 아이콘(`IconType::Img`)
+   으로만 보이던 게 그 문제였다. `DesktopScene` 에 `thumb_cache: ThumbCache`
+   필드를 추가하고, `draw_icons`/`draw_one_icon` 에 `ctx`(`Frame::ctx`)와
+   `FileId`/`photo_id`를 같이 넘겨서 `draw_thumb_or_icon`을 쓰도록 고쳤다 —
+   이제 바탕화면에서도 실제 사진 축소판으로 보인다. `apps/mod.rs`가
+   `widgets::{ThumbCache, draw_thumb_or_icon}`를 `pub(crate)`로 다시 내보내서
+   (원래 `mod widgets`가 `apps` 안에서만 보였다) `scenes::desktop`에서도 쓸 수
+   있게 했다.
+
+2. **?????에서 사진 클릭 → 다운로드만.** 예전엔 클릭하면 다운로드와 동시에
+   `PhotoViewerApp` 미리보기 창까지 따로 떴는데, 이제 미리보기 창 없이 그냥
+   Downloads 탭에 받아지기만 한다(자세히 보려면 File Explorer에서 직접 열면
+   된다). `DeskAction::OpenPhoto` 핸들러에서 창을 여는 코드를 전부 들어내고
+   `find_or_add_photo`+`download`+새로고침만 남겼다 — 그 창 전용으로만 쓰이던
+   가짜 FileId 대역(`PHOTO_PREVIEW_WIN_BASE`/`photo_preview_win_id`)도 이제
+   아무 데서도 안 쓰여서 같이 지웠다. `PhotoViewerApp` 자체는 File
+   Explorer/Downloads 탭에서 받은 사진을 더블클릭할 때는 여전히 쓰이므로
+   그대로 남겨뒀다.
+
+3. **HexTool의 옛 .tar 소품 제거.** HexTool 이 원래(Chapter 1 플레이스홀더
+   시절) "Photos.tar를 열어보는 프로그램"이라는 설정이었던 흔적이 코드
+   곳곳에 죽은 채로 남아있었다 — `FileKind::Tar`(어디서도 실제로 안
+   만들어짐), `apps/archive.rs`의 `ArchiveKind::Chapter1Placeholder`(설치
+   여부에 따라 "압축 해제 프로그램 없음"/"특별한 내용 없음" 안내만 보여주던
+   내용물 없는 소품), 설치 마법사의 "HexTool을 설치하면 .tar를 열 수
+   있다"는 안내문. 지금 HexTool 은 완전히 다른 프로그램(????? 사진 검수
+   도구)이 됐으니 이 설명은 그냥 틀린 안내가 돼버린 상태였다. `FileKind::Tar`
+   와 `ArchiveKind::Chapter1Placeholder`, 그 둘만 쓰던 안내 문자열
+   (`archive::OPENED_LINE*`/`NOT_INSTALLED_LINE*`)을 전부 지웠고,
+   `ArchiveApp`은 이제 보고용 압축파일(`FileKind::PhotoReport`) 전용으로만
+   남았다. 압축파일 아이콘은 실제로 Report.zip에 계속 쓰이므로 이름만
+   `IconType::Tar`→`IconType::Archive`(`draw_tar_icon`→`draw_archive_icon`)로
+   바꿔 남겼다. 설치 마법사의 `installer::WELCOME_MSG`도 ".tar를 열 수
+   있다" 대신 "사진 검수 도구"라는 실제 설명으로 바꿨다.
+
+`cargo build`/`cargo clippy` 세 실행 파일 모두 확인, 경고는 기존 5개
+그대로.

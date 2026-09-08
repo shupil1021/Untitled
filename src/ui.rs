@@ -438,7 +438,7 @@ pub enum IconType {
     Lock,
     Folder,
     Mail,
-    Tar,
+    Archive, // 압축파일(FileKind::PhotoReport) 전용 아이콘 — HexTool "압축파일 내보내기"로 만든 Report.zip 에만 쓰인다
     Installer,
     HexTool,
     Computer,
@@ -473,19 +473,18 @@ pub fn icon_of(node: &FileNode) -> IconType {
         FileKind::Folder { .. } => IconType::Folder,
         FileKind::Mail { .. } => IconType::Mail,
         FileKind::Explorer => IconType::Computer,
-        FileKind::Tar => IconType::Tar,
         FileKind::Installer => IconType::Installer,
         FileKind::HexTool => IconType::HexTool,
         FileKind::Img(_) => IconType::Img,
         FileKind::PhotoGallery => IconType::PhotosApp,
         FileKind::Photo(_) => IconType::Img,
-        FileKind::PhotoReport(_) => IconType::Tar,
+        FileKind::PhotoReport(_) => IconType::Archive,
         FileKind::Deleted => IconType::Folder, // 그 무엇에서도 더는 참조 안 되니 실제로 그려질 일이 없다
     }
 }
 
 // s 크기의 파일 아이콘을 텍스처로 그린다 (Windows 98 아이콘 팩에서 뽑아온 PNG).
-// Tar/Installer/HexTool 은 아직 전용 PNG 에셋이 없어서 텍스처 대신 직접 그리는
+// Archive/Installer/HexTool 은 아직 전용 PNG 에셋이 없어서 텍스처 대신 직접 그리는
 // 모양으로 대신한다(draw_scale/draw_wifi 처럼 이 파일에 이미 있는 벡터 아이콘들과
 // 같은 요령). Computer 는 원래 이 방식으로 직접 그렸었는데, 사용자가 준 Windows 98
 // 아이콘 팩 안에 이미 "컴퓨터 + 탐색기 창" 느낌의 정확히 맞는 아이콘
@@ -493,7 +492,7 @@ pub fn icon_of(node: &FileNode) -> IconType {
 // 가져와 다른 파일 아이콘들과 같은 텍스처 방식으로 바꿨다.
 pub fn draw_icon(r: &mut Renderer, assets: &Assets, icon: &IconType, x: f32, y: f32, s: f32) {
     match icon {
-        IconType::Tar => return draw_tar_icon(r, x, y, s),
+        IconType::Archive => return draw_archive_icon(r, x, y, s),
         IconType::Installer => return draw_installer_icon(r, x, y, s),
         IconType::HexTool => return draw_hextool_icon(r, x, y, s),
         _ => {}
@@ -510,7 +509,7 @@ pub fn draw_icon(r: &mut Renderer, assets: &Assets, icon: &IconType, x: f32, y: 
         IconType::RecycleEmpty => assets.icon_recycle_empty,
         IconType::RecycleFull => assets.icon_recycle_full,
         IconType::PhotosApp => assets.icon_photos,
-        IconType::Tar | IconType::Installer | IconType::HexTool => unreachable!(),
+        IconType::Archive | IconType::Installer | IconType::HexTool => unreachable!(),
     };
     r.sprite(tex, x, y, s, s, WHITE);
 }
@@ -536,9 +535,9 @@ pub fn draw_drag_ghost(r: &mut Renderer, assets: &Assets, icon: &IconType, label
     r.text_clipped(x + s / 2.0 - tw / 2.0, label_y + 2.0, label, 0.75, [0.25, 0.25, 0.25, 0.7], tw);
 }
 
-// .tar 압축파일 아이콘 — 노란 폴더 몸체 위에 지퍼(세로 중앙선 + 지그재그 이빨)를
+// 압축파일 아이콘 — 노란 폴더 몸체 위에 지퍼(세로 중앙선 + 지그재그 이빨)를
 // 그려서 "압축돼 봉인된 폴더" 라는 걸 한눈에 알아보게 한다(고전 zip 아이콘 느낌).
-fn draw_tar_icon(r: &mut Renderer, x: f32, y: f32, s: f32) {
+fn draw_archive_icon(r: &mut Renderer, x: f32, y: f32, s: f32) {
     let body = [0.88, 0.72, 0.2, 1.0];
     let tab = [0.75, 0.6, 0.15, 1.0];
     let zip = [0.35, 0.28, 0.05, 1.0];

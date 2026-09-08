@@ -72,13 +72,9 @@ pub mod password {
     pub const WRONG_PASSWORD: S = S { en: "Wrong password!", ko: "비밀번호가 틀렸습니다!", ja: "パスワードが違います!" };
 }
 
-// apps/archive.rs — .tar 압축파일 안내 창.
+// apps/archive.rs — 이상현상 보고 압축파일(FileKind::PhotoReport) 안내 창.
 pub mod archive {
     use super::S;
-    pub const OPENED_LINE1: S = S { en: "Archive opened with HexTool.", ko: "HexTool로 압축파일을 열었습니다.", ja: "HexToolでアーカイブを開きました。" };
-    pub const OPENED_LINE2: S = S { en: "No notable contents found.", ko: "특별한 내용은 발견되지 않았습니다.", ja: "特に注目すべき内容は見つかりませんでした。" };
-    pub const NOT_INSTALLED_LINE1: S = S { en: "No extraction utility installed.", ko: "설치된 압축 해제 프로그램이 없습니다.", ja: "解凍ユーティリティがインストールされていません。" };
-    pub const NOT_INSTALLED_LINE2: S = S { en: "This archive can't be opened.", ko: "이 압축파일을 열 수 없습니다.", ja: "このアーカイブは開けません。" };
 
     // HexTool 에서 "압축파일 내보내기"로 만든 보고용 압축파일(FileKind::PhotoReport)
     // 을 열었을 때 — {n}/{app} 은 render 시점에 실제 값으로 치환한다. {app} 은
@@ -158,9 +154,9 @@ pub mod installer {
     pub const CLICK_FINISH_TO_CLOSE: S =
         S { en: "Click Finish to close this wizard.", ko: "마침을 클릭해 이 마법사를 닫으세요.", ja: "完了をクリックしてこのウィザードを閉じてください。" };
     pub const WELCOME_MSG: S = S {
-        en: "This will install HexTool, which lets you open .tar archives.",
-        ko: "HexTool을 설치합니다. 설치하면 .tar 압축 파일을 열 수 있습니다.",
-        ja: "HexToolをインストールします。これにより.tarアーカイブを開けるようになります。",
+        en: "This will install HexTool, a photo review utility.",
+        ko: "HexTool을 설치합니다. 설치하면 사진 검수 도구를 쓸 수 있습니다.",
+        ja: "HexToolをインストールします。これにより写真の検証ツールが使えるようになります。",
     };
     pub const CLICK_NEXT_OR_CANCEL: S = S {
         en: "Click Next to continue, or Cancel to exit Setup.",

@@ -36,6 +36,7 @@ pub use recycle_bin::RecycleBinApp;
 pub use settings::SettingsApp;
 pub use hextool::HexToolApp;
 pub use video_player::VideoApp;
+pub(crate) use widgets::{draw_thumb_or_icon, ThumbCache};
 
 use std::any::Any;
 use std::cell::RefCell;
@@ -73,7 +74,7 @@ pub enum AppAction {
     Download(FileId),        // 메일 첨부파일 "Download" → File Explorer 의 Downloads 탭에 추가
     InstallComplete,         // HexTool Setup.exe 마법사를 Finish 까지 끝냄 → hex_tool_installed 를 true 로
     Resize(f32, f32),        // 이 창의 크기를 (너비,높이)로 바꿔달라는 요청 — 중심은 그대로 두고 크기만
-    DeletePermanently(FileId), // HexTool 검토를 마친 .tar 를 영구히 지워달라는 요청
+    DeletePermanently(FileId), // 파일을 영구히 지워달라는 요청
     MoveFiles(Vec<FileId>, MoveDest), // File Explorer 에서 사이드바로 드래그해 옮긴 파일들
     EmptyTrash(Vec<FileId>),   // 휴지통의 "Empty Recycle Bin" — 안의 항목들을 전부 영구히 지운다
     MarkMailRead(usize),       // Mail 에서 메시지(인덱스)를 읽었다 — fs.mail_read 에 기록해야 재시작 후에도 유지된다
@@ -291,17 +292,6 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             maximizable: true,
             movable: true,
             min_size: (340.0, 260.0),
-        },
-        FileKind::Tar => Opened {
-            app: Box::new(ArchiveApp::new(fs.hex_tool_installed, settings.clone())),
-            title: name,
-            // 안내문이 줄바꿈되더라도 너무 잘게 쪼개지지 않을 정도로 폭을 좀 넓혔다.
-            size: (340.0, 160.0),
-            maximized: false,
-            resizable: false,
-            maximizable: false,
-            movable: true,
-            min_size: (150.0, 90.0), // resizable 이 꺼져있어 실제로는 안 쓰임
         },
         FileKind::Installer => Opened {
             app: Box::new(InstallerApp::new(settings.clone(), fs.hex_tool_installed)),
