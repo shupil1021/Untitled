@@ -4871,3 +4871,35 @@ HexTool의 이미지 선택 방식과 검수 흐름을 다시 설계해달라는
 채움)도 `icon_grid` 와 같은 색으로 추가해서, 이제 진짜 파일 아이콘
 격자와 시각적으로 거의 같은 느낌이면서 아이콘 자리에 실제 사진만
 보인다.
+
+## → 사진 미리보기를 My Computer 전체로 확장 + 여백 투명 처리
+
+두 가지 요청을 받았다: (1) 축소판 여백을 검은색으로 채우지 말고 투명하게
+둘 것, (2) My Computer(File Explorer)/휴지통에서도 사진 파일을 아이콘
+대신 실제 미리보기로 보여줄 것.
+
+**공용 헬퍼로 통합.** `widgets.rs` 에 `draw_thumb_or_icon()` 을 새로
+만들어 "이 항목에 사진 식별자가 있으면 지연 디코드해서 그리고, 없거나
+디코드에 실패하면 기존 고정 아이콘으로 대신한다" 는 로직을 한 곳에
+모았다 — letterbox(사진이 정사각형이 아니라 남는 여백)는 배경을 아예
+안 그려서 자연스럽게 투명하게 비워진다(예전엔 검은 사각형을 먼저
+채웠다). `apps/hex_picker.rs` 도 자체 구현 대신 이 헬퍼를 쓰도록
+바꿔서 코드가 줄었다.
+
+**My Computer/휴지통까지 확장.** `apps/mod.rs::folder_items()`(탐색기/
+휴지통이 보여줄 항목 목록을 만드는 공용 함수)가 이제 네 번째 필드로
+"이 항목이 FileKind::Photo 라면 그 assets/photo/ 식별자"를 같이 담아
+돌려준다. `widgets::icon_grid`(격자 보기)와 `explorer.rs::draw_list_view`
+(기본값인 Name/Size 목록 보기) 양쪽 다 이 정보로 `draw_thumb_or_icon`
+을 불러서, 다운로드한 사진이 격자 보기든 목록 보기든 항상 실제 축소판
+으로 보인다. `ExplorerApp`/`RecycleBinApp` 에 `thumb_cache: ThumbCache`
+필드를 추가해 각 창이 자기 화면에 보인 사진만 한 번씩 디코드해서
+기억한다.
+
+`mail_attachable_files()`(메일 첨부 선택 목록, flat 아이콘 목록이라
+썸네일이 필요 없다)는 `folder_items()` 를 그대로 재사용하되 새 네
+번째 필드만 버리도록 손봤다 — mail.rs 자체는 안 건드렸다. `cargo build`
+`/cargo clippy` 확인 — 새로 추가한 `draw_thumb_or_icon` 이 인자 개수/
+`map_entry` 두 가지 새 경고를 만들었는데, 다른 위젯 함수들과 같은
+`#[allow(clippy::too_many_arguments)]` 를 붙이고 `HashMap::entry()` 로
+바꿔서 없앴다 — 최종적으로 경고는 기존 5개 그대로.

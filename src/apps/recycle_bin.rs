@@ -20,10 +20,12 @@ use crate::gfx::{Assets, Color, Rect, Renderer, CELL_H};
 use crate::strings::{common, recycle_bin as s, t};
 use crate::ui::*;
 
-use super::widgets::{ease_scroll, icon_grid, scrollbar};
+use super::widgets::{ease_scroll, icon_grid, scrollbar, ThumbCache};
 use super::{App, AppAction, WinInput};
 
-type Items = Vec<(FileId, String, IconType)>;
+// 네 번째 필드는 아이콘 대신 실제 이미지 축소판으로 그릴 수 있으면 그 assets/
+// photo/ 식별자(apps/mod.rs::folder_items 참고).
+type Items = Vec<(FileId, String, IconType, Option<String>)>;
 
 const ADDR_H: f32 = 24.0;
 const STATUS_H: f32 = 22.0;
@@ -77,6 +79,9 @@ pub struct RecycleBinApp {
     left_scroll_disp: f32,
     left_sb_drag: bool,
     settings: Rc<RefCell<Settings>>,
+    // 아이콘 대신 실제 사진을 보여주는 항목들의 지연 로딩 텍스처 캐시(widgets.rs::
+    // draw_thumb_or_icon).
+    thumb_cache: ThumbCache,
 }
 
 impl RecycleBinApp {
@@ -93,6 +98,7 @@ impl RecycleBinApp {
             left_scroll_disp: 0.0,
             left_sb_drag: false,
             settings,
+            thumb_cache: ThumbCache::new(),
         }
     }
 
@@ -243,7 +249,7 @@ impl App for RecycleBinApp {
         Some(display_name(lang, RECYCLE_BIN_NAME).into_owned())
     }
 
-    fn update(&mut self, _ctx: &mut dyn RenderingBackend, r: &mut Renderer, assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
+    fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
         let lang = self.settings.borrow().language;
         let addr_area = Rect::new(area.x, area.y, area.w, ADDR_H);
         self.draw_address_bar(r, assets, addr_area, lang);
@@ -266,8 +272,8 @@ impl App for RecycleBinApp {
         // 위치는 단일 클릭 선택에만 쓰이고(icon_grid 내부에서 이미 처리됨), 더블
         // 클릭으로 여는 동작 자체를 여기서 만들지 않는다.
         icon_grid(
-            r, assets, win, grid_area, &self.items, &mut self.selected, &mut self.marquee_start, &mut self.prev_down,
-            &mut self.grid_scroll, &mut self.grid_scroll_disp, true, &mut self.grid_sb_drag, lang,
+            ctx, r, assets, win, grid_area, &self.items, &mut self.thumb_cache, &mut self.selected, &mut self.marquee_start,
+            &mut self.prev_down, &mut self.grid_scroll, &mut self.grid_scroll_disp, true, &mut self.grid_sb_drag, lang,
         );
 
         self.draw_status_bar(r, Rect::new(area.x, area.y + area.h - STATUS_H, area.w, STATUS_H), lang);

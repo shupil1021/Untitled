@@ -166,7 +166,9 @@ pub(crate) fn mail_attachable_files(fs: &FileSystem) -> Vec<(FileId, String, Ico
         ids.retain(|&fid| !matches!(fs.get(fid).kind, FileKind::Folder { .. } | FileKind::Explorer | FileKind::Mail { .. }));
         ids
     };
-    folder_items(fs, &attachable_ids)
+    // 메일 첨부 목록은 아이콘만 보여주는 flat 목록이라 썸네일 식별자(4번째 필드)는
+    // 필요 없다 — folder_items() 를 그대로 재사용하되 그 자리만 버린다.
+    folder_items(fs, &attachable_ids).into_iter().map(|(id, name, icon, _)| (id, name, icon)).collect()
 }
 
 pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Opened {
@@ -369,7 +371,10 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
     }
 }
 
-type ExplorerItems = Vec<(FileId, String, crate::ui::IconType)>;
+// 네 번째 필드는 이 항목을 아이콘 대신 실제 이미지 축소판으로 그릴 수 있으면
+// 그 assets/photo/ 식별자(FileKind::Photo 일 때만) — explorer.rs/recycle_bin.rs
+// 가 이걸로 지연 디코드해서 진짜 사진을 보여준다(apps/hex_picker.rs 와 같은 요령).
+type ExplorerItems = Vec<(FileId, String, crate::ui::IconType, Option<String>)>;
 // (탭 이름, 안의 항목들, 부모 카테고리 이름, 자기 자신의 FileId) — 부모가 있으면
 // 그 카테고리의 하위 폴더로 취급해서 트리에서 들여쓰기하고 주소창에도 경로로 이어
 // 보여준다. FileId 는 드릴다운 탭(폴더 자신)일 때만 Some — 새로고침 뒤에도 같은
@@ -383,7 +388,16 @@ type ExplorerTabs = Vec<(String, ExplorerItems, Option<String>, Option<FileId>)>
 // explorer.rs 의 draw_list_view/icon_grid 가 그릴 때마다 display_name() 을 다시
 // 불러서, 창이 열려있는 동안 언어를 바꿔도 그 자리에서 바로 반영된다.
 fn folder_items(fs: &FileSystem, ids: &[FileId]) -> ExplorerItems {
-    ids.iter().map(|&cid| { let c = fs.get(cid); (cid, c.name.clone(), icon_of(c)) }).collect()
+    ids.iter()
+        .map(|&cid| {
+            let c = fs.get(cid);
+            let photo_id = match &c.kind {
+                FileKind::Photo(id) => Some(id.clone()),
+                _ => None,
+            };
+            (cid, c.name.clone(), icon_of(c), photo_id)
+        })
+        .collect()
 }
 
 // File Explorer 의 고정 카테고리 4개(Downloads/Desktop/Videos/Images). Videos/Images 는

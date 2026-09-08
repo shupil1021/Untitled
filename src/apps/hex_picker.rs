@@ -9,15 +9,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use miniquad::{RenderingBackend, TextureId};
+use miniquad::RenderingBackend;
 
 use crate::foundation::Settings;
 use crate::gfx::{Assets, Rect, Renderer};
 use crate::strings::{hextool as s, t};
-use crate::ui::{label, BLACK, FACE, GRAY, WHITE};
+use crate::ui::{label, IconType, BLACK, FACE, GRAY, WHITE};
 
-use super::photos::{find_photo_dir, load_scaled_texture};
-use super::widgets::{ease_scroll, scrollbar};
+use super::widgets::{draw_thumb_or_icon, ease_scroll, scrollbar, ThumbCache};
 use super::{App, AppAction, WinInput};
 
 // 아이콘 대신 실사진을 보여주는 자리라, 정말로 아이콘 하나 크기(draw_icon 이
@@ -31,9 +30,11 @@ const GAP: f32 = 10.0;
 const PAD: f32 = 12.0;
 
 pub struct HexPickerApp {
-    ids: Vec<String>,                             // fs.photos_current 스냅샷
-    thumbs: Vec<Option<(TextureId, u32, u32)>>,   // ids 와 같은 길이 — 화면에 한 번이라도 보인 것만 Some(디코드 성공 시)
-    tried: Vec<bool>,                              // ids 와 같은 길이 — 한 번이라도 디코드를 시도했는지(실패해도 다시 안 건드리게)
+    ids: Vec<String>, // fs.photos_current 스냅샷 — 배열 인덱스를 그대로 FileId 삼아 thumbs 캐시 키로 쓴다
+    // widgets.rs::draw_thumb_or_icon 이 쓰는 지연 로딩 텍스처 캐시 — hex_picker 는
+    // 진짜 fs 파일이 아니라서(고를 게 전부 사진 자체) FileId 대신 배열 인덱스를
+    // 키로 쓴다.
+    thumbs: ThumbCache,
     scroll: f32,
     scroll_disp: f32,
     sb_drag: bool,
@@ -42,8 +43,7 @@ pub struct HexPickerApp {
 
 impl HexPickerApp {
     pub fn new(ids: Vec<String>, settings: Rc<RefCell<Settings>>) -> HexPickerApp {
-        let n = ids.len();
-        HexPickerApp { ids, thumbs: vec![None; n], tried: vec![false; n], scroll: 0.0, scroll_disp: 0.0, sb_drag: false, settings }
+        HexPickerApp { ids, thumbs: ThumbCache::new(), scroll: 0.0, scroll_disp: 0.0, sb_drag: false, settings }
     }
 }
 
@@ -52,7 +52,7 @@ impl App for HexPickerApp {
         self
     }
 
-    fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, _assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
+    fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
         r.rect(area.x, area.y, area.w, area.h, FACE);
         let lang = self.settings.borrow().language;
         if self.ids.is_empty() {
@@ -79,7 +79,6 @@ impl App for HexPickerApp {
         let has_sb = max_scroll > 0.0;
         let sb_w = if has_sb { 10.0 } else { 0.0 };
 
-        let photo_dir = find_photo_dir();
         let mut result = AppAction::None;
         let outer_clip = r.clip();
         r.set_clip(Some(list_area));
@@ -92,30 +91,19 @@ impl App for HexPickerApp {
                 continue; // 화면 밖 행은 그리지도, 디코드 시도조차 하지 않는다
             }
 
-            if !self.tried[i] {
-                self.tried[i] = true;
-                if let Some(dir) = &photo_dir {
-                    self.thumbs[i] = load_scaled_texture(ctx, &dir.join(id), Some(THUMB_SIZE));
-                }
-            }
-
             // 아이콘 자리를 그대로 대신하는 거라 아이콘과 같은 크기(THUMB_SIZE)로
             // 셀 위쪽 가운데에 그린다 — icon_grid 의 draw_icon 호출과 같은 자리.
+            // 여백은 검은색으로 안 채운다 — 정사각형이 아닌 사진 옆에 검은 여백이
+            // 도드라져 보인다는 피드백을 받아 draw_thumb_or_icon 자체가 letterbox
+            // 를 그냥 투명하게 비워둔다.
             let cell_rect = Rect::new(cx, cy, CELL_W, CELL_H + LABEL_H);
             let hover = cell_rect.intersect(&list_area).contains(win.mouse.0, win.mouse.1);
             if hover {
                 r.rect(cell_rect.x, cell_rect.y, cell_rect.w, cell_rect.h, [0.82, 0.88, 0.98, 1.0]);
             }
-            let thumb_rect = Rect::new(cx + (CELL_W - THUMB_SIZE) / 2.0, cy + 2.0, THUMB_SIZE, THUMB_SIZE);
-            r.rect(thumb_rect.x, thumb_rect.y, thumb_rect.w, thumb_rect.h, BLACK);
-            if let Some((tex, w, h)) = self.thumbs[i] {
-                let (iw, ih) = (w as f32, h as f32);
-                let scale = (thumb_rect.w / iw).min(thumb_rect.h / ih);
-                let (dw, dh) = (iw * scale, ih * scale);
-                let dx = thumb_rect.x + (thumb_rect.w - dw) / 2.0;
-                let dy = thumb_rect.y + (thumb_rect.h - dh) / 2.0;
-                r.sprite(tex, dx, dy, dw, dh, WHITE);
-            }
+            let tx = cx + (CELL_W - THUMB_SIZE) / 2.0;
+            let ty = cy + 2.0;
+            draw_thumb_or_icon(ctx, r, assets, &mut self.thumbs, i, Some(id), &IconType::Img, tx, ty, THUMB_SIZE);
 
             let name = id.rsplit('/').next().unwrap_or(id);
             let name_w = r.text_width(name, 0.75).min(CELL_W);

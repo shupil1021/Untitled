@@ -15,10 +15,13 @@ use crate::gfx::{Assets, Color, Rect, Renderer, CELL_H};
 use crate::strings::{common, explorer as s, t};
 use crate::ui::*;
 
-use super::widgets::{ease_scroll, icon_grid, scrollbar};
+use super::widgets::{draw_thumb_or_icon, ease_scroll, icon_grid, scrollbar, ThumbCache};
 use super::{App, AppAction, DragGhost, MoveDest, WinInput};
 
-type Items = Vec<(FileId, String, IconType)>;
+// 네 번째 필드는 아이콘 대신 실제 이미지 축소판으로 그릴 수 있으면 그 assets/
+// photo/ 식별자(apps/mod.rs::folder_items 참고) — icon_grid/draw_list_view 가
+// 지연 디코드해서 진짜 사진을 그린다.
+type Items = Vec<(FileId, String, IconType, Option<String>)>;
 
 // is_folder_like() 는 "크기 칸을 비워둘 폴더류인가"(목록 뷰) 기준이라 휴지통도
 // 포함한다 — 하지만 왼쪽 트리에서 "펼쳐서 탭으로 끼워 넣을 수 있는가"는 다른
@@ -64,11 +67,13 @@ const LIST_HEADER_H: f32 = 22.0; // 0.85 스케일 글자 높이(CELL_H*0.85≈1
 
 #[allow(clippy::too_many_arguments)]
 fn draw_list_view(
+    ctx: &mut dyn RenderingBackend,
     r: &mut Renderer,
     assets: &Assets,
     win: &WinInput,
     area: Rect,
     items: &Items,
+    thumbs: &mut ThumbCache,
     selected: &mut Vec<usize>,
     marquee_start: &mut Option<(f32, f32)>,
     prev_down: &mut bool,
@@ -147,7 +152,7 @@ fn draw_list_view(
         if ry + ROW_H < list_top || ry > list_top + list_h {
             continue;
         }
-        let (_id, name, icon) = &items[idx];
+        let (id, name, icon, photo_id) = &items[idx];
         // 항목 이름은 원문 그대로 담겨 있다가 여기서 매 프레임 다시 번역된다 —
         // 창을 이미 연 채로 언어를 바꿔도 그 자리에서 바로 반영되게 하려고
         // (apps/mod.rs::folder_items 주석 참고).
@@ -160,7 +165,7 @@ fn draw_list_view(
         } else if hover {
             r.rect(area.x, ry, area.w, ROW_H, [0.92, 0.95, 1.0, 1.0]);
         }
-        draw_icon(r, assets, icon, area.x + 4.0, ry + 2.0, 18.0);
+        draw_thumb_or_icon(ctx, r, assets, thumbs, *id, photo_id.as_ref(), icon, area.x + 4.0, ry + 2.0, 18.0);
         r.text_clipped(area.x + 28.0, ry + 3.0, &display, 0.85, BLACK, name_col_w - 34.0);
         // 폴더류(File Explorer 의 카테고리, 잠금 풀린 폴더)는 실제 파일 개념이
         // 아니라 크기를 안 보여준다 — 진짜 탐색기도 폴더 칸은 비워둔다.
@@ -244,6 +249,9 @@ pub struct ExplorerApp {
     // 구분해준다.
     raw_title: String,
     settings: Rc<RefCell<Settings>>,
+    // 아이콘 대신 실제 사진을 보여주는 항목들의 지연 로딩 텍스처 캐시(widgets.rs::
+    // draw_thumb_or_icon) — FileId 하나당 한 번만 디코드한다.
+    thumb_cache: ThumbCache,
 }
 
 impl ExplorerApp {
@@ -282,6 +290,7 @@ impl ExplorerApp {
             last_mouse: (0.0, 0.0),
             raw_title,
             settings,
+            thumb_cache: ThumbCache::new(),
         }
     }
 
@@ -306,7 +315,7 @@ impl ExplorerApp {
     // 폴더로 안 친다(tree_expandable 참고) — 트리에 탭으로 끼워 넣는 대신 항상
     // 독립된 프로그램(RecycleBinApp)으로 열어야 하기 때문.
     fn has_expandable_children(&self, i: usize) -> bool {
-        self.tabs[i].1.iter().any(|(_, _, icon)| tree_expandable(icon))
+        self.tabs[i].1.iter().any(|(_, _, icon, _)| tree_expandable(icon))
     }
 
     // 이름이 name 인 탭이 지금 트리에서 펼쳐져 있는지 — 그 탭을 parent 로 삼는 하위
@@ -323,7 +332,7 @@ impl ExplorerApp {
     // 펼칠 때 휴지통이 계속 후보로 잡혀서 그 뒤에 있는 진짜 하위 폴더들을
     // 영영 못 펼치는 문제가 있었다).
     fn next_unexpanded_child(&self, i: usize) -> Option<FileId> {
-        self.tabs[i].1.iter().find_map(|(fid, _, icon)| {
+        self.tabs[i].1.iter().find_map(|(fid, _, icon, _)| {
             let is_folder = tree_expandable(icon);
             let already_tab = self.tabs.iter().any(|t| t.3 == Some(*fid));
             (is_folder && !already_tab).then_some(*fid)
@@ -423,7 +432,7 @@ impl App for ExplorerApp {
         Some(display_name(lang, &self.raw_title).into_owned())
     }
 
-    fn update(&mut self, _ctx: &mut dyn RenderingBackend, r: &mut Renderer, assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
+    fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
         // 사이드바로 드래그해 파일을 옮기는 중이었는지의 "뗌" 판정은 이 프레임에서
         // 그리기 전에 미리 스냅샷해야 한다 — draw_list_view/icon_grid 가 마퀴 선택용으로
         // self.prev_down 을 이번 프레임 값으로 덮어써버리기 때문.
@@ -593,16 +602,18 @@ impl App for ExplorerApp {
         let items = &self.tabs[self.tab].1;
         let clicked = if self.list_view {
             draw_list_view(
-                r, assets, win, list_area, items, &mut self.selected, &mut self.marquee_start, &mut self.prev_down, &mut self.scroll,
-                &mut self.scroll_disp, &mut self.sb_drag, smooth, lang,
+                ctx, r, assets, win, list_area, items, &mut self.thumb_cache, &mut self.selected, &mut self.marquee_start,
+                &mut self.prev_down, &mut self.scroll, &mut self.scroll_disp, &mut self.sb_drag, smooth, lang,
             )
         } else {
             icon_grid(
+                ctx,
                 r,
                 assets,
                 win,
                 list_area,
                 items,
+                &mut self.thumb_cache,
                 &mut self.selected,
                 &mut self.marquee_start,
                 &mut self.prev_down,
@@ -685,7 +696,7 @@ impl App for ExplorerApp {
             return None; // 아직 문턱을 안 넘었으면(그냥 클릭) 고스트를 안 그린다.
         }
         let &first = self.selected.first()?;
-        let (_, name, icon) = self.tabs.get(self.tab)?.1.get(first)?;
+        let (_, name, icon, _) = self.tabs.get(self.tab)?.1.get(first)?;
         let lang = self.settings.borrow().language;
         let label = if self.selected.len() == 1 {
             display_name(lang, name).into_owned()

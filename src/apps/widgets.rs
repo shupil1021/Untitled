@@ -2,11 +2,46 @@
 //! 아코디언 리스트, 스크롤 이징. ui.rs 의 베벨/버튼 같은 진짜 범용 원시 위젯과
 //! 달리, 여기 있는 건 "앱 안에서 쓰는" 좀 더 조립된 위젯이라 apps 밑에 뒀다.
 
+use std::collections::HashMap;
+
+use miniquad::{RenderingBackend, TextureId};
+
 use crate::foundation::{display_name, FileId, Language};
 use crate::gfx::{Assets, Rect, Renderer, CELL_H};
 use crate::ui::*;
 
+use super::photos::{find_photo_dir, load_scaled_texture};
 use super::WinInput;
+
+// icon_grid/draw_list_view(explorer.rs) 가 "아이콘 대신 실제 사진 축소판" 을
+// 그릴 때 쓰는 지연 로딩 캐시 — FileId 하나당 한 번만 디코드해서 텍스처로
+// 올린다(hex_picker.rs 의 같은 요령을 여러 목록/격자 위젯에서 공유하려고 뺐다).
+pub(crate) type ThumbCache = HashMap<FileId, Option<(TextureId, u32, u32)>>;
+
+// photo_id 가 있으면(FileKind::Photo) 그 사진을 지연 디코드해서 (x,y) 에 size×size
+// 안에 종횡비를 유지한 채(letterbox 는 그냥 투명하게 비워둔다 — 배경을 검게 채우면
+// 정사각형이 아닌 사진 옆에 검은 여백이 도드라져 보인다는 피드백을 받았다) 그린다.
+// photo_id 가 없거나 디코드에 실패하면 기존 고정 아이콘으로 대신한다.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_thumb_or_icon(
+    ctx: &mut dyn RenderingBackend, r: &mut Renderer, assets: &Assets, thumbs: &mut ThumbCache, id: FileId, photo_id: Option<&String>,
+    icon: &IconType, x: f32, y: f32, size: f32,
+) {
+    let Some(pid) = photo_id else {
+        draw_icon(r, assets, icon, x, y, size);
+        return;
+    };
+    let tex = *thumbs.entry(id).or_insert_with(|| find_photo_dir().and_then(|dir| load_scaled_texture(ctx, &dir.join(pid), Some(size))));
+    match tex {
+        Some((tex, w, h)) => {
+            let (iw, ih) = (w as f32, h as f32);
+            let scale = (size / iw).min(size / ih);
+            let (dw, dh) = (iw * scale, ih * scale);
+            r.sprite(tex, x + (size - dw) / 2.0, y + (size - dh) / 2.0, dw, dh, WHITE);
+        }
+        None => draw_icon(r, assets, icon, x, y, size),
+    }
+}
 
 // 목표 스크롤(scroll)을 향해 화면표시용 스크롤(disp)을 매 프레임 부드럽게 따라가게
 // 한다. smooth 가 꺼져 있으면 예전처럼 즉시 딱 맞춰서(=하드 스냅) 이동한다.
@@ -75,11 +110,13 @@ pub(crate) fn draw_slider(r: &mut Renderer, win: &WinInput, x: f32, y: f32, w: f
 // 이번 프레임에 "그냥 클릭"된 항목 인덱스(더블클릭 판정용, 마퀴 드래그는 해당 없음)를 돌려준다.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn icon_grid(
+    ctx: &mut dyn RenderingBackend,
     r: &mut Renderer,
     assets: &Assets,
     win: &WinInput,
     area: Rect,
-    items: &[(FileId, String, IconType)],
+    items: &[(FileId, String, IconType, Option<String>)],
+    thumbs: &mut ThumbCache,
     selected: &mut Vec<usize>,
     marquee_start: &mut Option<(f32, f32)>,
     prev_down: &mut bool,
@@ -156,7 +193,7 @@ pub(crate) fn icon_grid(
             if i >= items.len() {
                 break;
             }
-            let (_id, name, icon) = &items[i];
+            let (id, name, icon, photo_id) = &items[i];
             // 항목 이름은 원문 그대로 담겨 있다가 여기서 매 프레임 다시 번역된다 —
             // 창을 이미 연 채로 언어를 바꿔도 그 자리에서 바로 반영되게 하려고.
             let display = display_name(lang, name);
@@ -167,7 +204,7 @@ pub(crate) fn icon_grid(
                 r.rect(cell_rect.x, cell_rect.y, cell_rect.w, cell_rect.h, [0.78, 0.88, 1.0, 1.0]); // 연한 파랑 채움
                 border(r, cell_rect.x, cell_rect.y, cell_rect.w, cell_rect.h, NAVY); // 진한 파랑 테두리
             }
-            draw_icon(r, assets, icon, ix + cell_w / 2.0 - 19.0, iy + 2.0, 32.0);
+            draw_thumb_or_icon(ctx, r, assets, thumbs, *id, photo_id.as_ref(), icon, ix + cell_w / 2.0 - 19.0, iy + 2.0, 32.0);
             let lines = wrap_two_lines(r, &display, 0.8, cell_w - 6.0);
             let line_h = CELL_H * 0.8 + 2.0;
             for (li, line) in lines.iter().enumerate() {
