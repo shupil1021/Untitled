@@ -1615,15 +1615,13 @@ impl Scene for DesktopScene {
                 }
                 DeskAction::ExportPhotoReport(photos) => {
                     // HexTool 이 ????? 사진을 전부 검수하고 "압축파일 내보내기"를
-                    // 눌렀다 — 처음이면 바탕화면에 새 아이콘 자리를 잡아주고
-                    // (add_desktop_icon 과 같은 요령), 이미 압축파일이 있었으면
-                    // set_photo_report() 가 내용만 갈아끼우므로 자리는 그대로 둔다.
-                    let (id, is_new) = self.fs.set_photo_report(photos);
-                    if is_new {
-                        self.fs.desktop.push(id);
-                        let (fc, fr) = self.first_free_tile();
-                        self.icon_pos.push(Self::tile_to_pos(fc, fr));
-                    }
+                    // 눌렀다 — 바탕화면이 아니라 메일 첨부를 "Download" 하는 것과
+                    // 같은 취급으로 File Explorer 의 Downloads 탭에 바로 넣는다.
+                    // set_photo_report() 는 이미 압축파일이 있으면 내용만 갈아끼우고
+                    // 같은 id 를 재사용하므로, fs.download() 도 매번 다시 불러도
+                    // 안전하다(이미 목록에 있으면 아무 일도 안 한다).
+                    let (id, _) = self.fs.set_photo_report(photos);
+                    self.fs.download(id);
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
                     self.write_save(&f.settings);

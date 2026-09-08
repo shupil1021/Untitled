@@ -314,6 +314,8 @@ pub mod hextool {
     pub const ANOMALY_NONE: S = S { en: "No anomaly", ko: "이상현상 없음", ja: "異常現象なし" };
     // 검수 저장을 누르면 미리보기가 빈 자리로 돌아가기 전 잠깐 보여주는 문구.
     pub const SAVING: S = S { en: "Saving...", ko: "저장 중...", ja: "保存中..." };
+    // "압축파일 내보내기"를 누르면 잠깐 보여주는 문구.
+    pub const EXPORTING: S = S { en: "Exporting...", ko: "내보내는 중...", ja: "書き出し中..." };
     pub const SAVE_REVIEW: S = S { en: "Save Review", ko: "검수 저장", ja: "検収を保存" };
     // ????? 의 사진을 전부 검수하면 SAVE_REVIEW 대신 이 버튼으로 바뀐다.
     pub const EXPORT_ARCHIVE: S = S { en: "Export Archive", ko: "압축파일 내보내기", ja: "圧縮ファイルを書き出す" };

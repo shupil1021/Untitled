@@ -4922,3 +4922,21 @@ HexTool의 이미지 선택 방식과 검수 흐름을 다시 설계해달라는
 
 `cargo build`/`cargo clippy` 세 실행 파일 모두 확인, 경고는 기존
 5개 그대로.
+
+## → 압축파일 내보내기: 바탕화면 대신 다운로드로 + 내보내는 중 표시
+
+"압축파일 내보내기"를 눌렀을 때 두 가지를 바꿨다:
+
+1. 결과물(`Report.zip`, `FileKind::PhotoReport`)을 바탕화면에 아이콘으로
+   놓는 대신, 메일 첨부를 "Download" 하는 것과 같은 취급으로 File
+   Explorer 의 **Downloads 탭**에 바로 넣는다(`fs.download(id)`) —
+   `desktop.rs::DeskAction::ExportPhotoReport` 에서 `fs.desktop.push`/
+   아이콘 자리 계산 코드를 지우고 `fs.download()` 한 줄로 바꿨다.
+2. 버튼을 누르면 곧장 내보내지 않고, `EXPORT_DELAY`(0.8초) 동안
+   "내보내는 중..." 표시를 먼저 보여준 뒤에 실제로 내보낸다 — "검수
+   저장"의 `SAVE_DELAY`/`saving` 과 같은 요령(`HexToolApp::export_pending:
+   Option<(경과 시간, 내보낼 사진 목록)>`)이다. 표시 중엔 버튼을 다시
+   눌러 중복 예약하지 못하게 막았다.
+
+`cargo build`/`cargo clippy` 세 실행 파일 모두 확인, 경고는 기존
+5개 그대로.

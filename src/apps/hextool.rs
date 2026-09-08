@@ -71,6 +71,10 @@ const BOX_BOTTOM_PAD: f32 = 16.0; // 마지막 체크박스 밑에서 박스 테
 const CHECK_BOX_H: f32 = BOX_TOP_INSET + CHECK_ROW_H * 3.0 + BOX_BOTTOM_PAD;
 // 저장을 누른 뒤 미리보기가 빈 자리로 돌아가기까지의 "저장 중" 표시 시간(초).
 const SAVE_DELAY: f32 = 0.5;
+// "압축파일 내보내기"를 누른 뒤 실제로 내보내기 전 "내보내는 중" 표시 시간(초) —
+// 검수 저장보다 조금 더 걸리게 해서 "장수만큼 뭔가 처리하는" 느낌을 준다(실제로는
+// 그냥 연출이고 처리 자체는 즉시 끝난다).
+const EXPORT_DELAY: f32 = 0.8;
 // 패널 안에서 각 행이 시작하는 y 오프셋(패널 맨 위 기준) — 스크롤(관성/클램프)과
 // 각 행의 보임 여부 판정에 쓴다. 순서: 검수 현황 → 밝기 → 채도 → 미니맵 →
 // 체크박스 그룹 박스 → 저장/내보내기 버튼.
@@ -94,6 +98,10 @@ pub struct HexToolApp {
     active_slider: i32,
     category: Option<AnomalyCategory>, // 지금 로드된 사진에 대해 고른 체크박스(저장 전까지는 임시) — None 이면 아직 아무것도 안 고름
     saving: Option<f32>, // Some(경과 시간) 이면 "저장 중" 표시 중 — SAVE_DELAY 를 넘으면 미리보기를 비운다
+    // Some((경과 시간, 내보낼 사진 목록)) 이면 "압축파일 내보내기"를 막 눌러
+    // "내보내는 중" 표시 중 — EXPORT_DELAY 를 넘으면 그제서야 실제로
+    // AppAction::ExportPhotoReport 를 보낸다.
+    export_pending: Option<(f32, Vec<String>)>,
     photos_current: Vec<String>,                  // ????? 에 지금 떠 있는 사진 식별자 전체 — 진행 상황(N) 계산용
     reviews: HashMap<String, AnomalyCategory>,    // fs.photo_reviews 의 로컬 사본 — "저장" 할 때마다 여기도 같이 갱신해서 M 이 그 자리에서 바로 반영된다
     panel_scroll: f32,
@@ -117,6 +125,7 @@ impl HexToolApp {
             active_slider: -1,
             category: None,
             saving: None,
+            export_pending: None,
             photos_current,
             reviews,
             panel_scroll: 0.0,
@@ -352,7 +361,10 @@ impl HexToolApp {
         let btn_y = top + BTN_Y;
         let all_reviewed = total > 0 && reviewed >= total;
         let btn_label = if all_reviewed { t(lang, s::EXPORT_ARCHIVE) } else { t(lang, s::SAVE_REVIEW) };
-        let enabled = all_reviewed || (self.loaded_photo_id.is_some() && self.category.is_some());
+        // 내보내는 중(export_pending)에는 버튼을 다시 누를 수 없게 막는다 —
+        // 안 그러면 "내보내는 중" 표시가 뜬 짧은 시간 동안 또 눌러서 중복
+        // ExportPhotoReport 를 예약할 수 있었다.
+        let enabled = self.export_pending.is_none() && (all_reviewed || (self.loaded_photo_id.is_some() && self.category.is_some()));
         let mut result = AppAction::None;
         if visible(btn_y, BTN_H) {
             if enabled && button(r, panel.x, btn_y, content_w, BTN_H, btn_label, win) {
@@ -363,7 +375,10 @@ impl HexToolApp {
                         .filter(|id| matches!(self.reviews.get(*id), Some(AnomalyCategory::Corpse | AnomalyCategory::Glitch)))
                         .cloned()
                         .collect();
-                    result = AppAction::ExportPhotoReport(flagged);
+                    // 곧장 내보내지 않고 잠깐 "내보내는 중" 표시부터 보여준다 —
+                    // update() 의 export_pending 처리가 EXPORT_DELAY 뒤에 실제로
+                    // AppAction::ExportPhotoReport 를 보낸다.
+                    self.export_pending = Some((0.0, flagged));
                 } else if let (Some(id), Some(cat)) = (self.loaded_photo_id.clone(), self.category) {
                     self.reviews.insert(id.clone(), cat);
                     self.saving = Some(0.0);
@@ -419,6 +434,26 @@ impl App for HexToolApp {
         let panel_w = PANEL_W.min(content.w * 0.4).max(110.0);
         let preview = Rect::new(content.x, content.y, content.w - panel_w - SLIDER_GAP, content.h);
         let panel = Rect::new(preview.x + preview.w + SLIDER_GAP, content.y, panel_w, content.h);
+
+        // "압축파일 내보내기"가 예약돼 있으면(export_pending) 그것부터 처리한다 —
+        // EXPORT_DELAY 를 넘기면 이 프레임에 곧장 AppAction::ExportPhotoReport 를
+        // 보내고 끝낸다(그 아래 패널/저장 로직은 이번 프레임엔 그릴 필요가 없다).
+        if let Some((elapsed, _)) = &self.export_pending {
+            let elapsed = elapsed + win.dt;
+            if elapsed >= EXPORT_DELAY {
+                let (_, flagged) = self.export_pending.take().unwrap();
+                return AppAction::ExportPhotoReport(flagged);
+            }
+            self.export_pending.as_mut().unwrap().0 = elapsed;
+            sunken(r, preview.x, preview.y, preview.w, preview.h);
+            let msg = t(lang, s::EXPORTING);
+            let tw = r.text_width(msg, 0.8);
+            r.text(preview.x + (preview.w - tw) / 2.0, preview.y + preview.h / 2.0 - 6.0, msg, 0.8, GRAY);
+            let total = self.photos_current.len();
+            let reviewed = self.reviews.iter().filter(|(id, _)| self.photos_current.contains(id)).count();
+            self.update_panel(r, panel, win, lang, total, reviewed);
+            return AppAction::None;
+        }
 
         let mut open_picker = false;
         if let Some(elapsed) = self.saving {
