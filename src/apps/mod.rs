@@ -6,6 +6,7 @@
 mod archive;
 mod credits;
 mod explorer;
+mod hex_picker;
 mod image_viewer;
 mod installer;
 mod mail;
@@ -22,6 +23,7 @@ mod widgets;
 pub use archive::ArchiveApp;
 pub use credits::CreditsApp;
 pub use explorer::{ExplorerApp, ExplorerLocation};
+pub use hex_picker::HexPickerApp;
 pub use image_viewer::ImageViewerApp;
 pub use installer::InstallerApp;
 pub use mail::{MailApp, SentMailView};
@@ -80,6 +82,20 @@ pub enum AppAction {
     // Mail 의 "Write Mail" 탭에서 새 메일을 작성해 보냄 — fs.sent_mail 에 내용째 쌓는다.
     // 첨부는 여러 개를 붙일 수 있어서 Vec(순서대로 붙인 순서).
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
+    // HexTool 의 "이미지 선택"을 누르면 — "My Computer" 와 비슷한 별도 창(HexPickerApp)
+    // 을 열어달라는 요청. 그 창 자체는 실제 fs 노드가 아니라서 FileId 가 없다
+    // (desktop.rs 가 usize::MAX 근처의 가짜 id 로 dedup 한다).
+    OpenHexPicker,
+    // HexPickerApp 에서 사진을 고르면 — 그 식별자를 HexTool 창에 꽂아주고 선택
+    // 창은 닫아달라는 요청.
+    SelectPhotoForHexTool(String),
+    // HexTool 의 "검수 저장" — 지금 보고 있는 사진의 이상현상 체크 여부를
+    // fs.photo_reviews 에 기록해달라는 요청(식별자, 체크 여부).
+    SavePhotoReview(String, bool),
+    // HexTool 의 "압축파일 내보내기"(?????의 모든 사진을 검수했을 때) — 이상현상으로
+    // 체크된 사진 식별자 목록으로 FileKind::PhotoReport 압축파일을 만들어(이미
+    // 있으면 내용만 갱신) 바탕화면에 둔다.
+    ExportPhotoReport(Vec<String>),
 }
 
 // File Explorer 사이드바 드래그로 파일을 옮길 수 있는 대상 — Desktop/Downloads 는
@@ -151,23 +167,6 @@ pub(crate) fn mail_attachable_files(fs: &FileSystem) -> Vec<(FileId, String, Ico
         ids
     };
     folder_items(fs, &attachable_ids)
-}
-
-// HexTool 에서 검토 대상으로 고를 수 있는 파일 — mail_attachable_files() 와 같은
-// 이유로 open() 과 desktop.rs 의 새로고침 양쪽에서 재사용한다.
-pub(crate) fn hextool_review_files(fs: &FileSystem) -> Vec<(FileId, String, IconType, Option<String>)> {
-    fs.all_of_kind(|k| matches!(k, FileKind::Photo(_) | FileKind::Img(_) | FileKind::Mp4))
-        .into_iter()
-        .filter(|&id| !fs.in_recycle_bin(id))
-        .map(|id| {
-            let node = fs.get(id);
-            let photo_id = match &node.kind {
-                FileKind::Photo(filename) => Some(filename.clone()),
-                _ => None,
-            };
-            (id, node.name.clone(), icon_of(node), photo_id)
-        })
-        .collect()
 }
 
 pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Opened {
@@ -313,21 +312,28 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (150.0, 90.0), // resizable 이 꺼져있어 실제로는 안 쓰임
         },
-        FileKind::HexTool => {
-            let review_files = hextool_review_files(fs);
-            Opened {
-                app: Box::new(HexToolApp::new(review_files, settings.clone())),
-                title: name,
-                // 이제 파일 선택용 별도 작은 창 없이 곧장 편집 화면(빈 미리보기 +
-                // 슬라이더)으로 여니까, 처음부터 그 화면이 다 들어가는 크기로 연다.
-                size: (420.0, 320.0),
-                maximized: false,
-                resizable: true,
-                maximizable: true,
-                movable: true,
-                min_size: (360.0, 260.0),
-            }
-        }
+        FileKind::PhotoReport(photos) => Opened {
+            app: Box::new(ArchiveApp::new_report(photos.len(), settings.clone())),
+            title: name,
+            size: (340.0, 160.0),
+            maximized: false,
+            resizable: false,
+            maximizable: false,
+            movable: true,
+            min_size: (150.0, 90.0), // resizable 이 꺼져있어 실제로는 안 쓰임
+        },
+        FileKind::HexTool => Opened {
+            app: Box::new(HexToolApp::new(fs.photos_current.clone(), fs.photo_reviews.clone(), settings.clone())),
+            title: name,
+            // 오른쪽 패널에 검수 현황/밝기·채도 슬라이더/미니맵/체크박스/버튼이
+            // 다 들어가야 해서 예전 뷰어보다 세로로 넉넉하게 잡았다.
+            size: (440.0, 380.0),
+            maximized: false,
+            resizable: true,
+            maximizable: true,
+            movable: true,
+            min_size: (380.0, 300.0),
+        },
         FileKind::Photo(filename) => Opened {
             // 이 경로(open())는 Explorer/Downloads 탭에서 더블클릭해서 여는
             // 경우에만 탄다 — Photos 피드에서 썸네일을 클릭하는 경로는

@@ -30,6 +30,11 @@ pub enum FileKind {
     HexTool,                                             // Installer 를 끝까지 마치면 바탕화면에 생기는 설치된 프로그램 아이콘
     PhotoGallery,                                        // 바탕화면의 Photos 앱 — assets/photo/ 사진들을 피드로 훑어보고 다운로드
     Photo(String),                                       // Photos 앱에서 다운로드한 사진 한 장 — assets/photo/ 안의 파일명
+    // HexTool 로 ????? 의 사진들을 검수해 "이상현상 있음"으로 체크한 것들만 담은
+    // 압축파일 — 담긴 목록은 apps/hextool.rs 의 검수 결과, Vec 안 문자열은
+    // Photo(String) 과 같은 assets/photo/ 식별자. 재연구 업무 보고 메일에 이
+    // 파일을 첨부해 보내면(desktop.rs::REPORT_EMAIL) ????? 피드가 새로 갱신된다.
+    PhotoReport(Vec<String>),
     Deleted,                                             // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
 }
 
@@ -43,6 +48,7 @@ pub enum FileKind {
 pub const MY_COMPUTER_NAME: &str = "My Computer";
 pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
 pub const HEXTOOL_SETUP_EXE_NAME: &str = "HexTool Setup.exe";
+pub const PHOTO_REPORT_NAME: &str = "Report.zip";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FileNode {
@@ -105,6 +111,13 @@ pub struct FileSystem {
     // 이미 봤던 사진이 또 나오지 않도록 제외하는 데 쓴다.
     #[serde(default)]
     pub photos_seen: Vec<String>,
+    // HexTool 에서 사진별로 "검수 저장"을 누른 결과 — 식별자 → 이상현상 체크 여부.
+    // 존재한다는 것 자체가 "검수 완료"라는 뜻이라, apps/hextool.rs 가 photos_current
+    // 와 교집합을 세어 "N개 중 M개 검수됨"을 계산한다. 새 배치가 오면(photos_seen
+    // 이 겹치지 않게 보장하므로) 옛 항목은 자연히 교집합에서 빠져 무의미해지고,
+    // 굳이 지우지 않아도 된다.
+    #[serde(default)]
+    pub photo_reviews: std::collections::HashMap<String, bool>,
 }
 
 // Mail 의 "Write Mail" 탭에서 보낸 메일 한 통 — fs.sent_mail 에 쌓인다. 첨부는
@@ -162,6 +175,7 @@ impl FileSystem {
             mail_hextool_attachment: 0, // 아래에서 실제 노드를 만들고 바로 채운다
             photos_current: Vec::new(), // DesktopScene::new() 가 ensure_photos_selected() 로 채운다
             photos_seen: Vec::new(),
+            photo_reviews: std::collections::HashMap::new(),
         };
 
         // 바탕화면엔 고정 아이콘 두 개만 둔다 — 나머지 예제 파일들은 다 치웠다.
@@ -242,6 +256,19 @@ impl FileSystem {
     // Videos/Images 탭처럼 "어디 있든 이 종류인 파일 전부" 를 보여줄 때 쓴다.
     pub fn all_of_kind(&self, pred: impl Fn(&FileKind) -> bool) -> Vec<FileId> {
         (0..self.nodes.len()).filter(|&i| pred(&self.nodes[i].kind)).collect()
+    }
+
+    // HexTool 검수를 마치고 "압축파일 내보내기"를 누르면 부른다 — 이미 만들어둔
+    // 보고서 압축파일이 있으면 내용만 최신 걸로 갈아끼우고(재검수/재수출할 때마다
+    // 바탕화면에 아이콘이 중복으로 쌓이지 않게), 없으면 새 노드만 만들어 id 를
+    // 돌려준다(바탕화면에 실제로 놓는 건 desktop.rs 가 처음 한 번만 한다 — 여기선
+    // 아이콘 위치를 모른다). 두 번째 반환값은 "새로 만들었는지".
+    pub fn set_photo_report(&mut self, photos: Vec<String>) -> (FileId, bool) {
+        if let Some(id) = (0..self.nodes.len()).find(|&i| matches!(&self.nodes[i].kind, FileKind::PhotoReport(_))) {
+            self.nodes[id].kind = FileKind::PhotoReport(photos);
+            return (id, false);
+        }
+        (self.add(PHOTO_REPORT_NAME, FileKind::PhotoReport(photos)), true)
     }
 
     // 메일 첨부파일 등을 "다운로드" — Downloads 탭에 추가한다(이미 있으면 무시).

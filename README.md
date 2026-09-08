@@ -4723,3 +4723,55 @@ const VH: u32 = 480;` 을 독립적으로 들고 있었고, `scenes/desktop.rs`/
 개별 레이아웃 좌표(예: 버튼 위치 90.0, 24.0 등)는 대부분 그 화면
 하나에서만 쓰이는 진짜 "그 화면 고유의 값"이라 지금은 안 건드렸다 —
 여러 곳에서 반복되며 어긋날 위험이 있는 것들 위주로 먼저 처리했다.
+
+## → HexTool 재작업: "My Computer" 스타일 선택창 + 검수 저장/내보내기 흐름
+
+HexTool의 이미지 선택 방식과 검수 흐름을 다시 설계해달라는 요청을 받았다.
+이전 세션에서 시도했던 몇 가지 버전(순차 자동 진행, 설치 마법사풍 로딩
+게이지, 3종 체크박스 등)은 전부 되돌리고(`git revert` 세 번), 이번엔
+아래 요구사항 그대로 새로 만들었다:
+
+1. HexTool에서 "이미지 선택"을 누르면(또는 빈 미리보기를 클릭하면)
+   `apps/hex_picker.rs`의 새 창이 뜬다 — File Explorer("My Computer")와
+   똑같은 아이콘 그리드(`widgets::icon_grid` 그대로 재사용)로 지금
+   ?????에 떠 있는 사진 전체를 보여주고, 클릭하면 그 자리에서 바로
+   골라지고 창이 닫힌다(파일 열기 대화상자처럼).
+2. HexTool 오른쪽 패널은 위에서부터: **"N개의 이미지 중 M개 검수됨"**
+   상태 → 밝기/채도 슬라이더 → 미니맵 → **"이상현상 있음"** 체크박스 →
+   버튼(검수 저장/압축파일 내보내기) 순서로 다시 배치했다.
+3. "검수 저장"을 누르면 지금 보고 있는 사진 하나의 체크 여부만
+   `fs.photo_reviews`(새 필드, `HashMap<String, bool>`, 저장 파일에
+   같이 실림)에 기록한다 — 사진마다 자유롭게 순서 없이 골라 검수할 수
+   있고, 게임을 껐다 켜도 진행 상황이 유지된다.
+4. ?????의 모든 사진이 검수되면(photo_reviews 와 photos_current 의
+   교집합이 photos_current 전체를 덮으면) 버튼이 자동으로
+   **"압축파일 내보내기"**로 바뀐다 — 누르면 이상현상으로 체크된
+   사진들만 모아 `FileKind::PhotoReport` 압축파일(`Report.zip`)을
+   바탕화면에 만든다(재검수해도 새 아이콘이 안 쌓이고 내용만 갱신).
+5. 이 압축파일을 재연구 업무 보고 메일(test@mail.com)에 첨부해서
+   보내면 ????? 피드가 갱신된다 — 트리거 조건이 "PhotoReport 압축파일이
+   첨부됐는지"로 바뀌었다(예전의 "이상현상 사진 직접 첨부" 조건은
+   폐기).
+
+구현 메모:
+- `icon_grid` 위젯은 항목의 `FileId` 필드를 내부적으로 전혀 안 쓰고
+  화면에 보여줄 이름/아이콘, 그리고 클릭된 "인덱스"만 다룬다는 걸
+  확인하고, `HexPickerApp` 이 그 인덱스 자리에 실제 FileId 대신 그냥
+  배열 인덱스를 채워 넣어 재사용했다 — 새 그리드 위젯을 따로 만들
+  필요가 없었다.
+- 선택창은 실제 fs 파일이 아니라서 여는 데 `FileId` 가 없다 — Settings/
+  Credits 창과 같은 요령으로 `usize::MAX` 근처의 가짜 id(`HEX_PICKER_WIN`)
+  를 씀. 사진을 고르면 desktop.rs 가 `WindowManager::close_file()`(이번에
+  새로 추가한 메서드)으로 직접 닫아준다 — 그 앱 자신은 `AppAction::Close`
+  대신 `SelectPhotoForHexTool` 만 반환하기 때문.
+- `AppAction`/`DeskAction` 에 `OpenHexPicker`/`SelectPhotoForHexTool`/
+  `SavePhotoReview`/`ExportPhotoReport` 4개를 새로 추가.
+- 예전에 HexTool 이 "다운로드된 파일 목록"에서 검토 대상을 고르던
+  `apps/mod.rs::hextool_review_files()` 와, fs 변경마다 그 목록을
+  실시간 갱신하던 `desktop.rs::refresh_hextool_if_open()` 는 이제
+  완전히 불필요해져서 삭제했다 — HexTool 이 더는 다운로드 개념과
+  무관하게 ?????의 사진만 직접 다룬다.
+- `cargo build`/`cargo clippy` 로 세 실행 파일 모두 확인, 경고는 기존
+  5개 그대로. 새 문구(検収を保存/圧縮ファイルを書き出す/画像を選択 등)
+  감사에서 "圧"/"書" 두 한자가 빠진 걸 발견해 `gfx.rs::KANJI_CHARSET`
+  에 추가했다.

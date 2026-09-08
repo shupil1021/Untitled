@@ -79,6 +79,21 @@ pub mod archive {
     pub const OPENED_LINE2: S = S { en: "No notable contents found.", ko: "특별한 내용은 발견되지 않았습니다.", ja: "特に注目すべき内容は見つかりませんでした。" };
     pub const NOT_INSTALLED_LINE1: S = S { en: "No extraction utility installed.", ko: "설치된 압축 해제 프로그램이 없습니다.", ja: "解凍ユーティリティがインストールされていません。" };
     pub const NOT_INSTALLED_LINE2: S = S { en: "This archive can't be opened.", ko: "이 압축파일을 열 수 없습니다.", ja: "このアーカイブは開けません。" };
+
+    // HexTool 에서 "압축파일 내보내기"로 만든 보고용 압축파일(FileKind::PhotoReport)
+    // 을 열었을 때 — {n}/{app} 은 render 시점에 실제 값으로 치환한다. {app} 은
+    // secrets::PHOTOS_APP_NAME(????? 이름) 이 들어갈 자리 — 스토리 스포일러라
+    // secrets.rs 밖인 이 파일엔 원문을 직접 못 적어두고 치환으로 처리한다.
+    pub const REPORT_LINE1: S = S {
+        en: "Contains {n} photo(s) marked as anomalies.",
+        ko: "이상현상으로 체크한 사진 {n}장이 들어 있습니다.",
+        ja: "異常現象としてチェックした写真{n}枚が入っています。",
+    };
+    pub const REPORT_LINE2: S = S {
+        en: "Attach it to the re-investigation report mail to refresh {app}.",
+        ko: "재연구 업무 보고 메일에 첨부해서 보내면 {app}가 새로 갱신됩니다.",
+        ja: "再調査業務の報告メールに添付して送ると{app}が更新されます。",
+    };
 }
 
 // apps/official_site.rs — WebView2 캡처 창.
@@ -286,10 +301,23 @@ pub mod hextool {
     pub const NO_FILES_FOUND: S = S { en: "No files found.", ko: "파일이 없습니다.", ja: "ファイルが見つかりません。" };
     pub const NO_FILE_SELECTED: S = S { en: "(no file selected)", ko: "(선택한 파일 없음)", ja: "(ファイル未選択)" };
     pub const CLICK_TO_SELECT: S = S { en: "Click to select a file", ko: "클릭해서 파일 선택", ja: "クリックしてファイルを選択" };
-    pub const ZOOM: S = S { en: "Zoom", ko: "확대", ja: "拡大" };
     pub const BRIGHTNESS: S = S { en: "Brightness", ko: "밝기", ja: "明るさ" };
     pub const SATURATION: S = S { en: "Saturation", ko: "채도", ja: "彩度" };
-    pub const NEW_SELECTION: S = S { en: "New selection", ko: "새로 선택", ja: "選び直す" };
+    // 이미지 선택 창("My Computer" 와 비슷한 아이콘 그리드, apps/hex_picker.rs)을
+    // 여는 링크/버튼.
+    pub const SELECT_IMAGE: S = S { en: "Select Image", ko: "이미지 선택", ja: "画像を選択" };
+    // ????? 검수 진행 상황 — {n}=총 개수, {m}=검수 완료 개수.
+    pub const REVIEW_STATUS: S = S { en: "{m} of {n} images reviewed", ko: "{n}개의 이미지 중 {m}개 검수됨", ja: "{n}枚中{m}枚検収済み" };
+    pub const ANOMALY_CHECK: S = S { en: "Anomaly present", ko: "이상현상 있음", ja: "異常現象あり" };
+    pub const SAVE_REVIEW: S = S { en: "Save Review", ko: "검수 저장", ja: "検収を保存" };
+    // ????? 의 사진을 전부 검수하면 SAVE_REVIEW 대신 이 버튼으로 바뀐다.
+    pub const EXPORT_ARCHIVE: S = S { en: "Export Archive", ko: "압축파일 내보내기", ja: "圧縮ファイルを書き出す" };
+}
+
+// apps/hex_picker.rs — HexTool 이 여는 "My Computer" 스타일 이미지 선택 창.
+pub mod hex_picker {
+    use super::S;
+    pub const TITLE: S = S { en: "Select Image", ko: "이미지 선택", ja: "画像を選択" };
 }
 
 // apps/recycle_bin.rs — 왼쪽 안내 패널 문단.
