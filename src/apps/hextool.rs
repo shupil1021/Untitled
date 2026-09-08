@@ -1,17 +1,18 @@
 //! HexTool — Installer 마법사를 끝까지 마치면 바탕화면에 생기는 설치된 프로그램.
 //! ????? 에 지금 떠 있는 사진들을 한 장씩 골라 들여다보며 시체/글리치/이상현상
-//! 없음 중 하나를 체크하고 저장하는 검수 도구다. 오른쪽 패널 맨 위의 "이미지
-//! 선택..." 링크를 누르면(또는 빈 미리보기 자리를 클릭하면) "My Computer"(File
-//! Explorer)와 비슷한 아이콘 그리드 창(apps/hex_picker.rs, 별개의 창으로 뜬다)이
-//! 열리고, 거기서 사진을 하나 고르면 곧장 그 사진이 이 창의 미리보기로 들어온다.
-//! 이 링크를 패널 안으로 옮긴 건, 예전엔 창 위쪽에 별도 버튼으로 뒀는데 창을
-//! 좁게 줄이면 타이틀바 버튼과 겹쳐 잘려 보였기 때문이다.
+//! 없음 중 하나를 체크하고 저장하는 검수 도구다. 빈 미리보기 자리를 클릭하면
+//! "My Computer"(File Explorer)와 비슷한 아이콘 그리드 창(apps/hex_picker.rs,
+//! 별개의 창으로 뜬다)이 열리고, 거기서 사진을 하나 고르면 곧장 그 사진이 이
+//! 창의 미리보기로 들어온다. 검수 저장을 누르면 잠깐(SAVE_DELAY 초) "저장 중"
+//! 표시가 뜬 뒤 미리보기가 다시 빈 자리로 돌아간다 — 그 자리를 클릭해서 다음
+//! 사진을 고르면 된다. 예전엔 이 선택 기능을 여는 별도 버튼/링크가 따로
+//! 있었는데, 어차피 저장할 때마다 빈 자리로 돌아오므로 굳이 필요 없어 없앴다.
 //!
-//! 오른쪽 패널은 위에서부터: "이미지 선택..." 링크 → 지금까지 검수한 개수
-//! ("N개의 이미지 중 M개 검수됨") → 밝기/채도 슬라이더 → 미니맵 → 이상현상
-//! 체크박스 3개(시체/글리치/이상현상 없음, 서로 배타적 — 하나를 반드시 골라야
-//! 저장 버튼이 활성화된다) → 저장/내보내기 버튼 순서다. 패널 내용이 창 높이보다
-//! 길어지면 마우스 휠/스크롤바로 볼 수 있다.
+//! 오른쪽 패널은 위에서부터: 지금까지 검수한 개수("N개의 이미지 중 M개
+//! 검수됨") → 밝기/채도 슬라이더 → 미니맵 → 이상현상 체크박스 3개(시체/글리치/
+//! 이상현상 없음, 서로 배타적 — 하나를 반드시 골라야 저장 버튼이 활성화된다,
+//! 셋을 그룹 박스로 따로 묶어서 한 세트라는 걸 보여준다) → 저장/내보내기 버튼
+//! 순서다. 패널 내용이 창 높이보다 길어지면 마우스 휠/스크롤바로 볼 수 있다.
 //!
 //! 미리보기는 photos.rs 와 같은 요령으로 원본 파일을 그때그때 디코드해 텍스처로
 //! 올린다(고른 사진이 바뀔 때만 한 번). 밝기/채도 슬라이더는 이 렌더러에 셰이더
@@ -36,7 +37,7 @@ use std::rc::Rc;
 use miniquad::{RenderingBackend, TextureId};
 
 use crate::foundation::{AnomalyCategory, Language, Settings};
-use crate::gfx::{Assets, Rect, Renderer};
+use crate::gfx::{Assets, Rect, Renderer, CELL_H};
 use crate::strings::{hextool as s, t};
 use crate::ui::*;
 
@@ -50,21 +51,28 @@ const LABEL_H: f32 = 20.0;
 const PANEL_W: f32 = 150.0;
 const SLIDER_GAP: f32 = 8.0;
 const SLIDER_ROW_H: f32 = 40.0; // 슬라이더 두 개 사이 마진
-const LINK_ROW_H: f32 = 18.0;
 const STATUS_ROW_H: f32 = 18.0;
 const MINIMAP_SIDE: f32 = 110.0;
 const CHECK_ROW_H: f32 = 20.0;
 const BTN_H: f32 = 24.0;
 const ROW_GAP: f32 = 6.0;
+// 체크박스 3개를 감싸는 그룹 박스(ui::group_box) 여백 — settings.rs 의 그룹
+// 박스들과 같은 값을 써서 이 게임 안에서 그룹 박스가 항상 같은 비례로 보이게
+// 맞췄다.
+const BOX_TOP_MARGIN: f32 = 12.0; // 그룹박스 라벨이 위 테두리에 걸치는 만큼 위쪽에 미리 비워둘 여백
+const BOX_TOP_INSET: f32 = 16.0; // 박스 테두리 상단에서 첫 체크박스까지
+const BOX_BOTTOM_PAD: f32 = 8.0;
+const CHECK_BOX_H: f32 = BOX_TOP_INSET + CHECK_ROW_H * 3.0 + BOX_BOTTOM_PAD;
+// 저장을 누른 뒤 미리보기가 빈 자리로 돌아가기까지의 "저장 중" 표시 시간(초).
+const SAVE_DELAY: f32 = 0.5;
 // 패널 안에서 각 행이 시작하는 y 오프셋(패널 맨 위 기준) — 스크롤(관성/클램프)과
-// 각 행의 보임 여부 판정에 쓴다. 순서: 이미지 선택 링크 → 검수 현황 → 밝기 →
-// 채도 → 미니맵 → 체크박스 3개 → 저장/내보내기 버튼.
-const LINK_Y: f32 = 0.0;
-const STATUS_Y: f32 = LINK_Y + LINK_ROW_H + ROW_GAP;
+// 각 행의 보임 여부 판정에 쓴다. 순서: 검수 현황 → 밝기 → 채도 → 미니맵 →
+// 체크박스 그룹 박스 → 저장/내보내기 버튼.
+const STATUS_Y: f32 = 0.0;
 const SLIDERS_Y: f32 = STATUS_Y + STATUS_ROW_H + ROW_GAP;
 const MINIMAP_Y: f32 = SLIDERS_Y + SLIDER_ROW_H * 2.0 + ROW_GAP;
-const CHECKS_Y: f32 = MINIMAP_Y + MINIMAP_SIDE + ROW_GAP;
-const BTN_Y: f32 = CHECKS_Y + CHECK_ROW_H * 3.0 + ROW_GAP;
+const CHECK_BOX_Y: f32 = MINIMAP_Y + MINIMAP_SIDE + ROW_GAP + BOX_TOP_MARGIN;
+const BTN_Y: f32 = CHECK_BOX_Y + CHECK_BOX_H + ROW_GAP;
 const PANEL_CONTENT_H: f32 = BTN_Y + BTN_H;
 
 pub struct HexToolApp {
@@ -79,6 +87,7 @@ pub struct HexToolApp {
     saturation: f32,
     active_slider: i32,
     category: Option<AnomalyCategory>, // 지금 로드된 사진에 대해 고른 체크박스(저장 전까지는 임시) — None 이면 아직 아무것도 안 고름
+    saving: Option<f32>, // Some(경과 시간) 이면 "저장 중" 표시 중 — SAVE_DELAY 를 넘으면 미리보기를 비운다
     photos_current: Vec<String>,                  // ????? 에 지금 떠 있는 사진 식별자 전체 — 진행 상황(N) 계산용
     reviews: HashMap<String, AnomalyCategory>,    // fs.photo_reviews 의 로컬 사본 — "저장" 할 때마다 여기도 같이 갱신해서 M 이 그 자리에서 바로 반영된다
     panel_scroll: f32,
@@ -101,6 +110,7 @@ impl HexToolApp {
             saturation: 0.5,
             active_slider: -1,
             category: None,
+            saving: None,
             photos_current,
             reviews,
             panel_scroll: 0.0,
@@ -121,6 +131,7 @@ impl HexToolApp {
         self.zoom = MIN_ZOOM;
         self.center = (0.5, 0.5);
         self.drag_last = None;
+        self.saving = None;
     }
 
     // 재연구 업무 보고 메일을 실제로 보내 ????? 피드가 새로 갱신되면 desktop.rs
@@ -285,22 +296,6 @@ impl HexToolApp {
         let outer_clip = r.clip();
         r.set_clip(Some(panel));
 
-        // 이미지 선택 링크 — 예전엔 창 위쪽 버튼이었는데, 창을 좁히면 타이틀바
-        // 버튼과 겹쳐 잘려 보여서 패널 맨 위 링크로 옮겼다.
-        let mut open_picker = false;
-        let link_y = top + LINK_Y;
-        if visible(link_y, LINK_ROW_H) {
-            let link_label = t(lang, s::SELECT_IMAGE);
-            let hover = win.mouse.0 >= panel.x
-                && win.mouse.0 <= panel.x + content_w
-                && win.mouse.1 >= link_y
-                && win.mouse.1 <= link_y + LINK_ROW_H;
-            r.text(panel.x, link_y + 2.0, link_label, 0.78, if hover { NAVY } else { [0.1, 0.1, 0.6, 1.0] });
-            if hover && win.mouse_clicked {
-                open_picker = true;
-            }
-        }
-
         let status_y = top + STATUS_Y;
         if visible(status_y, STATUS_ROW_H) {
             let status = t(lang, s::REVIEW_STATUS).replace("{n}", &total.to_string()).replace("{m}", &reviewed.to_string());
@@ -327,7 +322,15 @@ impl HexToolApp {
             self.draw_minimap(r, Rect::new(panel.x + (content_w - side) / 2.0, minimap_y, side, side));
         }
 
-        let checks_y = top + CHECKS_Y;
+        // 체크박스 3개를 그룹 박스로 묶어서 "이 셋이 한 세트"라는 걸 시각적으로
+        // 보여준다(settings.rs 의 그룹 박스들과 같은 위젯) — box_y 는 박스 테두리
+        // 자체의 좌상단이고, 라벨은 그 위쪽 선에 걸쳐 그려지므로 그 만큼(BOX_TOP_
+        // MARGIN)은 미리 위에 비워둔 채로 넘겨받았다(CHECK_BOX_Y 계산 참고).
+        let box_y = top + CHECK_BOX_Y;
+        if visible(box_y - BOX_TOP_MARGIN, CHECK_BOX_H + BOX_TOP_MARGIN) {
+            group_box(r, panel.x, box_y, content_w, CHECK_BOX_H, t(lang, s::ANOMALY_GROUP));
+        }
+        let checks_y = box_y + BOX_TOP_INSET;
         let rows = [
             (t(lang, s::ANOMALY_CORPSE), AnomalyCategory::Corpse),
             (t(lang, s::ANOMALY_GLITCH), AnomalyCategory::Glitch),
@@ -336,7 +339,7 @@ impl HexToolApp {
         for (i, (label, cat)) in rows.into_iter().enumerate() {
             let y = checks_y + i as f32 * CHECK_ROW_H;
             if visible(y, CHECK_ROW_H) {
-                self.draw_category_checkbox(r, panel.x, y + 10.0, label, cat, win);
+                self.draw_category_checkbox(r, panel.x + 6.0, y + 10.0, label, cat, win);
             }
         }
 
@@ -357,13 +360,19 @@ impl HexToolApp {
                     result = AppAction::ExportPhotoReport(flagged);
                 } else if let (Some(id), Some(cat)) = (self.loaded_photo_id.clone(), self.category) {
                     self.reviews.insert(id.clone(), cat);
+                    self.saving = Some(0.0);
+                    self.category = None;
                     result = AppAction::SavePhotoReview(id, cat);
                 }
             } else if !enabled {
-                // 비활성 상태 — 눌러도 반응 없는 회색 버튼으로만 그린다.
+                // 비활성 상태 — 눌러도 반응 없는 회색 버튼으로만 그린다. raw_button()
+                // 과 똑같은 공식(y + (h - CELL_H) / 2.0)으로 세로 중앙을 맞춘다 — 예전엔
+                // 고정값(+5.0)을 써서 버튼 높이가 조금만 달라져도 글자가 위로 치우쳐
+                // 보였다.
                 raised(r, panel.x, btn_y, content_w, BTN_H);
                 let tw = r.text_width(btn_label, 1.0);
-                r.text(panel.x + (content_w - tw) / 2.0, btn_y + 5.0, btn_label, 1.0, [0.55, 0.55, 0.55, 1.0]);
+                let ty = btn_y + (BTN_H - CELL_H) / 2.0;
+                r.text(panel.x + (content_w - tw) / 2.0, ty, btn_label, 1.0, [0.55, 0.55, 0.55, 1.0]);
             }
         }
 
@@ -376,7 +385,7 @@ impl HexToolApp {
             );
         }
 
-        if open_picker { AppAction::OpenHexPicker } else { result }
+        result
     }
 }
 
@@ -391,8 +400,8 @@ impl App for HexToolApp {
         let body = Rect::new(area.x + 6.0, area.y + 6.0, area.w - 12.0, area.h - 12.0);
 
         // 위쪽 한 줄 — 지금 보고 있는 사진 이름(없으면 안내 문구)만 보여준다.
-        // 선택 창을 여는 버튼은 없다 — 패널 맨 위의 "이미지 선택..." 링크로
-        // 옮겨졌다(update_panel 참고).
+        // 선택 창을 여는 버튼/링크는 따로 없다 — 빈 미리보기 자리를 클릭하면
+        // 바로 열린다(아래).
         let name_text = match &self.loaded_photo_id {
             Some(id) => id.rsplit('/').next().unwrap_or(id).to_string(),
             None => t(lang, s::NO_FILE_SELECTED).to_string(),
@@ -406,11 +415,27 @@ impl App for HexToolApp {
         let panel = Rect::new(preview.x + preview.w + SLIDER_GAP, content.y, panel_w, content.h);
 
         let mut open_picker = false;
-        if self.loaded_photo_id.is_some() {
+        if let Some(elapsed) = self.saving {
+            // "검수 저장"을 막 눌렀다 — 잠깐 저장 중 표시를 보여준 뒤 미리보기를
+            // 빈 자리로 되돌린다(다음 사진은 그 자리를 클릭해서 고른다).
+            let elapsed = elapsed + win.dt;
+            if elapsed >= SAVE_DELAY {
+                self.saving = None;
+                self.loaded_photo_id = None;
+                self.tex = None;
+                self.tex_tried = false;
+            } else {
+                self.saving = Some(elapsed);
+            }
+            sunken(r, preview.x, preview.y, preview.w, preview.h);
+            let msg = t(lang, s::SAVING);
+            let tw = r.text_width(msg, 0.8);
+            r.text(preview.x + (preview.w - tw) / 2.0, preview.y + preview.h / 2.0 - 6.0, msg, 0.8, GRAY);
+        } else if self.loaded_photo_id.is_some() {
             self.draw_preview(ctx, r, preview, win, lang);
         } else {
             // 아직 아무 사진도 안 골랐다 — 빈 미리보기 자리를 보여주고, 클릭하면
-            // 선택 창이 뜬다(패널의 "이미지 선택..." 링크와 같은 동작).
+            // 선택 창이 뜬다.
             sunken(r, preview.x, preview.y, preview.w, preview.h);
             let hint = t(lang, s::CLICK_TO_SELECT);
             let tw = r.text_width(hint, 0.8);
