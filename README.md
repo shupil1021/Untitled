@@ -4986,3 +4986,39 @@ HexTool의 이미지 선택 방식과 검수 흐름을 다시 설계해달라는
 
 `cargo build`/`cargo clippy` 세 실행 파일 모두 확인, 경고는 기존 5개
 그대로.
+
+## → director_panel 에 탭 추가: "Vars" 탭에서 스토리 진행 플래그를 값 보고 바로 수정
+
+`director_panel.exe`(director.exe 옆에 따로 뜨는 조작 창)에 탭을 나눴다 —
+기존 씬 전환/글리치/노이즈/녹화 버튼은 그대로 "Director" 탭으로, 새로
+"Vars" 탭을 만들어 스토리 진행 플래그(`hex_tool_installed`/`mail_arrived`)를
+지금 값 그대로 보여주고 버튼 하나로 바로 켜고 끌 수 있게 했다.
+
+문제는 `director_ipc.rs` 모듈 설명에 원래 "실제 게임(crackhead.exe)은 이
+모듈을 아예 안 쓴다"고 못 박혀 있었다는 점이다 — `director_state.json` 은
+지금까지 `director_panel.exe`→`director.exe`(연출용 녹화 화면, 실제
+게임과는 다른 프로세스) 한 방향으로만 흐르는 통로였다. 이번에 그 원칙을
+깨고 `DirectorState`에 `set_hex_tool_installed`/`set_mail_arrived:
+Option<bool>` 두 필드를 추가해서, 진짜 게임도 이 파일을 (제한적으로) 읽게
+만들었다:
+
+1. `DesktopScene`에 `debug_sync_timer`를 추가해 1초(`DEBUG_SYNC_INTERVAL`)
+   마다 `sync_debug_vars()`를 부른다 — `director_ipc::load()`로
+   `director_state.json`을 읽어서 `set_*` 필드가 `Some`이면 `fs`에 그 값을
+   반영하고, `jump_to`를 director.exe 가 한 번 적용한 뒤 지우는 것과 똑같은
+   요령으로 그 자리만 다시 `None`으로 지워 저장한다(매 주기 반복 적용 방지).
+2. `director_panel`의 Vars 탭은 그 값을 직접 들고 있지 않다(다른
+   프로세스라서) — 매 프레임 그냥 게임 저장 파일(`palaceos_save.json`,
+   `foundation::load()`)을 읽어서 "지금 값"만 보여주고, 버튼을 누르면
+   `director_state.json`에 반대값으로 `set_*` 요청만 얹어둔다. 그래서 값이
+   실제로 바뀌는 데 게임이 다음 슬라이스를 확인할 때까지(최대 1초) 걸린다
+   — 화면에 그 안내 문구도 같이 넣었다.
+3. 기존 `PanelStage::draw()` 안에 있던 씬/글리치/노이즈/녹화 UI는 통째로
+   자유 함수 `draw_director_tab()`으로 옮겼다(`draw_slider_row`가 이미
+   자유 함수인 것과 같은 이유 — `&mut self` 메서드 호출로 묶으면
+   `self.renderer`/`self.state`/`self.input`을 동시에 나눠 빌리는 게 막힌다).
+   Vars 탭도 같은 이유로 `draw_vars_tab()` 자유 함수로 뺐다.
+
+`cargo build`/`cargo clippy` 세 실행 파일 모두 확인, 경고는 기존 5개
+그대로(`draw_director_tab`은 인자 8개라 다른 위젯 함수들과 같은 이유로
+`#[allow(clippy::too_many_arguments)]`를 붙였다 — 새 경고로 안 잡힘).

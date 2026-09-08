@@ -263,9 +263,14 @@ pub struct DesktopScene {
     icon_glitch_active: f32, // 지금 글리치가 진행 중이면 남은 지속시간(> 0)
     icon_glitch_offset: f32, // 이번 버스트의 색 채널 어긋남 폭(버스트 시작 때 한 번만 뽑음)
     thumb_cache: ThumbCache, // 바탕화면의 FileKind::Photo 아이콘을 실제 사진 축소판으로 그릴 때 쓰는 지연 로딩 캐시
+    debug_sync_timer: f32,  // director_panel "변수" 탭의 강제 변경 요청을 확인하는 주기 타이머
 }
 
 const AUTOSAVE_INTERVAL: f32 = 5.0; // 이 주기(초)마다 설정/바탕화면 상태를 자동 저장한다.
+// director_panel "변수" 탭에서 스토리 진행 플래그를 강제로 바꾸는 요청은 매
+// 프레임 확인할 필요까지는 없는 개발용 디버그 기능이라, 이 주기(초)마다만
+// director_state.json 을 다시 읽는다.
+const DEBUG_SYNC_INTERVAL: f32 = 1.0;
 const MAIL_ARRIVAL_DELAY: f32 = 5.0; // 데스크톱에 들어오고 이만큼 지나면 첫 메일(입사 안내)이 도착한다.
 const MAIL_AUTO_ARRIVE: bool = true;
 const TOAST_DURATION: f32 = 5.0; // 우측 하단 알림이 떠있는 시간(초)
@@ -345,6 +350,7 @@ impl DesktopScene {
             icon_glitch_active: 0.0,
             icon_glitch_offset: 0.0,
             thumb_cache: ThumbCache::new(),
+            debug_sync_timer: 0.0,
         }
     }
 
@@ -462,6 +468,28 @@ impl DesktopScene {
             icon_pos: self.icon_pos.clone(),
             window_geometry,
         });
+    }
+
+    // director_panel "변수" 탭에서 스토리 진행 플래그(hex_tool_installed/
+    // mail_arrived)를 강제로 바꿔달라는 요청이 director_state.json 에 와
+    // 있는지 확인한다(개발용 디버그 기능 — director_ipc.rs 모듈 설명 참고).
+    // 있으면 fs 에 반영하고 그 자리만 None 으로 지워서(jump_to 와 같은
+    // "일회성 명령" 요령) 다음 주기에 또 적용되는 일이 없게 한다.
+    fn sync_debug_vars(&mut self, settings: &Rc<RefCell<Settings>>) {
+        let mut state = crate::director_ipc::load();
+        let mut changed = false;
+        if let Some(v) = state.set_hex_tool_installed.take() {
+            self.fs.hex_tool_installed = v;
+            changed = true;
+        }
+        if let Some(v) = state.set_mail_arrived.take() {
+            self.fs.mail_arrived = v;
+            changed = true;
+        }
+        if changed {
+            crate::director_ipc::save(&state);
+            self.write_save(settings);
+        }
     }
 
     // 두 점으로부터 정규화된(음수 없는) 사각형을 만든다.
@@ -1790,6 +1818,13 @@ impl Scene for DesktopScene {
         }
         if self.idiot_confirm {
             self.draw_idiot_confirm(f.r, m);
+        }
+
+        // director_panel "변수" 탭 디버그 요청 확인 (아래 sync_debug_vars 참고).
+        self.debug_sync_timer += f.dt;
+        if self.debug_sync_timer >= DEBUG_SYNC_INTERVAL {
+            self.debug_sync_timer = 0.0;
+            self.sync_debug_vars(&f.settings);
         }
 
         // 자동 저장: 주기적으로, 그리고 종료할 때 한 번 더 확실히 저장한다.

@@ -2,7 +2,14 @@
 //! 창) 두 실행 파일이 서로 다른 창(다른 프로세스)이라 직접 함수를 부를 수
 //! 없어서, 작은 JSON 파일 하나를 공유 상태로 써서 통신한다 — panel 이 버튼을
 //! 누를 때마다 파일에 원하는 상태를 써두면, director 가 매 프레임 그 파일을
-//! 다시 읽어서 반영한다. 실제 게임(crackhead.exe)은 이 모듈을 아예 안 쓴다.
+//! 다시 읽어서 반영한다.
+//!
+//! panel 의 "변수" 탭(스토리 진행 플래그 강제 변경, 개발용 디버그 기능)만은
+//! 예외로 실제 게임(crackhead.exe)도 이 파일을 읽는다 — scenes/desktop.rs::
+//! DesktopScene::sync_debug_vars() 가 주기적으로 set_* 필드를 확인해서 있으면
+//! fs 에 반영하고 그 자리만 지운다(jump_to 를 director 가 한 번 적용한 뒤
+//! 지우는 것과 같은 "일회성 명령" 요령). 그 외 필드(glitch/noise/씬 전환/녹화)는
+//! 여전히 director 전용이라 crackhead.exe 는 거들떠보지 않는다.
 //!
 //! 파일은 두 실행 파일이 항상 같은 폴더에 같이 있다는 전제로 "exe 옆"에 둔다
 //! (foundation.rs 의 save_path()/settings_path() 와 같은 요령) — 다만 이름을
@@ -47,6 +54,14 @@ pub struct DirectorState {
     // 저장을 멈출 뿐 폴더는 그대로 남는다.
     #[serde(default)]
     pub recording: bool,
+    // panel 의 "변수" 탭 전용 — 스토리 진행 플래그를 강제로 켜거나 꺼달라는
+    // 일회성 요청. Some(값) 이면 crackhead.exe(DesktopScene::sync_debug_vars)
+    // 가 다음에 이 파일을 읽을 때 실제 fs 에 그 값을 반영한 뒤 다시 None 으로
+    // 지운다 — jump_to 와 같은 요령(매 프레임 반복 적용되지 않게).
+    #[serde(default)]
+    pub set_hex_tool_installed: Option<bool>,
+    #[serde(default)]
+    pub set_mail_arrived: Option<bool>,
 }
 
 impl Default for DirectorState {
@@ -59,6 +74,8 @@ impl Default for DirectorState {
             glitch_frequency: 0.5, // 예전(주기 조절이 생기기 전) 세기와 비슷한 "중간" 정도
             jump_to: None,
             recording: false,
+            set_hex_tool_installed: None,
+            set_mail_arrived: None,
         }
     }
 }

@@ -15,12 +15,21 @@
 use miniquad::*;
 
 use crackhead::director_ipc::{self, DirectorState};
+use crackhead::foundation;
 use crackhead::gfx::Renderer;
 use crackhead::scenes::Input;
 use crackhead::ui;
 
 const SCENE_BUTTONS: [&str; 6] = ["Boot", "Lobby", "Desktop", "Erase", "Shutdown", "BlueScreen"];
 const WIN_W: f32 = 200.0;
+
+// 이 창의 탭 — Director(기존 연출 제어)와 Vars(스토리 진행 플래그를 강제로
+// 켜고 끄는 개발용 디버그 탭, director_ipc.rs 모듈 설명 참고).
+#[derive(PartialEq, Clone, Copy)]
+enum Tab {
+    Director,
+    Vars,
+}
 // 버튼/줄이 다 들어가고도 아래쪽에 여유가 남게 넉넉히 잡는다 — 예전에 딱
 // 맞춰서 240 남짓으로 뒀을 때, high_dpi 창에서 실제 클릭 가능 영역이
 // 렌더러가 그리는 캔버스보다 살짝 작게 잡히는 경우가 있어서(특히 아래쪽
@@ -32,13 +41,14 @@ struct PanelStage {
     renderer: Renderer,
     input: Input,
     state: DirectorState,
+    tab: Tab,
 }
 
 impl PanelStage {
     fn new() -> PanelStage {
         let mut ctx: Box<dyn RenderingBackend> = window::new_rendering_backend();
         let renderer = Renderer::new(ctx.as_mut());
-        PanelStage { ctx, renderer, input: Input::default(), state: director_ipc::load() }
+        PanelStage { ctx, renderer, input: Input::default(), state: director_ipc::load(), tab: Tab::Director }
     }
 }
 
@@ -78,6 +88,105 @@ fn draw_slider_row(r: &mut Renderer, sw: f32, y: f32, mouse: (f32, f32), mouse_d
     false
 }
 
+// "Director" 탭 내용 — 예전에 PanelStage::draw() 안에 그대로 있던 씬 전환/글리치/
+// 노이즈/녹화 버튼들을 탭이 생기면서 그대로 옮겨온 것뿐이다. 자유 함수로 둔 이유는
+// draw_slider_row 와 같다(위 주석 참고) — self.renderer/self.state/self.input 을
+// 필드별로 나눠 받아야 &mut self 메서드 호출로 묶을 때 생기는 borrow 충돌을 피한다.
+#[allow(clippy::too_many_arguments)]
+fn draw_director_tab(
+    r: &mut Renderer, state: &mut DirectorState, mouse: (f32, f32), mouse_down: bool, sw: f32, y0: f32, win: &crackhead::apps::WinInput,
+    dirty: &mut bool,
+) {
+    r.text(8.0, y0, "scene:", 0.8, [0.25, 0.25, 0.25, 1.0]);
+    let mut by = y0 + 16.0;
+    for name in SCENE_BUTTONS {
+        if ui::button(r, 8.0, by, sw - 16.0, 24.0, name, win) {
+            state.jump_to = Some(name.to_string());
+            *dirty = true;
+        }
+        by += 28.0;
+    }
+
+    by += 6.0;
+    let glitch_label = if state.glitch { "Glitch: ON" } else { "Glitch: OFF" };
+    if ui::button(r, 8.0, by, sw - 16.0, 24.0, glitch_label, win) {
+        state.glitch = !state.glitch;
+        *dirty = true;
+    }
+    by += 30.0;
+    if draw_slider_row(r, sw, by, mouse, mouse_down, "Intensity", &mut state.glitch_intensity) {
+        *dirty = true;
+    }
+    by += 34.0;
+    if draw_slider_row(r, sw, by, mouse, mouse_down, "Frequency", &mut state.glitch_frequency) {
+        *dirty = true;
+    }
+
+    by += 40.0;
+    let noise_label = if state.noise { "Noise: ON" } else { "Noise: OFF" };
+    if ui::button(r, 8.0, by, sw - 16.0, 24.0, noise_label, win) {
+        state.noise = !state.noise;
+        *dirty = true;
+    }
+    by += 30.0;
+    if draw_slider_row(r, sw, by, mouse, mouse_down, "Intensity", &mut state.noise_intensity) {
+        *dirty = true;
+    }
+
+    by += 40.0;
+    // ■/● 같은 기호는 게임 폰트 아틀라스(ASCII+한글+가나+한자만 담음)에
+    // 없어서 tofu(마름모+물음표)로 깨져 보인다 — 이 패널도 같은 렌더러를
+    // 쓰므로 ASCII 로만 된 라벨을 쓴다.
+    let record_label = if state.recording { "[STOP] Stop Recording" } else { "[REC] Record" };
+    if ui::button(r, 8.0, by, sw - 16.0, 24.0, record_label, win) {
+        state.recording = !state.recording;
+        *dirty = true;
+    }
+}
+
+// "Vars" 탭 내용 — 스토리 진행 플래그(hex_tool_installed/mail_arrived)를
+// 강제로 켜고 끄는 개발용 디버그 화면. 이 창은 게임(crackhead.exe)과 다른
+// 프로세스라 그 값을 직접 들고 있지 않으므로, 매 프레임 게임 저장 파일
+// (palaceos_save.json)을 그냥 읽어서 "지금 값"만 보여준다 — 실제로 값을
+// 바꾸는 건 버튼을 눌러 director_state.json 에 set_* 요청을 얹어두는
+// 것뿐이고, 게임이 그 요청을 확인해서(DesktopScene::sync_debug_vars) 반영할
+// 때까지 최대 1초(DEBUG_SYNC_INTERVAL) 정도 걸린다. 게임이 안 켜져 있으면
+// 저장 파일이 아직 없거나 오래된 값 그대로일 수 있다.
+fn draw_vars_tab(r: &mut Renderer, state: &mut DirectorState, sw: f32, y0: f32, win: &crackhead::apps::WinInput, dirty: &mut bool) {
+    r.text(8.0, y0, "Story progress flags (debug):", 0.75, [0.25, 0.25, 0.25, 1.0]);
+    let mut by = y0 + 20.0;
+
+    let save = foundation::load();
+    let hex_tool_installed = save.as_ref().is_some_and(|d| d.fs.hex_tool_installed);
+    let mail_arrived = save.as_ref().is_some_and(|d| d.fs.mail_arrived);
+
+    r.text(8.0, by, &format!("hex_tool_installed: {hex_tool_installed}"), 0.75, [0.1, 0.1, 0.1, 1.0]);
+    by += 18.0;
+    let label = if hex_tool_installed { "Set OFF" } else { "Set ON" };
+    if ui::button(r, 8.0, by, sw - 16.0, 24.0, label, win) {
+        state.set_hex_tool_installed = Some(!hex_tool_installed);
+        *dirty = true;
+    }
+    by += 38.0;
+
+    r.text(8.0, by, &format!("mail_arrived: {mail_arrived}"), 0.75, [0.1, 0.1, 0.1, 1.0]);
+    by += 18.0;
+    let label = if mail_arrived { "Set OFF" } else { "Set ON" };
+    if ui::button(r, 8.0, by, sw - 16.0, 24.0, label, win) {
+        state.set_mail_arrived = Some(!mail_arrived);
+        *dirty = true;
+    }
+    by += 38.0;
+
+    if save.is_none() {
+        r.text(8.0, by, "(no save file found yet)", 0.7, [0.5, 0.5, 0.5, 1.0]);
+        by += 14.0;
+    }
+    r.text(8.0, by, "Applies within 1s while the", 0.7, [0.4, 0.4, 0.4, 1.0]);
+    by += 14.0;
+    r.text(8.0, by, "game is running.", 0.7, [0.4, 0.4, 0.4, 1.0]);
+}
+
 impl EventHandler for PanelStage {
     fn update(&mut self) {}
 
@@ -86,7 +195,6 @@ impl EventHandler for PanelStage {
         self.renderer.begin(sw, sh);
         self.renderer.rect(0.0, 0.0, sw, sh, [0.75, 0.75, 0.78, 1.0]);
         self.renderer.text(6.0, 4.0, "PalaceOS Director", 0.85, [0.0, 0.0, 0.0, 1.0]);
-        self.renderer.text(6.0, 20.0, "scene:", 0.8, [0.25, 0.25, 0.25, 1.0]);
 
         let win = crackhead::apps::WinInput {
             mouse: self.input.mouse,
@@ -98,50 +206,29 @@ impl EventHandler for PanelStage {
             time: 0.0,
             input: &self.input,
         };
+
+        // 탭 바 — Director(기존 연출 제어) / Vars(스토리 진행 플래그 강제 변경).
+        // 지금 선택된 탭 앞엔 "> " 를 붙여 표시한다(●/■ 같은 기호는 게임 폰트
+        // 아틀라스에 없어서 ASCII 로만 표시하는 이 패널의 관례를 그대로 따른다).
+        const TAB_Y: f32 = 22.0;
+        const TAB_H: f32 = 22.0;
+        let tab_w = (sw - 16.0 - 4.0) / 2.0;
+        let director_label = if self.tab == Tab::Director { "> Director" } else { "Director" };
+        if ui::button(&mut self.renderer, 8.0, TAB_Y, tab_w, TAB_H, director_label, &win) {
+            self.tab = Tab::Director;
+        }
+        let vars_label = if self.tab == Tab::Vars { "> Vars" } else { "Vars" };
+        if ui::button(&mut self.renderer, 8.0 + tab_w + 4.0, TAB_Y, tab_w, TAB_H, vars_label, &win) {
+            self.tab = Tab::Vars;
+        }
+        let content_top = TAB_Y + TAB_H + 8.0;
+
         let mut dirty = false;
-        let mut by = 38.0;
-        for name in SCENE_BUTTONS {
-            if ui::button(&mut self.renderer, 8.0, by, sw - 16.0, 24.0, name, &win) {
-                self.state.jump_to = Some(name.to_string());
-                dirty = true;
-            }
-            by += 28.0;
-        }
-
-        by += 6.0;
-        let glitch_label = if self.state.glitch { "Glitch: ON" } else { "Glitch: OFF" };
-        if ui::button(&mut self.renderer, 8.0, by, sw - 16.0, 24.0, glitch_label, &win) {
-            self.state.glitch = !self.state.glitch;
-            dirty = true;
-        }
-        by += 30.0;
-        if draw_slider_row(&mut self.renderer, sw, by, self.input.mouse, self.input.mouse_down, "Intensity", &mut self.state.glitch_intensity) {
-            dirty = true;
-        }
-        by += 34.0;
-        if draw_slider_row(&mut self.renderer, sw, by, self.input.mouse, self.input.mouse_down, "Frequency", &mut self.state.glitch_frequency) {
-            dirty = true;
-        }
-
-        by += 40.0;
-        let noise_label = if self.state.noise { "Noise: ON" } else { "Noise: OFF" };
-        if ui::button(&mut self.renderer, 8.0, by, sw - 16.0, 24.0, noise_label, &win) {
-            self.state.noise = !self.state.noise;
-            dirty = true;
-        }
-        by += 30.0;
-        if draw_slider_row(&mut self.renderer, sw, by, self.input.mouse, self.input.mouse_down, "Intensity", &mut self.state.noise_intensity) {
-            dirty = true;
-        }
-
-        by += 40.0;
-        // ■/● 같은 기호는 게임 폰트 아틀라스(ASCII+한글+가나+한자만 담음)에
-        // 없어서 tofu(마름모+물음표)로 깨져 보인다 — 이 패널도 같은 렌더러를
-        // 쓰므로 ASCII 로만 된 라벨을 쓴다.
-        let record_label = if self.state.recording { "[STOP] Stop Recording" } else { "[REC] Record" };
-        if ui::button(&mut self.renderer, 8.0, by, sw - 16.0, 24.0, record_label, &win) {
-            self.state.recording = !self.state.recording;
-            dirty = true;
+        let mouse = self.input.mouse;
+        let mouse_down = self.input.mouse_down;
+        match self.tab {
+            Tab::Director => draw_director_tab(&mut self.renderer, &mut self.state, mouse, mouse_down, sw, content_top, &win, &mut dirty),
+            Tab::Vars => draw_vars_tab(&mut self.renderer, &mut self.state, sw, content_top, &win, &mut dirty),
         }
 
         // Record 를 끄면 director 가 그 즉시 화면에 반영하지만, PNG+wav 를
