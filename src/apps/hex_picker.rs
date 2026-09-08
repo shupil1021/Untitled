@@ -20,8 +20,12 @@ use super::photos::{find_photo_dir, load_scaled_texture};
 use super::widgets::{ease_scroll, scrollbar};
 use super::{App, AppAction, WinInput};
 
-const CELL_W: f32 = 96.0;
-const CELL_H: f32 = 96.0; // 썸네일 정사각형 한 변
+// 아이콘 대신 실사진을 보여주는 자리라, 정말로 아이콘 하나 크기(draw_icon 이
+// icon_grid 에서 쓰는 32px)와 비슷하게 맞춘다 — 96px 로 키웠더니 "미리보기"라기
+// 보다 별도의 큰 이미지 뷰어처럼 보인다는 피드백을 받았다.
+const THUMB_SIZE: f32 = 32.0;
+const CELL_W: f32 = 92.0; // widgets::icon_grid 의 셀 폭과 맞췄다 — 같은 게임 안에서 같은 격자 배치로 보이도록.
+const CELL_H: f32 = 36.0; // 썸네일(32) + 위아래 여백
 const LABEL_H: f32 = 18.0;
 const GAP: f32 = 10.0;
 const PAD: f32 = 12.0;
@@ -91,11 +95,18 @@ impl App for HexPickerApp {
             if !self.tried[i] {
                 self.tried[i] = true;
                 if let Some(dir) = &photo_dir {
-                    self.thumbs[i] = load_scaled_texture(ctx, &dir.join(id), Some(CELL_H - 4.0));
+                    self.thumbs[i] = load_scaled_texture(ctx, &dir.join(id), Some(THUMB_SIZE));
                 }
             }
 
-            let thumb_rect = Rect::new(cx, cy, CELL_W, CELL_H);
+            // 아이콘 자리를 그대로 대신하는 거라 아이콘과 같은 크기(THUMB_SIZE)로
+            // 셀 위쪽 가운데에 그린다 — icon_grid 의 draw_icon 호출과 같은 자리.
+            let cell_rect = Rect::new(cx, cy, CELL_W, CELL_H + LABEL_H);
+            let hover = cell_rect.intersect(&list_area).contains(win.mouse.0, win.mouse.1);
+            if hover {
+                r.rect(cell_rect.x, cell_rect.y, cell_rect.w, cell_rect.h, [0.82, 0.88, 0.98, 1.0]);
+            }
+            let thumb_rect = Rect::new(cx + (CELL_W - THUMB_SIZE) / 2.0, cy + 2.0, THUMB_SIZE, THUMB_SIZE);
             r.rect(thumb_rect.x, thumb_rect.y, thumb_rect.w, thumb_rect.h, BLACK);
             if let Some((tex, w, h)) = self.thumbs[i] {
                 let (iw, ih) = (w as f32, h as f32);
@@ -105,14 +116,10 @@ impl App for HexPickerApp {
                 let dy = thumb_rect.y + (thumb_rect.h - dh) / 2.0;
                 r.sprite(tex, dx, dy, dw, dh, WHITE);
             }
-            let hover = thumb_rect.intersect(&list_area).contains(win.mouse.0, win.mouse.1);
-            if hover {
-                crate::ui::border(r, thumb_rect.x, thumb_rect.y, thumb_rect.w, thumb_rect.h, [1.0, 0.9, 0.2, 1.0]);
-            }
 
             let name = id.rsplit('/').next().unwrap_or(id);
             let name_w = r.text_width(name, 0.75).min(CELL_W);
-            r.text_clipped(cx + (CELL_W - name_w) / 2.0, cy + CELL_H + 2.0, name, 0.75, BLACK, CELL_W);
+            r.text_clipped(cx + (CELL_W - name_w) / 2.0, cy + CELL_H, name, 0.75, BLACK, CELL_W);
 
             if hover && win.mouse_clicked {
                 result = AppAction::SelectPhotoForHexTool(id.clone());
