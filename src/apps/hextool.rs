@@ -53,15 +53,21 @@ const SLIDER_GAP: f32 = 8.0;
 const SLIDER_ROW_H: f32 = 40.0; // 슬라이더 두 개 사이 마진
 const STATUS_ROW_H: f32 = 18.0;
 const MINIMAP_SIDE: f32 = 110.0;
-const CHECK_ROW_H: f32 = 20.0;
+// checkbox() 는 라벨을 y-3 에, 16x16 체크박스 사각형을 y..y+16 에 그린다 —
+// 아래에서 각 행을 row_y+CHECK_Y_OFFSET 에 그리므로, 한 행이 실제로 차지하는
+// 세로 폭(체크박스 사각형 하단까지)은 CHECK_Y_OFFSET+16 이다. 예전엔 이 폭이
+// CHECK_ROW_H(그때는 20) 보다 커서(오프셋 10 + 16 = 26 > 20) 다음 줄과
+// 겹쳐 보였다("높이가 안 맞는 느낌") — 지금 값은 딱 맞고 조금 여유가 있다.
+const CHECK_Y_OFFSET: f32 = 4.0;
+const CHECK_ROW_H: f32 = 22.0;
 const BTN_H: f32 = 24.0;
 const ROW_GAP: f32 = 6.0;
 // 체크박스 3개를 감싸는 그룹 박스(ui::group_box) 여백 — settings.rs 의 그룹
 // 박스들과 같은 값을 써서 이 게임 안에서 그룹 박스가 항상 같은 비례로 보이게
 // 맞췄다.
 const BOX_TOP_MARGIN: f32 = 12.0; // 그룹박스 라벨이 위 테두리에 걸치는 만큼 위쪽에 미리 비워둘 여백
-const BOX_TOP_INSET: f32 = 16.0; // 박스 테두리 상단에서 첫 체크박스까지
-const BOX_BOTTOM_PAD: f32 = 8.0;
+const BOX_TOP_INSET: f32 = 14.0; // 박스 테두리 상단에서 첫 체크박스까지
+const BOX_BOTTOM_PAD: f32 = 16.0; // 마지막 체크박스 밑에서 박스 테두리까지 — 위쪽 여백과 비슷하게 맞춰서 위아래가 대칭으로 보이게 한다
 const CHECK_BOX_H: f32 = BOX_TOP_INSET + CHECK_ROW_H * 3.0 + BOX_BOTTOM_PAD;
 // 저장을 누른 뒤 미리보기가 빈 자리로 돌아가기까지의 "저장 중" 표시 시간(초).
 const SAVE_DELAY: f32 = 0.5;
@@ -339,7 +345,7 @@ impl HexToolApp {
         for (i, (label, cat)) in rows.into_iter().enumerate() {
             let y = checks_y + i as f32 * CHECK_ROW_H;
             if visible(y, CHECK_ROW_H) {
-                self.draw_category_checkbox(r, panel.x + 6.0, y + 10.0, label, cat, win);
+                self.draw_category_checkbox(r, panel.x + 6.0, y + CHECK_Y_OFFSET, label, cat, win);
             }
         }
 
