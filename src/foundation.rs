@@ -49,6 +49,21 @@ pub enum AnomalyCategory {
     NoAnomaly,
 }
 
+// HexTool 검수의 "정답" — assets/photo 하위 폴더명(photos.rs::scan_photos 가
+// 식별자 앞에 그대로 붙이는 "폴더명/파일명")이 곧 정답 카테고리다: corpseImage
+// 는 시체, crackImage 는 글리치, hintImage/normalImage(및 하위 폴더 없이 바로
+// 밑에 있는 사진)는 이상현상 없음. 플레이어에게 이 정답을 보여주는 화면은
+// 어디에도 없다 — desktop.rs::DeskAction::SendNewMail 이 재연구 업무 보고
+// 메일을 실제로 보낼 때 fs.photo_reviews 와 비교해서 director_panel Vars 탭에
+// 표시할 정상/비정상 제출 횟수를 셀 때만 쓴다.
+pub fn expected_anomaly(photo_id: &str) -> AnomalyCategory {
+    match photo_id.split('/').next().unwrap_or(photo_id) {
+        "corpseImage" => AnomalyCategory::Corpse,
+        "crackImage" => AnomalyCategory::Glitch,
+        _ => AnomalyCategory::NoAnomaly,
+    }
+}
+
 // 일부 fs 노드는 이름 자체가 "이건 특수 노드다"라는 표식으로 쓰인다(전용
 // FileKind 대신 이름 문자열로 구분) — 예: Folder 중에서 이름이 정확히
 // RECYCLE_BIN_NAME 인 것만 휴지통 취급. 화면엔 display_name()/strings.rs::t()
@@ -129,6 +144,14 @@ pub struct FileSystem {
     // 굳이 지우지 않아도 된다.
     #[serde(default)]
     pub photo_reviews: std::collections::HashMap<String, AnomalyCategory>,
+    // 재연구 업무 보고 메일을 실제로 보낸 횟수 — 그 배치의 모든 사진이
+    // expected_anomaly() 정답과 정확히 일치하면 ok, 하나라도 틀렸으면 bad 로
+    // 센다(desktop.rs::DeskAction::SendNewMail). 게임 안 어디에도 안 보여주고
+    // director_panel 의 Vars 탭 디버그 표시 전용이다.
+    #[serde(default)]
+    pub report_submissions_ok: u32,
+    #[serde(default)]
+    pub report_submissions_bad: u32,
 }
 
 // Mail 의 "Write Mail" 탭에서 보낸 메일 한 통 — fs.sent_mail 에 쌓인다. 첨부는
@@ -187,6 +210,8 @@ impl FileSystem {
             photos_current: Vec::new(), // DesktopScene::new() 가 ensure_photos_selected() 로 채운다
             photos_seen: Vec::new(),
             photo_reviews: std::collections::HashMap::new(),
+            report_submissions_ok: 0,
+            report_submissions_bad: 0,
         };
 
         // 바탕화면엔 고정 아이콘 두 개만 둔다 — 나머지 예제 파일들은 다 치웠다.

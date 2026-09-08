@@ -144,14 +144,17 @@ fn draw_director_tab(
     }
 }
 
-// "Vars" 탭 내용 — 스토리 진행 플래그(hex_tool_installed/mail_arrived)를
-// 강제로 켜고 끄는 개발용 디버그 화면. 이 창은 게임(crackhead.exe)과 다른
-// 프로세스라 그 값을 직접 들고 있지 않으므로, 매 프레임 게임 저장 파일
-// (palaceos_save.json)을 그냥 읽어서 "지금 값"만 보여준다 — 실제로 값을
-// 바꾸는 건 버튼을 눌러 director_state.json 에 set_* 요청을 얹어두는
-// 것뿐이고, 게임이 그 요청을 확인해서(DesktopScene::sync_debug_vars) 반영할
-// 때까지 최대 1초(DEBUG_SYNC_INTERVAL) 정도 걸린다. 게임이 안 켜져 있으면
-// 저장 파일이 아직 없거나 오래된 값 그대로일 수 있다.
+// "Vars" 탭 내용 — 스토리 진행 플래그(hex_tool_installed/mail_arrived)와
+// 재연구 업무 보고 메일의 정상/비정상 제출 횟수(report_submissions_ok/bad —
+// 그 배치의 모든 사진이 foundation::expected_anomaly() 정답과 일치하면
+// ok, 하나라도 틀렸으면 bad)를 강제로 바꾸는 개발용 디버그 화면. 이 창은
+// 게임(crackhead.exe)과 다른 프로세스라 그 값을 직접 들고 있지 않으므로,
+// 매 프레임 게임 저장 파일(palaceos_save.json)을 그냥 읽어서 "지금 값"만
+// 보여준다 — 실제로 값을 바꾸는 건 버튼을 눌러 director_state.json 에
+// set_* 요청을 얹어두는 것뿐이고, 게임이 그 요청을 확인해서
+// (DesktopScene::sync_debug_vars) 반영할 때까지 최대 1초(DEBUG_SYNC_INTERVAL)
+// 정도 걸린다. 게임이 안 켜져 있으면 저장 파일이 아직 없거나 오래된 값
+// 그대로일 수 있다.
 fn draw_vars_tab(r: &mut Renderer, state: &mut DirectorState, sw: f32, y0: f32, win: &crackhead::apps::WinInput, dirty: &mut bool) {
     r.text(8.0, y0, "Story progress flags (debug):", 0.75, [0.25, 0.25, 0.25, 1.0]);
     let mut by = y0 + 20.0;
@@ -177,6 +180,35 @@ fn draw_vars_tab(r: &mut Renderer, state: &mut DirectorState, sw: f32, y0: f32, 
         *dirty = true;
     }
     by += 38.0;
+
+    // 정상/비정상 제출 횟수 — 절대값 스위치가 아니라 누적 카운터라 ON/OFF
+    // 대신 화면에 보이는 값 기준으로 +1/Reset(0으로) 두 버튼을 준다.
+    let half_w = (sw - 16.0 - 4.0) / 2.0;
+    let ok = save.as_ref().map_or(0, |d| d.fs.report_submissions_ok);
+    r.text(8.0, by, &format!("report_submissions_ok: {ok}"), 0.75, [0.1, 0.1, 0.1, 1.0]);
+    by += 18.0;
+    if ui::button(r, 8.0, by, half_w, 22.0, "+1", win) {
+        state.set_report_submissions_ok = Some(ok + 1);
+        *dirty = true;
+    }
+    if ui::button(r, 8.0 + half_w + 4.0, by, half_w, 22.0, "Reset", win) {
+        state.set_report_submissions_ok = Some(0);
+        *dirty = true;
+    }
+    by += 34.0;
+
+    let bad = save.as_ref().map_or(0, |d| d.fs.report_submissions_bad);
+    r.text(8.0, by, &format!("report_submissions_bad: {bad}"), 0.75, [0.1, 0.1, 0.1, 1.0]);
+    by += 18.0;
+    if ui::button(r, 8.0, by, half_w, 22.0, "+1", win) {
+        state.set_report_submissions_bad = Some(bad + 1);
+        *dirty = true;
+    }
+    if ui::button(r, 8.0 + half_w + 4.0, by, half_w, 22.0, "Reset", win) {
+        state.set_report_submissions_bad = Some(0);
+        *dirty = true;
+    }
+    by += 34.0;
 
     if save.is_none() {
         r.text(8.0, by, "(no save file found yet)", 0.7, [0.5, 0.5, 0.5, 1.0]);

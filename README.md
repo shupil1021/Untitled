@@ -5022,3 +5022,28 @@ Option<bool>` 두 필드를 추가해서, 진짜 게임도 이 파일을 (제한
 `cargo build`/`cargo clippy` 세 실행 파일 모두 확인, 경고는 기존 5개
 그대로(`draw_director_tab`은 인자 8개라 다른 위젯 함수들과 같은 이유로
 `#[allow(clippy::too_many_arguments)]`를 붙였다 — 새 경고로 안 잡힘).
+
+## → director_panel Vars 탭에 정상/비정상 제출 횟수 추가
+
+재연구 업무 보고 메일을 실제로 몇 번 보냈는지, 그중 체크박스를 제대로 맞춰
+보낸(정상) 것과 하나라도 틀리게 체크해서 보낸(비정상) 것을 나눠서 세고,
+director_panel 의 Vars 탭에서 값을 보고 바로 조정할 수 있게 했다.
+
+"정답"은 새로 만들지 않고 이미 있던 사진 폴더 구조를 그대로 썼다 —
+`foundation::expected_anomaly()`가 사진 식별자의 폴더명(`corpseImage`→시체,
+`crackImage`→글리치, `hintImage`/`normalImage`→이상현상 없음)을 그대로 정답
+카테고리로 돌려준다. `DeskAction::SendNewMail`이 재연구 업무 보고 메일임을
+확인한 바로 그 지점에서(`photos_current`를 새로 뽑기 전, 방금 제출한 배치
+기준으로) 그 배치의 모든 사진이 `fs.photo_reviews`와 이 정답을 전부
+일치하면 `FileSystem::report_submissions_ok`를, 하나라도 틀렸으면
+`report_submissions_bad`를 1 늘린다.
+
+이 두 카운터는 게임 안 어디에도 안 보여주고 `director_panel`의 Vars 탭
+전용이다 — `hex_tool_installed`/`mail_arrived`와 달리 ON/OFF 스위치가
+아니라 누적 카운터라, 대신 "+1"/"Reset"(0으로) 버튼 두 개를 줬다. 버튼을
+누르면 (화면에 보이는) 지금 값 기준으로 새 절대값을 계산해서
+`DirectorState::set_report_submissions_ok/bad: Option<u32>`에 얹어두고,
+`hex_tool_installed`/`mail_arrived`와 똑같은 일회성 명령 경로
+(`DesktopScene::sync_debug_vars`)로 게임에 반영된다.
+
+`cargo build`/`cargo clippy` 세 실행 파일 모두 확인, 경고는 기존 5개 그대로.

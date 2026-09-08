@@ -9,7 +9,10 @@ use crate::apps::{
     refresh_photos_feed, CreditsApp, ExplorerApp, ExplorerLocation, HexPickerApp, HexToolApp, MailApp, MoveDest, OfficialSiteApp, Opened,
     SettingsApp, ThumbCache,
 };
-use crate::foundation::{display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, MY_COMPUTER_NAME, OFFICIAL_SITE_URL, RECYCLE_BIN_NAME};
+use crate::foundation::{
+    display_name, expected_anomaly, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, MY_COMPUTER_NAME,
+    OFFICIAL_SITE_URL, RECYCLE_BIN_NAME,
+};
 use crate::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
 use crate::secrets;
 use crate::strings::{common, credits, desktop as s, explorer, official_site, settings, t};
@@ -471,10 +474,11 @@ impl DesktopScene {
     }
 
     // director_panel "변수" 탭에서 스토리 진행 플래그(hex_tool_installed/
-    // mail_arrived)를 강제로 바꿔달라는 요청이 director_state.json 에 와
-    // 있는지 확인한다(개발용 디버그 기능 — director_ipc.rs 모듈 설명 참고).
-    // 있으면 fs 에 반영하고 그 자리만 None 으로 지워서(jump_to 와 같은
-    // "일회성 명령" 요령) 다음 주기에 또 적용되는 일이 없게 한다.
+    // mail_arrived)나 제출 횟수(report_submissions_ok/bad)를 강제로 바꿔달라는
+    // 요청이 director_state.json 에 와 있는지 확인한다(개발용 디버그 기능 —
+    // director_ipc.rs 모듈 설명 참고). 있으면 fs 에 반영하고 그 자리만 None 으로
+    // 지워서(jump_to 와 같은 "일회성 명령" 요령) 다음 주기에 또 적용되는 일이
+    // 없게 한다.
     fn sync_debug_vars(&mut self, settings: &Rc<RefCell<Settings>>) {
         let mut state = crate::director_ipc::load();
         let mut changed = false;
@@ -484,6 +488,14 @@ impl DesktopScene {
         }
         if let Some(v) = state.set_mail_arrived.take() {
             self.fs.mail_arrived = v;
+            changed = true;
+        }
+        if let Some(v) = state.set_report_submissions_ok.take() {
+            self.fs.report_submissions_ok = v;
+            changed = true;
+        }
+        if let Some(v) = state.set_report_submissions_bad.take() {
+            self.fs.report_submissions_bad = v;
             changed = true;
         }
         if changed {
@@ -1569,6 +1581,21 @@ impl Scene for DesktopScene {
                     // fs.sent_mail 에 쌓아서 Mail 앱의 "Sent Items" 탭에 그대로 보여준다.
                     self.fs.sent_mail.push(SentMail { to, subject, body, attachments });
                     if sent_report {
+                        // 정상/비정상 제출 집계 — 배치 안의 사진 전부가 실제 정답
+                        // (expected_anomaly)과 정확히 일치해야 "정상"이다. photos_current
+                        // 를 새로 뽑기(refresh_photos_feed) 전, 지금 막 제출한 배치
+                        // 기준으로 먼저 판정한다. director_panel Vars 탭 표시 전용이라
+                        // 게임 자체 진행에는 영향이 없다.
+                        let all_correct = self
+                            .fs
+                            .photos_current
+                            .iter()
+                            .all(|id| self.fs.photo_reviews.get(id).is_some_and(|&cat| cat == expected_anomaly(id)));
+                        if all_correct {
+                            self.fs.report_submissions_ok += 1;
+                        } else {
+                            self.fs.report_submissions_bad += 1;
+                        }
                         refresh_photos_feed(&mut self.fs);
                         self.refresh_photos_if_open(&f.settings);
                         self.refresh_hextool_photos_if_open();

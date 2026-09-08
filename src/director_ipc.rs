@@ -62,6 +62,16 @@ pub struct DirectorState {
     pub set_hex_tool_installed: Option<bool>,
     #[serde(default)]
     pub set_mail_arrived: Option<bool>,
+    // 재연구 업무 보고 메일의 정상/비정상 제출 횟수(FileSystem::
+    // report_submissions_ok/bad) — 마찬가지로 일회성 "이 값으로 덮어써라"
+    // 명령이다(상대적 +1/-1이 아니라 절대값인 이유: panel 은 이 값을 직접
+    // 들고 있지 않고 매 프레임 게임 저장 파일을 읽어 보여주기만 하므로,
+    // 버튼을 누른 시점의 "화면에 보이는 값" 기준으로 새 절대값을 계산해서
+    // 보낸다).
+    #[serde(default)]
+    pub set_report_submissions_ok: Option<u32>,
+    #[serde(default)]
+    pub set_report_submissions_bad: Option<u32>,
 }
 
 impl Default for DirectorState {
@@ -76,6 +86,8 @@ impl Default for DirectorState {
             recording: false,
             set_hex_tool_installed: None,
             set_mail_arrived: None,
+            set_report_submissions_ok: None,
+            set_report_submissions_bad: None,
         }
     }
 }
