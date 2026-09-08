@@ -67,7 +67,7 @@ pub enum DeskAction {
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
     OpenHexPicker,
     SelectPhotoForHexTool(String),
-    SavePhotoReview(String, bool),
+    SavePhotoReview(String, crate::foundation::AnomalyCategory),
     ExportPhotoReport(Vec<String>),
 }
 

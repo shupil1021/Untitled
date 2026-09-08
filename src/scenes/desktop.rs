@@ -1609,8 +1609,8 @@ impl Scene for DesktopScene {
                     }
                     self.wm.close_file(HEX_PICKER_WIN);
                 }
-                DeskAction::SavePhotoReview(id, anomaly) => {
-                    self.fs.photo_reviews.insert(id, anomaly);
+                DeskAction::SavePhotoReview(id, category) => {
+                    self.fs.photo_reviews.insert(id, category);
                     self.write_save(&f.settings);
                 }
                 DeskAction::ExportPhotoReport(photos) => {

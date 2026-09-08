@@ -38,6 +38,18 @@ pub enum FileKind {
     Deleted,                                             // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
 }
 
+// HexTool 검수 화면의 세 체크박스(시체/글리치/이상현상 없음) 중 어느 걸 골랐는지.
+// FileSystem::photo_reviews 에 사진별로 하나씩 저장되고, Corpse/Glitch 로 체크된
+// 사진만 보고용 압축파일(PhotoReport)에 담긴다. "NoAnomaly" 라고 이름 붙인 건
+// Option<AnomalyCategory>::None(아직 아무것도 안 고름, 저장 버튼 비활성)과
+// 헷갈리지 않게 하기 위해서다.
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AnomalyCategory {
+    Corpse,
+    Glitch,
+    NoAnomaly,
+}
+
 // 일부 fs 노드는 이름 자체가 "이건 특수 노드다"라는 표식으로 쓰인다(전용
 // FileKind 대신 이름 문자열로 구분) — 예: Folder 중에서 이름이 정확히
 // RECYCLE_BIN_NAME 인 것만 휴지통 취급. 화면엔 display_name()/strings.rs::t()
@@ -111,13 +123,13 @@ pub struct FileSystem {
     // 이미 봤던 사진이 또 나오지 않도록 제외하는 데 쓴다.
     #[serde(default)]
     pub photos_seen: Vec<String>,
-    // HexTool 에서 사진별로 "검수 저장"을 누른 결과 — 식별자 → 이상현상 체크 여부.
+    // HexTool 에서 사진별로 "검수 저장"을 누른 결과 — 식별자 → 고른 카테고리.
     // 존재한다는 것 자체가 "검수 완료"라는 뜻이라, apps/hextool.rs 가 photos_current
     // 와 교집합을 세어 "N개 중 M개 검수됨"을 계산한다. 새 배치가 오면(photos_seen
     // 이 겹치지 않게 보장하므로) 옛 항목은 자연히 교집합에서 빠져 무의미해지고,
     // 굳이 지우지 않아도 된다.
     #[serde(default)]
-    pub photo_reviews: std::collections::HashMap<String, bool>,
+    pub photo_reviews: std::collections::HashMap<String, AnomalyCategory>,
 }
 
 // Mail 의 "Write Mail" 탭에서 보낸 메일 한 통 — fs.sent_mail 에 쌓인다. 첨부는

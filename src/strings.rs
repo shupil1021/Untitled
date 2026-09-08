@@ -304,11 +304,16 @@ pub mod hextool {
     pub const BRIGHTNESS: S = S { en: "Brightness", ko: "밝기", ja: "明るさ" };
     pub const SATURATION: S = S { en: "Saturation", ko: "채도", ja: "彩度" };
     // 이미지 선택 창("My Computer" 와 비슷한 아이콘 그리드, apps/hex_picker.rs)을
-    // 여는 링크/버튼.
-    pub const SELECT_IMAGE: S = S { en: "Select Image", ko: "이미지 선택", ja: "画像を選択" };
+    // 여는 패널 안 링크(예전엔 위쪽 버튼이었는데 창이 좁을 때 타이틀바 버튼과
+    // 겹쳐 잘려 보였다 — 패널 안으로 옮겼다).
+    pub const SELECT_IMAGE: S = S { en: "Select Image...", ko: "이미지 선택...", ja: "画像を選択..." };
     // ????? 검수 진행 상황 — {n}=총 개수, {m}=검수 완료 개수.
     pub const REVIEW_STATUS: S = S { en: "{m} of {n} images reviewed", ko: "{n}개의 이미지 중 {m}개 검수됨", ja: "{n}枚中{m}枚検収済み" };
-    pub const ANOMALY_CHECK: S = S { en: "Anomaly present", ko: "이상현상 있음", ja: "異常現象あり" };
+    // 세 개 중 하나를 고르는 체크박스 — 이 중 하나를 골라야만(선택 안 하면 None)
+    // 저장 버튼이 활성화된다. 시체/글리치 중 하나라도 고르면 압축파일에 담긴다.
+    pub const ANOMALY_CORPSE: S = S { en: "Corpse", ko: "시체", ja: "死体" };
+    pub const ANOMALY_GLITCH: S = S { en: "Glitch", ko: "글리치", ja: "グリッチ" };
+    pub const ANOMALY_NONE: S = S { en: "No anomaly", ko: "이상현상 없음", ja: "異常現象なし" };
     pub const SAVE_REVIEW: S = S { en: "Save Review", ko: "검수 저장", ja: "検収を保存" };
     // ????? 의 사진을 전부 검수하면 SAVE_REVIEW 대신 이 버튼으로 바뀐다.
     pub const EXPORT_ARCHIVE: S = S { en: "Export Archive", ko: "압축파일 내보내기", ja: "圧縮ファイルを書き出す" };

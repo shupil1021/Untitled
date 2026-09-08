@@ -1,25 +1,31 @@
 //! HexTool — Installer 마법사를 끝까지 마치면 바탕화면에 생기는 설치된 프로그램.
-//! ????? 에 지금 떠 있는 사진들을 한 장씩 골라 들여다보며 "이상현상 있음"을
-//! 체크하고 저장하는 검수 도구다. 위쪽의 "이미지 선택"을 누르면(또는 빈 미리보기
-//! 자리를 클릭하면) "My Computer"(File Explorer)와 비슷한 아이콘 그리드 창
-//! (apps/hex_picker.rs, 별개의 창으로 뜬다)이 열리고, 거기서 사진을 하나 고르면
-//! 곧장 그 사진이 이 창의 미리보기로 들어온다. 오른쪽 패널은 위에서부터: 지금까지
-//! 검수한 개수("N개의 이미지 중 M개 검수됨") → 밝기/채도 슬라이더 → 미니맵 →
-//! 이상현상 체크박스 → 저장/내보내기 버튼 순서다.
+//! ????? 에 지금 떠 있는 사진들을 한 장씩 골라 들여다보며 시체/글리치/이상현상
+//! 없음 중 하나를 체크하고 저장하는 검수 도구다. 오른쪽 패널 맨 위의 "이미지
+//! 선택..." 링크를 누르면(또는 빈 미리보기 자리를 클릭하면) "My Computer"(File
+//! Explorer)와 비슷한 아이콘 그리드 창(apps/hex_picker.rs, 별개의 창으로 뜬다)이
+//! 열리고, 거기서 사진을 하나 고르면 곧장 그 사진이 이 창의 미리보기로 들어온다.
+//! 이 링크를 패널 안으로 옮긴 건, 예전엔 창 위쪽에 별도 버튼으로 뒀는데 창을
+//! 좁게 줄이면 타이틀바 버튼과 겹쳐 잘려 보였기 때문이다.
+//!
+//! 오른쪽 패널은 위에서부터: "이미지 선택..." 링크 → 지금까지 검수한 개수
+//! ("N개의 이미지 중 M개 검수됨") → 밝기/채도 슬라이더 → 미니맵 → 이상현상
+//! 체크박스 3개(시체/글리치/이상현상 없음, 서로 배타적 — 하나를 반드시 골라야
+//! 저장 버튼이 활성화된다) → 저장/내보내기 버튼 순서다. 패널 내용이 창 높이보다
+//! 길어지면 마우스 휠/스크롤바로 볼 수 있다.
 //!
 //! 미리보기는 photos.rs 와 같은 요령으로 원본 파일을 그때그때 디코드해 텍스처로
 //! 올린다(고른 사진이 바뀔 때만 한 번). 밝기/채도 슬라이더는 이 렌더러에 셰이더
 //! 유니폼이 없어서 진짜 픽셀 단위 보정은 못 하고, 밝기는 스프라이트 곱연산
 //! 틴트로, 채도는 그 위에 회색 반투명을 덧씌우는 방식으로 흉내만 낸다. 미리보기
 //! 위에서 휠을 굴리면 마우스가 가리키는 지점을 기준으로 확대/축소되고, 좌클릭
-//! 드래그로는 그 자리에서 원하는 방향으로 이동(pan)할 수 있다 — 슬라이더 밑
-//! 미니맵이 지금 보고 있는 영역을 노란 테두리 상자로 보여준다.
+//! 드래그로는 그 자리에서 원하는 방향으로 이동(pan)할 수 있다 — 미니맵이 지금
+//! 보고 있는 영역을 노란 테두리 상자로 보여준다.
 //!
-//! 검수 결과(사진별 이상현상 체크 여부)는 fs.photo_reviews 에 저장돼 게임을 다시
+//! 검수 결과(사진별로 고른 카테고리)는 fs.photo_reviews 에 저장돼 게임을 다시
 //! 켜도 유지된다 — "검수 저장"을 누를 때마다 그 사진 하나의 결과만 fs 에 기록
 //! 한다. ????? 의 사진을 전부 검수하면(fs.photo_reviews 와 fs.photos_current 의
 //! 교집합이 photos_current 전체를 덮으면) 버튼이 "압축파일 내보내기"로 바뀌고,
-//! 누르면 이상현상으로 체크된 사진들만 모아 FileKind::PhotoReport 압축파일을
+//! 누르면 시체/글리치로 체크된 사진들만 모아 FileKind::PhotoReport 압축파일을
 //! 만든다(desktop.rs 참고) — 이걸 재연구 업무 보고 메일에 첨부해 보내면 ?????
 //! 피드가 새로 갱신된다.
 
@@ -29,21 +35,37 @@ use std::rc::Rc;
 
 use miniquad::{RenderingBackend, TextureId};
 
-use crate::foundation::{Language, Settings};
+use crate::foundation::{AnomalyCategory, Language, Settings};
 use crate::gfx::{Assets, Rect, Renderer};
 use crate::strings::{hextool as s, t};
 use crate::ui::*;
 
 use super::photos::{find_photo_dir, load_scaled_texture};
-use super::widgets::draw_slider;
+use super::widgets::{draw_slider, ease_scroll, scrollbar};
 use super::{App, AppAction, WinInput};
 
 const MIN_ZOOM: f32 = 1.0;
 const MAX_ZOOM: f32 = 8.0;
 const LABEL_H: f32 = 20.0;
-const PANEL_W: f32 = 140.0;
+const PANEL_W: f32 = 150.0;
 const SLIDER_GAP: f32 = 8.0;
 const SLIDER_ROW_H: f32 = 40.0; // 슬라이더 두 개 사이 마진
+const LINK_ROW_H: f32 = 18.0;
+const STATUS_ROW_H: f32 = 18.0;
+const MINIMAP_SIDE: f32 = 110.0;
+const CHECK_ROW_H: f32 = 20.0;
+const BTN_H: f32 = 24.0;
+const ROW_GAP: f32 = 6.0;
+// 패널 안에서 각 행이 시작하는 y 오프셋(패널 맨 위 기준) — 스크롤(관성/클램프)과
+// 각 행의 보임 여부 판정에 쓴다. 순서: 이미지 선택 링크 → 검수 현황 → 밝기 →
+// 채도 → 미니맵 → 체크박스 3개 → 저장/내보내기 버튼.
+const LINK_Y: f32 = 0.0;
+const STATUS_Y: f32 = LINK_Y + LINK_ROW_H + ROW_GAP;
+const SLIDERS_Y: f32 = STATUS_Y + STATUS_ROW_H + ROW_GAP;
+const MINIMAP_Y: f32 = SLIDERS_Y + SLIDER_ROW_H * 2.0 + ROW_GAP;
+const CHECKS_Y: f32 = MINIMAP_Y + MINIMAP_SIDE + ROW_GAP;
+const BTN_Y: f32 = CHECKS_Y + CHECK_ROW_H * 3.0 + ROW_GAP;
+const PANEL_CONTENT_H: f32 = BTN_Y + BTN_H;
 
 pub struct HexToolApp {
     loaded_photo_id: Option<String>, // 지금 미리보기 중인 assets/photo 식별자
@@ -56,14 +78,17 @@ pub struct HexToolApp {
     brightness: f32,
     saturation: f32,
     active_slider: i32,
-    anomaly: bool, // 지금 로드된 사진의 "이상현상 있음" 체크 상태(저장 전까지는 임시)
-    photos_current: Vec<String>,    // ????? 에 지금 떠 있는 사진 식별자 전체 — 진행 상황(N) 계산용
-    reviews: HashMap<String, bool>, // fs.photo_reviews 의 로컬 사본 — "저장" 할 때마다 여기도 같이 갱신해서 M 이 그 자리에서 바로 반영된다
+    category: Option<AnomalyCategory>, // 지금 로드된 사진에 대해 고른 체크박스(저장 전까지는 임시) — None 이면 아직 아무것도 안 고름
+    photos_current: Vec<String>,                  // ????? 에 지금 떠 있는 사진 식별자 전체 — 진행 상황(N) 계산용
+    reviews: HashMap<String, AnomalyCategory>,    // fs.photo_reviews 의 로컬 사본 — "저장" 할 때마다 여기도 같이 갱신해서 M 이 그 자리에서 바로 반영된다
+    panel_scroll: f32,
+    panel_scroll_disp: f32,
+    panel_sb_drag: bool,
     settings: Rc<RefCell<Settings>>,
 }
 
 impl HexToolApp {
-    pub(super) fn new(photos_current: Vec<String>, reviews: HashMap<String, bool>, settings: Rc<RefCell<Settings>>) -> HexToolApp {
+    pub fn new(photos_current: Vec<String>, reviews: HashMap<String, AnomalyCategory>, settings: Rc<RefCell<Settings>>) -> HexToolApp {
         HexToolApp {
             loaded_photo_id: None,
             tex: None,
@@ -75,18 +100,21 @@ impl HexToolApp {
             brightness: 0.5,
             saturation: 0.5,
             active_slider: -1,
-            anomaly: false,
+            category: None,
             photos_current,
             reviews,
+            panel_scroll: 0.0,
+            panel_scroll_disp: 0.0,
+            panel_sb_drag: false,
             settings,
         }
     }
 
     // HexPickerApp 에서 사진을 고르면 desktop.rs 가 불러준다 — 미리보기/확대/
     // 이동 상태를 새 사진 기준으로 초기화하고, 이미 저장된 검수 결과가 있으면
-    // 체크박스를 그 값으로 미리 채운다.
+    // 체크박스를 그 값으로 미리 채운다(없으면 None — 다시 골라야 저장 가능).
     pub(crate) fn set_selected_photo(&mut self, id: String) {
-        self.anomaly = self.reviews.get(&id).copied().unwrap_or(false);
+        self.category = self.reviews.get(&id).copied();
         self.loaded_photo_id = Some(id);
         self.tex = None;
         self.tex_tried = false;
@@ -219,6 +247,137 @@ impl HexToolApp {
         let vy = ty + (self.center.1 - fh / 2.0).clamp(0.0, 1.0 - fh) * th;
         border(r, vx, vy, (fw * tw).max(2.0), (fh * th).max(2.0), [1.0, 0.9, 0.2, 1.0]);
     }
+
+    // 체크박스 하나(시체/글리치/이상현상 없음 중 하나) — 서로 배타적으로 동작
+    // 한다: 체크하면 self.category 가 그 값이 되고, 이미 골라져 있던 걸 다시
+    // 눌러 끄면 self.category 가 None 으로 돌아간다(그러면 저장 버튼도 다시
+    // 비활성화된다).
+    fn draw_category_checkbox(&mut self, r: &mut Renderer, x: f32, y: f32, label: &str, cat: AnomalyCategory, win: &WinInput) {
+        let mut checked = self.category == Some(cat);
+        checkbox(r, x, y, label, &mut checked, win);
+        if checked {
+            self.category = Some(cat);
+        } else if self.category == Some(cat) {
+            self.category = None;
+        }
+    }
+
+    // 패널(검수 현황/슬라이더/미니맵/체크박스/버튼) — 창 높이보다 내용이 길어질
+    // 수 있어서 통째로 스크롤 영역으로 감싼다. 반환값은 이번 프레임에 저장/
+    // 내보내기 버튼이 눌렸을 때의 AppAction.
+    fn update_panel(&mut self, r: &mut Renderer, panel: Rect, win: &WinInput, lang: Language, total: usize, reviewed: usize) -> AppAction {
+        let max_scroll = (PANEL_CONTENT_H - panel.h).max(0.0);
+        if panel.contains(win.mouse.0, win.mouse.1) {
+            self.panel_scroll -= win.wheel / 120.0 * 24.0;
+        }
+        self.panel_scroll = self.panel_scroll.clamp(0.0, max_scroll);
+        let smooth = self.settings.borrow().smooth_scroll;
+        ease_scroll(&mut self.panel_scroll_disp, self.panel_scroll, win.dt, smooth);
+
+        let sb_w = if max_scroll > 0.0 { 10.0 } else { 0.0 };
+        let content_w = (panel.w - sb_w).max(20.0);
+        let top = panel.y - self.panel_scroll_disp;
+        // 이 창 좌표계 기준 행 하나가 패널의 보이는 범위 안에 조금이라도 걸치는지 —
+        // 걸치지 않으면 그리지도, 입력을 받지도 않는다(스크롤로 가려진 체크박스가
+        // 마우스 좌표만 우연히 겹쳐서 몰래 눌리는 일을 막는다).
+        let visible = |y: f32, h: f32| y + h >= panel.y && y <= panel.y + panel.h;
+
+        let outer_clip = r.clip();
+        r.set_clip(Some(panel));
+
+        // 이미지 선택 링크 — 예전엔 창 위쪽 버튼이었는데, 창을 좁히면 타이틀바
+        // 버튼과 겹쳐 잘려 보여서 패널 맨 위 링크로 옮겼다.
+        let mut open_picker = false;
+        let link_y = top + LINK_Y;
+        if visible(link_y, LINK_ROW_H) {
+            let link_label = t(lang, s::SELECT_IMAGE);
+            let hover = win.mouse.0 >= panel.x
+                && win.mouse.0 <= panel.x + content_w
+                && win.mouse.1 >= link_y
+                && win.mouse.1 <= link_y + LINK_ROW_H;
+            r.text(panel.x, link_y + 2.0, link_label, 0.78, if hover { NAVY } else { [0.1, 0.1, 0.6, 1.0] });
+            if hover && win.mouse_clicked {
+                open_picker = true;
+            }
+        }
+
+        let status_y = top + STATUS_Y;
+        if visible(status_y, STATUS_ROW_H) {
+            let status = t(lang, s::REVIEW_STATUS).replace("{n}", &total.to_string()).replace("{m}", &reviewed.to_string());
+            r.text_clipped(panel.x, status_y + 2.0, &status, 0.72, GRAY, content_w);
+        }
+
+        let sliders_y = top + SLIDERS_Y;
+        let slider_w = (content_w - 42.0).max(40.0);
+        if visible(sliders_y, SLIDER_ROW_H) {
+            draw_slider(r, win, panel.x, sliders_y, slider_w, t(lang, s::BRIGHTNESS), 0, &mut self.brightness, &mut self.active_slider);
+        }
+        if visible(sliders_y + SLIDER_ROW_H, SLIDER_ROW_H) {
+            draw_slider(
+                r, win, panel.x, sliders_y + SLIDER_ROW_H, slider_w, t(lang, s::SATURATION), 1, &mut self.saturation, &mut self.active_slider,
+            );
+        }
+        if !win.mouse_down {
+            self.active_slider = -1;
+        }
+
+        let minimap_y = top + MINIMAP_Y;
+        if visible(minimap_y, MINIMAP_SIDE) {
+            let side = MINIMAP_SIDE.min(content_w);
+            self.draw_minimap(r, Rect::new(panel.x + (content_w - side) / 2.0, minimap_y, side, side));
+        }
+
+        let checks_y = top + CHECKS_Y;
+        let rows = [
+            (t(lang, s::ANOMALY_CORPSE), AnomalyCategory::Corpse),
+            (t(lang, s::ANOMALY_GLITCH), AnomalyCategory::Glitch),
+            (t(lang, s::ANOMALY_NONE), AnomalyCategory::NoAnomaly),
+        ];
+        for (i, (label, cat)) in rows.into_iter().enumerate() {
+            let y = checks_y + i as f32 * CHECK_ROW_H;
+            if visible(y, CHECK_ROW_H) {
+                self.draw_category_checkbox(r, panel.x, y + 10.0, label, cat, win);
+            }
+        }
+
+        let btn_y = top + BTN_Y;
+        let all_reviewed = total > 0 && reviewed >= total;
+        let btn_label = if all_reviewed { t(lang, s::EXPORT_ARCHIVE) } else { t(lang, s::SAVE_REVIEW) };
+        let enabled = all_reviewed || (self.loaded_photo_id.is_some() && self.category.is_some());
+        let mut result = AppAction::None;
+        if visible(btn_y, BTN_H) {
+            if enabled && button(r, panel.x, btn_y, content_w, BTN_H, btn_label, win) {
+                if all_reviewed {
+                    let flagged: Vec<String> = self
+                        .photos_current
+                        .iter()
+                        .filter(|id| matches!(self.reviews.get(*id), Some(AnomalyCategory::Corpse | AnomalyCategory::Glitch)))
+                        .cloned()
+                        .collect();
+                    result = AppAction::ExportPhotoReport(flagged);
+                } else if let (Some(id), Some(cat)) = (self.loaded_photo_id.clone(), self.category) {
+                    self.reviews.insert(id.clone(), cat);
+                    result = AppAction::SavePhotoReview(id, cat);
+                }
+            } else if !enabled {
+                // 비활성 상태 — 눌러도 반응 없는 회색 버튼으로만 그린다.
+                raised(r, panel.x, btn_y, content_w, BTN_H);
+                let tw = r.text_width(btn_label, 1.0);
+                r.text(panel.x + (content_w - tw) / 2.0, btn_y + 5.0, btn_label, 1.0, [0.55, 0.55, 0.55, 1.0]);
+            }
+        }
+
+        r.set_clip(outer_clip);
+        if max_scroll > 0.0 {
+            let visible_frac = (panel.h / PANEL_CONTENT_H).clamp(0.05, 1.0);
+            scrollbar(
+                r, win, panel.x + content_w + 2.0, panel.y, sb_w - 2.0, panel.h, visible_frac, self.panel_scroll_disp,
+                &mut self.panel_scroll, max_scroll, &mut self.panel_sb_drag,
+            );
+        }
+
+        if open_picker { AppAction::OpenHexPicker } else { result }
+    }
 }
 
 impl App for HexToolApp {
@@ -231,30 +390,27 @@ impl App for HexToolApp {
         let lang = self.settings.borrow().language;
         let body = Rect::new(area.x + 6.0, area.y + 6.0, area.w - 12.0, area.h - 12.0);
 
-        // 위쪽 한 줄 — 지금 보고 있는 사진 이름(없으면 안내 문구) + 오른쪽에
-        // "이미지 선택" 버튼(누르면 My Computer 같은 별도 창이 뜬다).
-        let select_label = t(lang, s::SELECT_IMAGE);
-        let select_w = r.text_width(select_label, 0.8) + 14.0;
-        let name_w = (body.w - select_w - 6.0).max(20.0);
+        // 위쪽 한 줄 — 지금 보고 있는 사진 이름(없으면 안내 문구)만 보여준다.
+        // 선택 창을 여는 버튼은 없다 — 패널 맨 위의 "이미지 선택..." 링크로
+        // 옮겨졌다(update_panel 참고).
         let name_text = match &self.loaded_photo_id {
             Some(id) => id.rsplit('/').next().unwrap_or(id).to_string(),
             None => t(lang, s::NO_FILE_SELECTED).to_string(),
         };
-        r.text_clipped(body.x + 4.0, body.y + 4.0, &name_text, 0.8, GRAY, name_w);
-        let mut open_picker = button(r, body.x + body.w - select_w, body.y, select_w, LABEL_H - 2.0, select_label, win);
+        r.text_clipped(body.x + 4.0, body.y + 4.0, &name_text, 0.8, GRAY, body.w - 8.0);
 
-        // 그 아래는 왼쪽 큰 미리보기 + 오른쪽 좁은 패널(검수 현황/슬라이더/
-        // 미니맵/체크박스/버튼)로 나눈다.
+        // 그 아래는 왼쪽 큰 미리보기 + 오른쪽 좁은 패널로 나눈다.
         let content = Rect::new(body.x, body.y + LABEL_H, body.w, body.h - LABEL_H);
-        let panel_w = PANEL_W.min(content.w * 0.4).max(100.0);
+        let panel_w = PANEL_W.min(content.w * 0.4).max(110.0);
         let preview = Rect::new(content.x, content.y, content.w - panel_w - SLIDER_GAP, content.h);
         let panel = Rect::new(preview.x + preview.w + SLIDER_GAP, content.y, panel_w, content.h);
 
+        let mut open_picker = false;
         if self.loaded_photo_id.is_some() {
             self.draw_preview(ctx, r, preview, win, lang);
         } else {
             // 아직 아무 사진도 안 골랐다 — 빈 미리보기 자리를 보여주고, 클릭하면
-            // 선택 창이 뜬다(위쪽 버튼과 같은 동작).
+            // 선택 창이 뜬다(패널의 "이미지 선택..." 링크와 같은 동작).
             sunken(r, preview.x, preview.y, preview.w, preview.h);
             let hint = t(lang, s::CLICK_TO_SELECT);
             let tw = r.text_width(hint, 0.8);
@@ -264,50 +420,15 @@ impl App for HexToolApp {
             }
         }
 
+        // 검수 진행 상황 — photos_current 와 겹치는 reviews 만 세어서, 이전
+        // 배치의 남은 기록이 섞여 잘못 세어지지 않게 한다.
+        let total = self.photos_current.len();
+        let reviewed = self.reviews.iter().filter(|(id, _)| self.photos_current.contains(id)).count();
+
+        let panel_action = self.update_panel(r, panel, win, lang, total, reviewed);
         if open_picker {
             return AppAction::OpenHexPicker;
         }
-
-        // 검수 진행 상황 — 슬라이더 바로 위. photos_current 와 겹치는 reviews 만
-        // 세어서, 이전 배치의 남은 기록이 섞여 잘못 세어지지 않게 한다.
-        let total = self.photos_current.len();
-        let reviewed = self.reviews.iter().filter(|(id, _)| self.photos_current.contains(id)).count();
-        let status =
-            t(lang, s::REVIEW_STATUS).replace("{n}", &total.to_string()).replace("{m}", &reviewed.to_string());
-        r.text_clipped(panel.x, panel.y + 2.0, &status, 0.72, GRAY, panel.w);
-
-        let sliders_y = panel.y + 22.0;
-        let slider_w = (panel.w - 42.0).max(40.0);
-        draw_slider(r, win, panel.x, sliders_y, slider_w, t(lang, s::BRIGHTNESS), 0, &mut self.brightness, &mut self.active_slider);
-        draw_slider(r, win, panel.x, sliders_y + SLIDER_ROW_H, slider_w, t(lang, s::SATURATION), 1, &mut self.saturation, &mut self.active_slider);
-        if !win.mouse_down {
-            self.active_slider = -1;
-        }
-
-        const CHECK_ROW_H: f32 = 20.0;
-        let check_y = sliders_y + SLIDER_ROW_H * 2.0 + SLIDER_GAP;
-        checkbox(r, panel.x, check_y + 10.0, t(lang, s::ANOMALY_CHECK), &mut self.anomaly, win);
-
-        let btn_h = 24.0;
-        let minimap_y = check_y + CHECK_ROW_H + 6.0;
-        let avail_h = (panel.y + panel.h - minimap_y - btn_h - 6.0).max(0.0);
-        let side = panel.w.min(avail_h);
-        let minimap = Rect::new(panel.x + (panel.w - side) / 2.0, minimap_y, side, side);
-        self.draw_minimap(r, minimap);
-
-        let all_reviewed = total > 0 && reviewed >= total;
-        let btn_label = if all_reviewed { t(lang, s::EXPORT_ARCHIVE) } else { t(lang, s::SAVE_REVIEW) };
-        let enabled = all_reviewed || self.loaded_photo_id.is_some();
-        if enabled && button(r, panel.x, panel.y + panel.h - btn_h, panel.w, btn_h, btn_label, win) {
-            if all_reviewed {
-                let flagged: Vec<String> =
-                    self.photos_current.iter().filter(|id| self.reviews.get(*id).copied().unwrap_or(false)).cloned().collect();
-                return AppAction::ExportPhotoReport(flagged);
-            } else if let Some(id) = self.loaded_photo_id.clone() {
-                self.reviews.insert(id.clone(), self.anomaly);
-                return AppAction::SavePhotoReview(id, self.anomaly);
-            }
-        }
-        AppAction::None
+        panel_action
     }
 }
