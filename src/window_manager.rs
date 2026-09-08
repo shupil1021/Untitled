@@ -57,7 +57,6 @@ pub enum DeskAction {
     OpenPhoto(String),
     RequestErase,
     Download(FileId),
-    DownloadPhoto(String),
     InstallComplete,
     DeletePermanently(FileId),
     MoveFiles(Vec<FileId>, MoveDest),
@@ -485,7 +484,6 @@ impl WindowManager {
                 AppAction::OpenPhoto(filename) => actions.push(DeskAction::OpenPhoto(filename)),
                 AppAction::RequestErase => actions.push(DeskAction::RequestErase),
                 AppAction::Download(id) => actions.push(DeskAction::Download(id)),
-                AppAction::DownloadPhoto(filename) => actions.push(DeskAction::DownloadPhoto(filename)),
                 // 설치 마법사는 진행바가 다 찬 순간 이걸 한 번만 보내고(바탕화면
                 // 아이콘이 그 타이밍에 생기게) 창은 그대로 열어둔 채 Finish 페이지를
                 // 계속 보여준다 — Unlock/Download 와 달리 여기선 창을 안 닫는다.

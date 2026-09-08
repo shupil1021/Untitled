@@ -4903,3 +4903,22 @@ HexTool의 이미지 선택 방식과 검수 흐름을 다시 설계해달라는
 `map_entry` 두 가지 새 경고를 만들었는데, 다른 위젯 함수들과 같은
 `#[allow(clippy::too_many_arguments)]` 를 붙이고 `HashMap::entry()` 로
 바꿔서 없앴다 — 최종적으로 경고는 기존 5개 그대로.
+
+## → ????? 사진: 클릭하면 바로 다운로드
+
+지금까지는 ????? 피드에서 사진을 클릭하면 뷰어 창이 열리고, 그 안의
+회색 글자 "Download"를 한 번 더 눌러야 File Explorer 의 Downloads
+탭에 들어갔다. 이제 클릭 한 번으로 다운로드까지 끝난다 —
+`desktop.rs::DeskAction::OpenPhoto` 핸들러가 뷰어 창을 열기 전에
+`fs.find_or_add_photo()` + `fs.download()` 를 먼저 실행한다(예전
+`DownloadPhoto` 액션이 하던 일 그대로).
+
+이러면 뷰어를 열 때는 항상 이미 다운로드가 끝난 뒤라, `PhotoViewerApp`
+의 "Download"/"Downloaded" 글자 오버레이 자체가 더는 의미가 없어져서
+걷어냈다(`show_download`/`download_flash` 필드, 관련 그리기 코드
+전부 삭제 — 이제 어디서 열든 뷰어는 그냥 사진만 보여준다). 그 버튼이
+보내던 `AppAction::DownloadPhoto`/`DeskAction::DownloadPhoto` 도
+이제 아무도 안 보내는 죽은 코드라 같이 지웠다.
+
+`cargo build`/`cargo clippy` 세 실행 파일 모두 확인, 경고는 기존
+5개 그대로.

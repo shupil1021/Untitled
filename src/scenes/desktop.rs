@@ -1437,15 +1437,22 @@ impl Scene for DesktopScene {
                     }
                 }
                 DeskAction::OpenPhoto(filename) => {
-                    // Photos 피드에서 보는 창과 My Computer(Explorer/Downloads 탭)에서
-                    // 보는 창은 완전히 별개로 취급한다 — 같은 사진이어도 fs.nodes 에
-                    // 등록된 FileId 를 아예 안 쓴다(그건 "다운로드해서 실제로 갖고
-                    // 있는 파일"에만 붙는 정체성이라, apps::open() 의 FileKind::Photo
-                    // 분기에서만 만든다). 여기선 wm.open() 에 file: None 을 넘겨서,
-                    // My Computer 쪽에 그 사진 창이 이미 열려있어도 서로 겹쳐 앞으로
-                    // 당겨지는 일 없이 완전히 독립된 새 창(Download 버튼 있는 미리보기)
-                    // 이 뜬다 — 그래서 "이미 다운로드했으니 다시 열면 Download 버튼이
-                    // 안 보인다"가 Photos 피드 쪽에는 절대 영향을 안 준다.
+                    // ????? 피드에서 썸네일을 클릭하면 예전엔 뷰어를 연 뒤 "Download"
+                    // 글자를 한 번 더 눌러야 받아졌는데, 이제 클릭 한 번으로 곧장
+                    // 받아지도록 DownloadPhoto 와 같은 처리(find_or_add_photo + 등록)
+                    // 를 여기서 같이 한다 — 그래서 이 뷰어 창은 열릴 때 항상 이미
+                    // 다운로드가 끝난 상태다.
+                    let id = self.fs.find_or_add_photo(&filename);
+                    self.fs.download(id);
+                    self.refresh_explorer_if_open(&f.settings);
+                    self.refresh_mail_attachable_if_open();
+                    self.write_save(&f.settings);
+
+                    // 이 뷰어 창 자체는 My Computer(Explorer/Downloads 탭)에서 보는
+                    // 창과는 별개로 취급한다 — 같은 사진이어도 방금 만든 실제 FileId
+                    // (id) 대신 wm.open() 에 file: None 을 넘겨서, My Computer 쪽에
+                    // 그 사진 창이 이미 열려있어도 서로 겹쳐 앞으로 당겨지는 일 없이
+                    // 완전히 독립된 새 창이 뜬다.
                     //
                     // 다만 같은 사진을 피드 안에서 여러 번 클릭했을 때도 매번 새 창이
                     // 뜨는 건 원치 않으므로, 파일명에서 결정적으로 뽑아낸 가짜 FileId
@@ -1458,7 +1465,7 @@ impl Scene for DesktopScene {
                     let lang = f.settings.borrow().language;
                     let title_name = filename.rsplit('/').next().unwrap_or(&filename);
                     let op = Opened {
-                        app: Box::new(PhotoViewerApp::new(filename.clone(), true)),
+                        app: Box::new(PhotoViewerApp::new(filename.clone())),
                         title: display_name(lang, title_name).into_owned(),
                         size: (420.0, 320.0),
                         maximized: false,
@@ -1481,13 +1488,6 @@ impl Scene for DesktopScene {
                     self.refresh_mail_attachable_if_open();
                     // 다운로드 직후 그 즉시 저장 — 5초 자동저장을 기다리는 사이 창이
                     // 닫히면 방금 다운로드한 기록이 통째로 사라지는 문제가 있었다.
-                    self.write_save(&f.settings);
-                }
-                DeskAction::DownloadPhoto(filename) => {
-                    let id = self.fs.find_or_add_photo(&filename);
-                    self.fs.download(id);
-                    self.refresh_explorer_if_open(&f.settings);
-                    self.refresh_mail_attachable_if_open();
                     self.write_save(&f.settings);
                 }
                 DeskAction::InstallComplete => {

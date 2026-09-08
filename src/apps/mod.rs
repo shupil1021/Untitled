@@ -66,12 +66,11 @@ pub enum AppAction {
     Close,
     Unlock(FileId),          // 비밀번호 성공 → 잠금파일을 폴더로
     Open(FileId),            // 탐색기에서 자식 열기
-    OpenPhoto(String),       // Photos 피드에서 썸네일 클릭 → assets/photo 파일명으로
-                             // FileKind::Photo 를 새로(또는 재사용해) 만들어 별개의 창으로 연다
+    OpenPhoto(String),       // ????? 피드에서 썸네일 클릭 → desktop.rs 가 assets/photo 파일명으로
+                             // FileKind::Photo 를 새로(또는 재사용해) 만들어 곧장 다운로드까지
+                             // 등록한 뒤 별개의 창으로 연다(클릭 한 번으로 다운로드까지 끝난다)
     RequestErase,            // 설정의 "Erase All Memory" → 화면 전체를 덮는 확인창을 띄워달라는 요청
     Download(FileId),        // 메일 첨부파일 "Download" → File Explorer 의 Downloads 탭에 추가
-    DownloadPhoto(String),   // Photos 앱의 "Download" → assets/photo 파일명으로 FileKind::Photo 를
-                             // 새로(또는 이미 있으면 그걸 재사용해) 만들어 Downloads 탭에 추가
     InstallComplete,         // HexTool Setup.exe 마법사를 Finish 까지 끝냄 → hex_tool_installed 를 true 로
     Resize(f32, f32),        // 이 창의 크기를 (너비,높이)로 바꿔달라는 요청 — 중심은 그대로 두고 크기만
     DeletePermanently(FileId), // HexTool 검토를 마친 .tar 를 영구히 지워달라는 요청
@@ -340,10 +339,8 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             // 이 경로(open())는 Explorer/Downloads 탭에서 더블클릭해서 여는
             // 경우에만 탄다 — Photos 피드에서 썸네일을 클릭하는 경로는
             // desktop.rs::DeskAction::OpenPhoto 가 이 함수를 거치지 않고 따로
-            // PhotoViewerApp 을 만든다(show_download: true). 그래서 여기선
-            // "이미 다운로드된 파일을 Explorer 로 다시 열었다"는 뜻이니 항상
-            // false — Download 글자 자체를 안 보여준다.
-            app: Box::new(PhotoViewerApp::new(filename.clone(), false)),
+            // PhotoViewerApp 을 만든다.
+            app: Box::new(PhotoViewerApp::new(filename.clone())),
             title: name,
             size: (420.0, 320.0),
             maximized: false,

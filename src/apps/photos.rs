@@ -15,15 +15,12 @@
 //! 같은 요령 — assets/photo 도 재빌드 없이 사진만 교체해도 된다).
 //!
 //! 썸네일을 클릭하면 `AppAction::OpenPhoto(파일명)` 을 돌려주고, desktop.rs 가
-//! `FileSystem::find_or_add_photo()` 로 그 파일명의 `FileKind::Photo` 노드를(이미
-//! 있으면 재사용) 만들어 새 창(PhotoViewerApp)으로 연다 — Mail/Explorer 항목을
-//! 열 때와 똑같은 경로라, 같은 사진을 또 클릭해도 창이 여러 개 안 생기고 기존
-//! 창이 앞으로 나온다.
-//!
-//! "Download"는 메일 첨부와 똑같이 게임 내 가상 파일 시스템(File Explorer 의
-//! Downloads 탭)에 넣는다 — PhotoViewerApp 하단의 회색 글자 "Download" 를 누르면
-//! `AppAction::DownloadPhoto(파일명)` 을 돌려주고, desktop.rs 가 `fs.download()`
-//! 한다.
+//! 그 자리에서 곧장 `FileSystem::find_or_add_photo()` + `fs.download()` 로 그
+//! 사진을 File Explorer 의 Downloads 탭에 넣은 뒤(메일 첨부를 "Download" 하는 것과
+//! 같은 가상 파일 시스템 등록) 새 창(PhotoViewerApp)으로 연다 — 예전엔 뷰어 안에
+//! 따로 "Download" 글자 버튼이 있어서 한 번 더 눌러야 받아졌는데, 클릭 한 번으로
+//! 바로 받아지도록 합쳤다. Mail/Explorer 항목을 열 때와 똑같은 창 dedup 경로라,
+//! 같은 사진을 또 클릭해도 창이 여러 개 안 생기고 기존 창이 앞으로 나온다.
 
 use std::path::PathBuf;
 
@@ -66,7 +63,7 @@ fn is_photo_file(p: &std::path::Path) -> bool {
 // 쓰는 분류 폴더가 딱 한 단계라서 충분하다). 반환값은 (실제 디스크 경로, 식별용
 // 문자열) 쌍 — 식별용 문자열은 하위 폴더 안 사진이면 "폴더명/파일명"(예:
 // "corpseImage/corpseImage1.jpg"), 바로 밑이면 그냥 "파일명" 이다. 이 식별
-// 문자열이 AppAction::OpenPhoto/DownloadPhoto 와 FileKind::Photo 에 그대로
+// 문자열이 AppAction::OpenPhoto 와 FileKind::Photo 에 그대로
 // 쓰이는 "파일명" 값이라, 서로 다른 폴더에 같은 이름의 파일이 있어도 안 겹친다.
 fn scan_photos(dir: &std::path::Path) -> Vec<(PathBuf, String)> {
     let mut out = Vec::new();
@@ -300,21 +297,19 @@ impl App for PhotosApp {
 // 때도, Explorer 의 Downloads 탭에서 이미 받은 사진을 다시 열었을 때도 똑같이
 // 이 앱을 쓴다. assets.photos 인덱스가 아니라 assets/photo/ 안의 파일명으로
 // 그때그때 디코드한다(그 사진들은 애초에 assets.photos 에 없다 — 위 모듈 설명
-// 참고). show_download 가 true 일 때만 이미지 아래 회색 글자 "Download" 를
-// 보여준다 — 이미 다운로드해서 Explorer 의 Downloads 탭에서 다시 연 사진은
-// 또 받을 이유가 없으니 그 글자 자체를 아예 안 그린다(apps/mod.rs::open() 이
-// fs.ever_downloaded 를 보고 이 값을 정해서 넘긴다).
+// 참고). 예전엔 여기 "Download" 글자 버튼이 있어서 눌러야 Downloads 탭에
+// 들어갔는데, 이제 피드에서 클릭하는 순간 desktop.rs::DeskAction::OpenPhoto 가
+// 곧장 다운로드까지 같이 처리해서(모듈 설명 참고) 이 창을 열 때는 항상 이미
+// 다운로드가 끝난 뒤라 그 버튼 자체가 필요 없어졌다.
 pub struct PhotoViewerApp {
     filename: String,
     tex: Option<(TextureId, u32, u32)>,
     tried: bool,
-    show_download: bool,
-    download_flash: f32, // "Downloaded!" 문구를 잠깐 보여주는 타이머
 }
 
 impl PhotoViewerApp {
-    pub fn new(filename: String, show_download: bool) -> PhotoViewerApp {
-        PhotoViewerApp { filename, tex: None, tried: false, show_download, download_flash: 0.0 }
+    pub fn new(filename: String) -> PhotoViewerApp {
+        PhotoViewerApp { filename, tex: None, tried: false }
     }
 }
 
@@ -323,7 +318,7 @@ impl App for PhotoViewerApp {
         self
     }
 
-    fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, _assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
+    fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, _assets: &Assets, area: Rect, _win: &WinInput) -> AppAction {
         r.rect(area.x, area.y, area.w, area.h, [0.1, 0.1, 0.1, 1.0]);
         if !self.tried {
             self.tried = true;
@@ -341,28 +336,6 @@ impl App for PhotoViewerApp {
             r.sprite(tex, dx, dy, dw, dh, WHITE);
         }
 
-        if !self.show_download {
-            return AppAction::None;
-        }
-
-        // 사진 위에 그대로 겹쳐 그리는 우하단 회색 글자 "Download" — 따로 자리를
-        // 안 빼고 사진 자체의 오른쪽 아래 모서리 위에 얹는다. 뒤에 옅은 그림자를
-        // 한 번 더 그려서(살짝 어긋난 검은 글자) 밝은 사진 위에서도 안 묻힌다.
-        let label = if self.download_flash > 0.0 { "Downloaded" } else { "Download" };
-        let tw = r.text_width(label, 0.75);
-        let pad = 8.0;
-        let tx = area.x + area.w - tw - pad;
-        let ty = area.y + area.h - 16.0 - pad;
-        let hover = win.mouse.0 >= tx - 6.0 && win.mouse.0 <= area.x + area.w && win.mouse.1 >= ty - 4.0 && win.mouse.1 <= area.y + area.h;
-        let color = if hover { [0.9, 0.9, 0.9, 1.0] } else { [0.65, 0.65, 0.65, 1.0] };
-        r.text(tx + 1.0, ty + 1.0, label, 0.75, [0.0, 0.0, 0.0, 0.6]);
-        r.text(tx, ty, label, 0.75, color);
-        self.download_flash = (self.download_flash - win.dt).max(0.0);
-
-        if hover && win.mouse_clicked {
-            self.download_flash = 2.0;
-            return AppAction::DownloadPhoto(self.filename.clone());
-        }
         AppAction::None
     }
 }
