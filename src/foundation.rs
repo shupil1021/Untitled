@@ -191,6 +191,28 @@ impl Default for FileSystem {
     }
 }
 
+// FileSystem::download() 이 쓴다 — existing(지금 Downloads 탭에 이미 있는
+// 파일들의 이름) 안에 name 과 완전히 같은 게 있으면, 실제 Windows 탐색기가
+// 중복 다운로드를 처리하듯 확장자 앞에 "(1)", "(2)"... 를 붙여 안 겹치는
+// 이름을 찾아 돌려준다. 겹치는 게 없으면 원래 이름 그대로.
+fn dedupe_download_name(existing: &[String], name: &str) -> String {
+    if !existing.iter().any(|n| n == name) {
+        return name.to_string();
+    }
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) => (s, format!(".{e}")),
+        None => (name, String::new()),
+    };
+    let mut n = 1u32;
+    loop {
+        let candidate = format!("{stem}({n}){ext}");
+        if !existing.iter().any(|x| x == &candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
 impl FileSystem {
     pub fn new() -> FileSystem {
         let mut fs = FileSystem {
@@ -308,8 +330,13 @@ impl FileSystem {
     }
 
     // 메일 첨부파일 등을 "다운로드" — Downloads 탭에 추가한다(이미 있으면 무시).
+    // Downloads 탭에 이미 같은 이름의 파일이 있으면(실제 Windows 탐색기가
+    // 그러듯) "이름(1).확장자", "이름(2).확장자" 식으로 번호를 붙여 구분한다.
     pub fn download(&mut self, id: FileId) {
         if !self.downloads.contains(&id) {
+            let existing_names: Vec<String> = self.downloads.iter().map(|&i| self.nodes[i].name.clone()).collect();
+            let name = self.nodes[id].name.clone();
+            self.nodes[id].name = dedupe_download_name(&existing_names, &name);
             self.downloads.push(id);
         }
         if !self.ever_downloaded.contains(&id) {
