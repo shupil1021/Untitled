@@ -5073,3 +5073,48 @@ dedupe_download_name()` — 겹치는 이름이 없을 때까지 번호를 올�
 안 헷갈리게 미리 대비해두는 일반 동작이다.
 
 `cargo build`/`cargo clippy` 세 실행 파일 모두 확인, 경고는 기존 5개 그대로.
+
+## → QA 리뷰로 버그 5개 발견/수정
+
+멀티 에이전트로 foundation.rs/desktop.rs, hextool.rs/hex_picker.rs/photos.rs/
+widgets.rs, explorer.rs/recycle_bin.rs/mail.rs/window_manager.rs 세 묶음을
+나눠 훑어서 찾은 버그들. 실제로 고친 5개:
+
+1. **폴더를 자기 자신 안으로 옮길 수 있었다** — `add_to_folder()`에
+   `folder_id == id` 가드가 없었다. 휴지통 자기참조는 이미 예전에 막아뒀는데
+   (`move_ids_to`의 주석 참고) 일반 폴더는 빠져 있었던 것 — 폴더를 드릴다운
+   탭으로 열어둔 채 그 폴더 아이콘을 자기 자신의 열린 창 안으로 드래그하면
+   재현된다. 공용 함수(`foundation.rs`)에서 한 번에 막았다.
+2. **빈 배치 제출이 "정상"으로 잘못 세어질 수 있었다** — `all_correct`가
+   `photos_current.iter().all(...)`인데, 빈 이터레이터의 `all()`은 공허하게
+   `true`다. `!photos_current.is_empty()` 조건을 추가.
+3. **재수출 시 이미 열려있던 압축파일 창이 옛 장수를 계속 보여줬다** —
+   `ArchiveApp`은 생성 시점에 `count`를 한 번만 캐시하는데, `WindowManager::
+   open()`은 같은 파일이 이미 열려있으면 새로 안 만들고 그냥 앞으로만
+   가져온다. HexTool/Photos 처럼 `refresh_app()`으로 다시 열어주는 처리를
+   추가했다.
+4. **검수 저장 애니메이션 도중 내보내기가 끼어들 수 있었다** — 마지막 사진을
+   저장하면 그 프레임부터 `all_reviewed`가 바로 `true`가 되는데, 미리보기는
+   아직 `saving`(0.5초 "저장 중" 딜레이) 중이었다. 그 틈에 버튼이 이미
+   "압축파일 내보내기"로 바뀌어 눌리면 `export_pending`이 `saving`보다 먼저
+   `update()`의 우선순위를 가져가 `saving` 타이머가 멈춘 채 방치되다가,
+   내보내기가 끝난 뒤에야 "저장 중" 표시가 다시 잠깐 나타나는 어색한 상태가
+   됐다. 버튼 `enabled` 조건에 `self.saving.is_none()`을 추가.
+5. **이미지 선택 창을 열어둔 채 ?????가 갱신되면 옛 배치를 계속 고를 수
+   있었다** — `HexPickerApp`엔 `photos_current`가 바뀌었을 때 갱신할 방법이
+   아예 없었다. `refresh_ids()`를 추가해 `refresh_hextool_photos_if_open()`
+   에서 HexTool과 같이 갱신하고, 배열 인덱스를 그대로 캐시 키로 쓰는
+   `thumbs`도 같이 비워서(안 비우면 새 배치의 다른 사진 위에 옛 썸네일이
+   잘못 그려질 수 있었다) 섞이지 않게 했다.
+
+수정하지 않고 남겨둔 것 2개:
+- Write Mail 작성 중 이미 첨부한 파일을 삭제/이동해도 `new_mail.attachments`
+  가 안 지워져서, 나중에 Sent Items 에서 그 메일을 보면 첨부 아이콘이
+  `Deleted`로 잘못 보일 수 있다 — 코너 케이스라 이번엔 손 안 댔다.
+- `photos_seen`이 계속 쌓이기만 하고 리셋이 없어서, assets/photo 4개
+  폴더(총 102장)를 다 뽑아 쓰고 나면(대략 정상 제출 10번쯤) ????? 피드가
+  영구히 빈 상태가 된다 — 이건 버그라기보다 "나중에 진행 상황에 따라 하나씩
+  풀리는 시스템"으로 대체될 예정인 임시 콘텐츠의 한계라 디자인 결정이 필요해
+  보류했다.
+
+`cargo build`/`cargo clippy` 세 실행 파일 모두 확인, 경고는 기존 5개 그대로.
