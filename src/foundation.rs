@@ -391,6 +391,13 @@ impl FileSystem {
 
     // 파일을 실제 폴더(잠금 풀린 Photos 등) 안으로 옮긴다 — 이미 그 폴더 안에 있으면 무시.
     pub fn add_to_folder(&mut self, folder_id: FileId, id: FileId) {
+        // 폴더를 자기 자신 안으로 옮기면(예: 열려서 드릴다운 탭으로 보이고 있는
+        // 폴더를 그 탭 안으로 다시 드래그) 자기 자신을 자기 children 에 넣는
+        // 자기참조 상태가 된다 — 휴지통 자기참조를 막던 것과 같은 종류의 버그라,
+        // 여기 공용 함수에서 한 번에 막는다(호출부마다 따로 검사할 필요 없이).
+        if folder_id == id {
+            return;
+        }
         if let FileKind::Folder { children } = &mut self.nodes[folder_id].kind
             && !children.contains(&id)
         {

@@ -361,10 +361,16 @@ impl HexToolApp {
         let btn_y = top + BTN_Y;
         let all_reviewed = total > 0 && reviewed >= total;
         let btn_label = if all_reviewed { t(lang, s::EXPORT_ARCHIVE) } else { t(lang, s::SAVE_REVIEW) };
-        // 내보내는 중(export_pending)에는 버튼을 다시 누를 수 없게 막는다 —
-        // 안 그러면 "내보내는 중" 표시가 뜬 짧은 시간 동안 또 눌러서 중복
-        // ExportPhotoReport 를 예약할 수 있었다.
-        let enabled = self.export_pending.is_none() && (all_reviewed || (self.loaded_photo_id.is_some() && self.category.is_some()));
+        // 내보내는 중(export_pending)이나 저장 중(saving)에는 버튼을 다시 누를 수
+        // 없게 막는다 — export_pending 은 "내보내는 중" 표시가 뜬 짧은 시간 동안
+        // 또 눌러서 중복 예약하는 걸 막고, saving 은 방금 마지막 사진을 저장해서
+        // (이 프레임부터 all_reviewed 가 곧장 true 로 바뀐다) 아직 "저장 중"
+        // 표시가 끝나기도 전에 곧장 Export 를 눌러버리는 걸 막는다 — 그러면
+        // export_pending 이 saving 보다 먼저 update() 의 우선순위를 가져가서
+        // saving 타이머가 멈춘 채로 방치됐다가, 내보내기가 끝난 뒤에야 남은
+        // "저장 중" 표시가 다시 잠깐 나타나는 어색한 상태가 됐었다.
+        let enabled =
+            self.export_pending.is_none() && self.saving.is_none() && (all_reviewed || (self.loaded_photo_id.is_some() && self.category.is_some()));
         let mut result = AppAction::None;
         if visible(btn_y, BTN_H) {
             if enabled && button(r, panel.x, btn_y, content_w, BTN_H, btn_label, win) {

@@ -45,6 +45,18 @@ impl HexPickerApp {
     pub fn new(ids: Vec<String>, settings: Rc<RefCell<Settings>>) -> HexPickerApp {
         HexPickerApp { ids, thumbs: ThumbCache::new(), scroll: 0.0, scroll_disp: 0.0, sb_drag: false, settings }
     }
+
+    // ?????가 새로 갱신되면(재연구 업무 보고 메일을 보내서) desktop.rs 가 부른다 —
+    // 이 창을 열어둔 채 사진을 고르지 않고 있다가 피드가 새 배치로 바뀌면, ids 만
+    // 갈아끼우지 않고 그대로 두면 이제 존재하지 않는(옛 배치) 사진을 고를 수 있게
+    // 되어 그 검수 결과가 새 배치의 진행 상황(N/M)에 전혀 반영되지 않는 채로
+    // 낭비된다. thumbs 캐시도 같이 비워야 한다 — 배열 인덱스를 그대로 캐시 키로
+    // 쓰므로(위 필드 설명 참고), 안 비우면 같은 인덱스에 옛 사진의 썸네일이 남아
+    // 새 배치의 다른 사진 위에 잘못 그려진다.
+    pub(crate) fn refresh_ids(&mut self, ids: Vec<String>) {
+        self.ids = ids;
+        self.thumbs.clear();
+    }
 }
 
 impl App for HexPickerApp {

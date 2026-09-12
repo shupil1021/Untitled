@@ -445,6 +445,15 @@ impl DesktopScene {
         {
             app.refresh_photos_current(self.fs.photos_current.clone());
         }
+        // HexTool 의 "이미지 선택" 창(HexPickerApp)도 열려있으면 같이 갱신한다 —
+        // 안 그러면 사진을 안 고른 채 이 창을 열어두고 있다가 피드가 갱신됐을 때
+        // 이제 없는 옛 배치 사진을 계속 고를 수 있게 된다(HexPickerApp::refresh_ids
+        // 설명 참고).
+        if self.wm.is_open(HEX_PICKER_WIN)
+            && let Some(app) = self.wm.app_mut(HEX_PICKER_WIN).and_then(|app| app.as_any_mut().downcast_mut::<HexPickerApp>())
+        {
+            app.refresh_ids(self.fs.photos_current.clone());
+        }
     }
 
     // ?????(Photos) 이 지금 열려있으면 새로 뽑힌 fs.photos_current 로 통째로
@@ -1586,11 +1595,15 @@ impl Scene for DesktopScene {
                         // 를 새로 뽑기(refresh_photos_feed) 전, 지금 막 제출한 배치
                         // 기준으로 먼저 판정한다. director_panel Vars 탭 표시 전용이라
                         // 게임 자체 진행에는 영향이 없다.
-                        let all_correct = self
-                            .fs
-                            .photos_current
-                            .iter()
-                            .all(|id| self.fs.photo_reviews.get(id).is_some_and(|&cat| cat == expected_anomaly(id)));
+                        // photos_current 가 비어있으면 Iterator::all() 이 공허하게(vacuously)
+                        // true 를 돌려주므로, 아무것도 검수 안 한 제출까지 "정상"으로 잘못
+                        // 세는 걸 막는다.
+                        let all_correct = !self.fs.photos_current.is_empty()
+                            && self
+                                .fs
+                                .photos_current
+                                .iter()
+                                .all(|id| self.fs.photo_reviews.get(id).is_some_and(|&cat| cat == expected_anomaly(id)));
                         if all_correct {
                             self.fs.report_submissions_ok += 1;
                         } else {
@@ -1641,6 +1654,14 @@ impl Scene for DesktopScene {
                     // 안전하다(이미 목록에 있으면 아무 일도 안 한다).
                     let (id, _) = self.fs.set_photo_report(photos);
                     self.fs.download(id);
+                    // 압축파일 창(ArchiveApp)이 이미 열려있으면(예: 지난번 내보내기
+                    // 결과를 열어둔 채로 재검수 후 또 내보낸 경우) 그 창은 새로 안
+                    // 열리고 그대로 앞으로만 와서(WindowManager::open) 예전 장수를 계속
+                    // 보여주는 채로 남는다 — 통째로 다시 열어서 최신 개수로 맞춘다.
+                    if self.wm.is_open(id) {
+                        let op = open(&self.fs, id, &f.settings);
+                        self.wm.refresh_app(id, op.app);
+                    }
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
                     self.write_save(&f.settings);
