@@ -178,7 +178,7 @@ pub struct PhotosApp {
 // "지금까지 푼 사진 개수")을 넘겨받게 바뀔 자리다. 나머지 사진들은 그대로
 // assets/photo 에 남아있고 폴더에서 지우지 않는다 — 나중에 그 풀에서 골라 쓰면
 // 된다.
-const UNLOCKED_PHOTO_COUNT: usize = 10;
+const UNLOCKED_PHOTO_COUNT: usize = 13;
 
 // assets/photo 전체를 훑어서 exclude 에 없는 것들 중 UNLOCKED_PHOTO_COUNT 장을
 // 랜덤으로 뽑아 식별자만 돌려준다(디스크 경로는 PhotosApp::new() 가 다시 구한다
