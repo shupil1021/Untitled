@@ -9,6 +9,7 @@ mod image_viewer;
 mod mail;
 mod notepad;
 mod official_site;
+mod pacman;
 mod password;
 mod recycle_bin;
 mod settings;
@@ -21,6 +22,7 @@ pub use image_viewer::ImageViewerApp;
 pub use mail::{MailApp, SentMailView};
 pub use notepad::NotepadApp;
 pub use official_site::OfficialSiteApp;
+pub use pacman::PacmanApp;
 pub use password::PasswordApp;
 pub use recycle_bin::RecycleBinApp;
 pub use settings::SettingsApp;
@@ -233,7 +235,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
                 })
                 .collect();
             Opened {
-                app: Box::new(MailApp::new(&fs.mail_read, attachable, sent, settings.clone())),
+                app: Box::new(MailApp::new(fs.mail_arrived, &fs.mail_read, attachable, sent, fs.mail_game_attachment, settings.clone())),
                 title: name,
                 // Outlook Express/Exchange 참고 레이아웃 — 메뉴바 + 폴더 트리(150) +
                 // 상태바(20)까지 들어가야 해서 기존보다 좌우/위아래로 넉넉해야 한다.
@@ -260,6 +262,16 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             maximizable: true,
             movable: true,
             min_size: (340.0, 260.0),
+        },
+        FileKind::Game => Opened {
+            app: Box::new(PacmanApp::new(settings.clone())),
+            title: name,
+            size: (420.0, 360.0),
+            maximized: false,
+            resizable: true,
+            maximizable: true,
+            movable: true,
+            min_size: (240.0, 200.0),
         },
         FileKind::Deleted => unreachable!("삭제된 파일은 그 무엇에서도 더는 참조되지 않아 열릴 일이 없다"),
     }

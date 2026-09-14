@@ -222,6 +222,10 @@ pub struct DesktopScene {
     prev_down: bool,
     secret_unlocked: bool, // Photos.lock 이 풀렸는지 (저장/복원용)
     save_timer: f32,       // 자동 저장 주기 타이머
+    // 게임을 새로 시작하고 MAIL_ARRIVAL_DELAY 초가 지나면 메일이 한 번 도착한다
+    // (fs.mail_arrived 를 true 로) — 이미 도착했으면(불러온 저장에서 이미
+    // true 였거나 이번 세션에서 이미 울렸으면) 더 안 잰다.
+    mail_timer: f32,
     erase_confirm: bool,   // "Erase All Memory" 확인창 — 화면 전체(다른 창 포함)를 덮는 진짜 모달
     // 창을 열었다 옮기거나 크기를 바꾼 적 있으면 마지막 자리를 여기 기억해둔다(파일
     // ID 로 키) — 지금 열려있는 창은 매 프레임 wm 에서 값을 다시 읽어와 갱신하고,
@@ -231,6 +235,7 @@ pub struct DesktopScene {
 }
 
 const AUTOSAVE_INTERVAL: f32 = 5.0; // 이 주기(초)마다 설정/바탕화면 상태를 자동 저장한다.
+const MAIL_ARRIVAL_DELAY: f32 = 5.0; // 게임 시작 후 이만큼(초) 지나면 메일이 도착한다.
 
 impl Default for DesktopScene {
     fn default() -> Self {
@@ -285,6 +290,7 @@ impl DesktopScene {
             prev_down: false,
             secret_unlocked: unlocked,
             save_timer: 0.0,
+            mail_timer: 0.0,
             erase_confirm: false,
             window_geometry,
         }
@@ -334,6 +340,32 @@ impl DesktopScene {
             && let Some(app) = self.wm.app_mut(mail_id).and_then(|app| app.as_any_mut().downcast_mut::<MailApp>())
         {
             app.refresh_attachable(mail_attachable_files(&self.fs));
+        }
+    }
+
+    // 메일이 새로 도착했을 때(fs.mail_arrived 가 막 true 로 바뀐 시점) 지금 Mail
+    // 창이 열려있으면 통째로 새로 만들어서 반영한다 — seed_messages 결과 자체가
+    // 바뀌므로 refresh_mail_attachable_if_open 처럼 목록 하나만 바꿔치기해선
+    // 안 된다. 대신 보고 있던 폴더/선택은 downcast 로 먼저 읽어뒀다가 그대로
+    // 되돌려준다("Write Mail" 초안은 새 MailApp 을 만드는 순간 사라지지만, 메일
+    // 도착은 세션에 한 번뿐이라 그 시점에 마침 초안을 쓰고 있었을 확률은 낮고,
+    // 이 파이프라인 1단계에서는 거기까진 다루지 않는다).
+    fn refresh_mail_if_open(&mut self, settings: &Rc<RefCell<Settings>>) {
+        if let Some(mail_id) = self.fs.find_by_name("Mail")
+            && self.wm.is_open(mail_id)
+        {
+            let (folder_idx, selected) = self
+                .wm
+                .app_mut(mail_id)
+                .and_then(|app| app.as_any_mut().downcast_mut::<MailApp>())
+                .map(|app| (app.folder_idx(), app.selected()))
+                .unwrap_or((None, None));
+            let op = open(&self.fs, mail_id, settings);
+            self.wm.refresh_app(mail_id, op.app);
+            if let Some(app) = self.wm.app_mut(mail_id).and_then(|app| app.as_any_mut().downcast_mut::<MailApp>()) {
+                app.set_folder_idx(folder_idx);
+                app.set_selected(selected);
+            }
         }
     }
 
@@ -1184,6 +1216,14 @@ impl Scene for DesktopScene {
                     // 보이던 문제).
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
+                    // 게임 다운로드 파일이면 굳이 나중에 더블클릭하지 않아도 다운로드한
+                    // 그 즉시 팩맨 창이 뜬다("다운로드 후에 팩맨 라이크 게임을 띄울거야").
+                    if matches!(self.fs.get(id).kind, FileKind::Game) {
+                        let op = open(&self.fs, id, &f.settings);
+                        if self.wm.open(op, Some(id), work) {
+                            self.apply_saved_geometry(id, work);
+                        }
+                    }
                     // 다운로드 직후 그 즉시 저장 — 5초 자동저장을 기다리는 사이 창이
                     // 닫히면 방금 다운로드한 기록이 통째로 사라지는 문제가 있었다.
                     self.write_save(&f.settings);
@@ -1383,6 +1423,17 @@ impl Scene for DesktopScene {
         if self.wifi_check_timer >= WIFI_CHECK_INTERVAL {
             self.wifi_check_timer = 0.0;
             self.wifi_connected = network_connected();
+        }
+
+        // 게임 다운로드 파일이 첨부된 메일 도착 — 이미 도착했으면(불러온 저장에서도
+        // true 로 남아있다) 더는 재지 않는다.
+        if !self.fs.mail_arrived {
+            self.mail_timer += f.dt;
+            if self.mail_timer >= MAIL_ARRIVAL_DELAY {
+                self.fs.mail_arrived = true;
+                self.refresh_mail_if_open(&f.settings);
+                self.write_save(&f.settings);
+            }
         }
 
         // File Explorer/Mail 은 주기적으로 무조건 새로고침하지 않는다 — 그렇게 하면

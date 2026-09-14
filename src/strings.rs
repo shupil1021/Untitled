@@ -87,6 +87,13 @@ pub mod video_player {
     pub const PUT_VIDEO_AT: S = S { en: "Put a video at", ko: "다음 경로에 동영상을 넣으세요:", ja: "動画を次の場所に置いてください:" };
 }
 
+// apps/pacman.rs — 메일로 받은 게임 다운로드 파일을 열면 뜨는 창(아직 자리표시자).
+pub mod pacman {
+    use super::S;
+    pub const TITLE: S = S { en: "PAC-MAN", ko: "팩맨", ja: "パックマン" };
+    pub const COMING_SOON: S = S { en: "Coming soon...", ko: "준비 중...", ja: "近日公開..." };
+}
+
 // apps/mail.rs — 메일 앱(Outlook Express 스타일).
 pub mod mail {
     use super::S;

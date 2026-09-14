@@ -36,11 +36,26 @@ pub struct SentMailView {
     pub attachments: Vec<(FileId, String, IconType)>,
 }
 
-// 기획이 갈아엎이면서 여기 있던 입사 안내 메일(HexTool Setup.exe 첨부) 시드
-// 콘텐츠를 걷어냈다 — 다음 기획에서는 메일로 "게임 설치 마법사"를 받는 방식이
-// 될 예정이지만, 아직 그 콘텐츠는 없다. 그래서 Inbox 는 항상 빈 상태로
-// 시작한다(messages: Vec::new()). 나중에 새 시드 메일이 생기면 여기에 언어별
-// 문구를 만드는 함수를 다시 추가하면 된다.
+// 새 게임을 시작하면 MAIL_ARRIVAL_DELAY 초 뒤에 도착하는 첫(그리고 지금은 유일한)
+// 메일 — 게임 다운로드 파일(FileKind::Game)만 첨부로 걸고 제목/본문은 아직 일부러
+// 비워뒀다("메일 → 다운로드 → 창 띄우기" 파이프라인부터 먼저 만드는 단계라, 실제
+// 안내 문구는 나중에 채운다). arrived 가 false 면(아직 도착 전) 받은편지함이
+// 비어있다 — DesktopScene 이 타이머로 도착시킨다. from/to 는 이메일 주소라
+// 언어와 무관하게 그대로 두고, subject/body 는 지금은 그냥 빈 문자열이라 번역할
+// 것도 없다.
+fn seed_messages(arrived: bool, game_id: FileId) -> Vec<MailMsg> {
+    if !arrived {
+        return Vec::new();
+    }
+    vec![MailMsg {
+        from: "system@mail.com",
+        to: "you@mail.com",
+        cc: "",
+        subject: "",
+        body: "",
+        attachment: Some((game_id, crate::foundation::GAME_FILE_NAME.to_string())),
+    }]
+}
 
 // 왼쪽 폴더 트리 항목 — Deleted Items/Drafts 는 삭제/임시보관 기능 자체가 아직
 // 없어서(눌러도 항상 빈 상태 안내뿐이라 의미가 없었다) 트리에서 뺐다. Sent
@@ -150,7 +165,7 @@ impl NewMailState {
 }
 
 pub struct MailApp {
-    messages: Vec<MailMsg>, // 지금은 시드 콘텐츠가 없어서 항상 빈 상태로 시작한다
+    messages: Vec<MailMsg>,
     // 왼쪽 폴더 트리에서 고른 폴더 — 처음엔 아무것도 안 골라서(Outlook Express 를
     // 막 열었을 때처럼) 오른쪽이 빈 안내 상태로 시작한다.
     folder: Option<MailFolder>,
@@ -209,9 +224,10 @@ pub struct MailApp {
 
 impl MailApp {
     pub(super) fn new(
-        read_indices: &[usize], attachable: Vec<(FileId, String, IconType)>, sent: Vec<SentMailView>, settings: Rc<RefCell<Settings>>,
+        arrived: bool, read_indices: &[usize], attachable: Vec<(FileId, String, IconType)>, sent: Vec<SentMailView>, game_id: FileId,
+        settings: Rc<RefCell<Settings>>,
     ) -> MailApp {
-        let messages: Vec<MailMsg> = Vec::new();
+        let messages = seed_messages(arrived, game_id);
         let read = (0..messages.len()).map(|i| read_indices.contains(&i)).collect();
         let downloaded = vec![false; messages.len()];
         let downloading = vec![None; messages.len()];

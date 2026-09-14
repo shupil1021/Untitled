@@ -25,6 +25,7 @@ pub enum FileKind {
     #[serde(rename = "Email")]
     Mail { attachment: Option<FileId> },                // 메일 앱 (첨부파일 하나까지)
     Explorer,                                           // 바탕화면의 File Explorer (탭 있는 탐색기)
+    Game,                                                // 메일로 받는 게임 다운로드 파일 — 열면 PacmanApp 이 뜬다
     Deleted,                                             // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
 }
 
@@ -36,6 +37,8 @@ pub enum FileKind {
 // 타이핑하면 오타 하나로 매칭이 조용히 깨질 수 있어 상수로 모아뒀다.
 pub const MY_COMPUTER_NAME: &str = "My Computer";
 pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
+// 입사 안내 메일이 첨부로 거는 게임 다운로드 파일의 실제 파일명(FileKind::Game).
+pub const GAME_FILE_NAME: &str = "Game.exe";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FileNode {
@@ -57,6 +60,17 @@ pub struct FileSystem {
     // 폴더)을 바탕화면으로 옮기면 downloads 에서 빠지면서 "아직 안 받음" 취급돼 다시
     // 다운로드 버튼이 나타나는 문제가 있었다.
     pub ever_downloaded: Vec<FileId>,
+    // 첫 메일(게임 다운로드 파일 첨부)이 도착했는지 — 도착 전엔 받은편지함이 빈
+    // 상태. desktop.rs 의 타이머가 새 게임을 시작하고 일정 시간 뒤 true 로 바꾼다.
+    #[serde(default)]
+    pub mail_arrived: bool,
+    // 입사 안내 메일이 첨부로 거는 실제 FileKind::Game 노드의 id — 메일 쪽
+    // (apps/mail.rs::seed_messages)은 fs 를 직접 들고 있지 않아서 첨부에 쓸
+    // FileId 를 스스로 만들 수 없다. 그래서 FileSystem::new() 가 미리 하나
+    // 만들어서 이 필드에 박아두고, apps/mod.rs::open() 의 FileKind::Mail
+    // 분기가 매번 이 값을 MailApp::new() 로 그대로 넘겨준다.
+    #[serde(default)]
+    pub mail_game_attachment: FileId,
     // 읽은 메일의 인덱스(MailApp::seed_messages 순번) — MailApp 자체는 창을 닫거나
     // 3초 주기 새로고침으로 새로 만들어질 때마다 통째로 새 인스턴스가 되므로, 읽음
     // 여부를 여기(저장 파일에 실리는 fs)에 둬야 새로고침은 물론 게임을 종료했다
@@ -142,6 +156,8 @@ impl FileSystem {
             desktop: Vec::new(),
             downloads: Vec::new(),
             ever_downloaded: Vec::new(),
+            mail_arrived: false,
+            mail_game_attachment: 0, // 아래에서 실제 노드를 만들고 바로 채운다
             mail_read: Vec::new(),
             sent_mail: Vec::new(),
             trash_origin: Vec::new(),
@@ -149,11 +165,6 @@ impl FileSystem {
 
         // 바탕화면엔 고정 아이콘들만 둔다 — 나머지 예제 파일들은 다 치웠다.
         let explorer = fs.add(MY_COMPUTER_NAME, FileKind::Explorer);
-        // 기획이 갈아엎이면서 예전에 여기 있던 HexTool 설치 마법사 첨부 + 입사
-        // 안내 메일 자동 도착 + ?????(Photos) 피드 관련 콘텐츠를 전부 걷어냈다 —
-        // 재검토 중이라 Mail 은 빈 받은편지함인 채로 시작하는 껍데기만 남았다.
-        // 다음 기획에서는 메일로 "게임 설치 마법사"를 받아 그걸로 플레이하는
-        // 방식이 될 예정이지만, 아직 그 콘텐츠는 없다.
         let mail = fs.add("Mail", FileKind::Mail { attachment: None });
 
         // 휴지통도 그냥 이름이 "Recycle Bin"인 빈 Folder — 드래그로 파일을 옮기면
@@ -163,6 +174,12 @@ impl FileSystem {
         let recycle_bin = fs.add(RECYCLE_BIN_NAME, FileKind::Folder { children: vec![] });
 
         fs.desktop = vec![recycle_bin, explorer, mail];
+
+        // 입사 안내 메일이 첨부로 거는 게임 다운로드 파일 — 바탕화면/Downloads
+        // 어디에도 아직 안 걸려있는, 오직 메일 첨부용으로만 미리 만들어두는 실제
+        // 노드. 다운로드하면 Downloads 탭에 나타나고, 그걸 열면(FileKind::Game)
+        // PacmanApp 이 뜬다.
+        fs.mail_game_attachment = fs.add(GAME_FILE_NAME, FileKind::Game);
         fs
     }
 
