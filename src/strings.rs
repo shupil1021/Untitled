@@ -301,12 +301,16 @@ pub mod hextool {
     pub const SATURATION: S = S { en: "Saturation", ko: "채도", ja: "彩度" };
     // ????? 검수 진행 상황 — {n}=총 개수, {m}=검수 완료 개수.
     pub const REVIEW_STATUS: S = S { en: "{m} of {n} images reviewed", ko: "{n}개의 이미지 중 {m}개 검수됨", ja: "{n}枚中{m}枚検収済み" };
-    // 세 개 중 하나를 고르는 체크박스를 감싸는 그룹 박스(ui::group_box) 라벨.
+    // 체크박스들을 감싸는 그룹 박스(ui::group_box) 라벨.
     pub const ANOMALY_GROUP: S = S { en: "Anomaly", ko: "이상현상", ja: "異常現象" };
-    // 이 중 하나를 골라야만(선택 안 하면 None) 저장 버튼이 활성화된다. 시체/
-    // 글리치 중 하나라도 고르면 압축파일에 담긴다.
-    pub const ANOMALY_CORPSE: S = S { en: "Corpse", ko: "시체", ja: "死体" };
-    pub const ANOMALY_GLITCH: S = S { en: "Glitch", ko: "글리치", ja: "グリッチ" };
+    // 이상현상 항목들 — 여러 개를 동시에 체크할 수 있다(서로 배타적이지 않음).
+    // 새 항목을 늘릴 땐 여기 상수만 추가하고 hextool.rs::AnomalyCategory 와
+    // update_panel() 의 rows 배열에 짝을 맞춰 넣으면 된다.
+    pub const ANOMALY_ABNORMAL_OBJECT: S = S { en: "Abnormal Object", ko: "비정상 객체", ja: "異常な物体" };
+    pub const ANOMALY_STRANGE_SHADOW: S = S { en: "Strange Shadow", ko: "이상한 그림자", ja: "奇妙な影" };
+    pub const ANOMALY_DOPPELGANGER: S = S { en: "Doppelganger", ko: "도플갱어", ja: "ドッペルゲンガー" };
+    // 위 항목들과 달리 배타적이다 — 이걸 고르면 나머지가 전부 해제되고, 반대로
+    // 다른 항목을 고르면 이게 해제된다(hextool.rs::draw_category_checkbox).
     pub const ANOMALY_NONE: S = S { en: "No anomaly", ko: "이상현상 없음", ja: "異常現象なし" };
     // 검수 저장을 누르면 미리보기가 빈 자리로 돌아가기 전 잠깐 보여주는 문구.
     pub const SAVING: S = S { en: "Saving...", ko: "저장 중...", ja: "保存中..." };

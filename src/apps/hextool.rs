@@ -1,18 +1,21 @@
 //! HexTool — Installer 마법사를 끝까지 마치면 바탕화면에 생기는 설치된 프로그램.
-//! ????? 에 지금 떠 있는 사진들을 한 장씩 골라 들여다보며 시체/글리치/이상현상
-//! 없음 중 하나를 체크하고 저장하는 검수 도구다. 빈 미리보기 자리를 클릭하면
-//! "My Computer"(File Explorer)와 비슷한 아이콘 그리드 창(apps/hex_picker.rs,
-//! 별개의 창으로 뜬다)이 열리고, 거기서 사진을 하나 고르면 곧장 그 사진이 이
-//! 창의 미리보기로 들어온다. 검수 저장을 누르면 잠깐(SAVE_DELAY 초) "저장 중"
-//! 표시가 뜬 뒤 미리보기가 다시 빈 자리로 돌아간다 — 그 자리를 클릭해서 다음
-//! 사진을 고르면 된다. 예전엔 이 선택 기능을 여는 별도 버튼/링크가 따로
-//! 있었는데, 어차피 저장할 때마다 빈 자리로 돌아오므로 굳이 필요 없어 없앴다.
+//! ????? 에 지금 떠 있는 사진들을 한 장씩 골라 들여다보며 이상현상 체크박스를
+//! 체크하고 저장하는 검수 도구다. 빈 미리보기 자리를 클릭하면 "My Computer"
+//! (File Explorer)와 비슷한 아이콘 그리드 창(apps/hex_picker.rs, 별개의 창으로
+//! 뜬다)이 열리고, 거기서 사진을 하나 고르면 곧장 그 사진이 이 창의 미리보기로
+//! 들어온다 — 이미 검수한 사진을 다시 골라도 그 결과 그대로 불러와서 다시
+//! 고쳐 저장할 수 있다. 검수 저장을 누르면 잠깐(SAVE_DELAY 초) "저장 중" 표시가
+//! 뜬 뒤 미리보기가 다시 빈 자리로 돌아간다 — 그 자리를 클릭해서 다음 사진을
+//! 고르면 된다.
 //!
 //! 오른쪽 패널은 위에서부터: 지금까지 검수한 개수("N개의 이미지 중 M개
-//! 검수됨") → 밝기/채도 슬라이더 → 미니맵 → 이상현상 체크박스 3개(시체/글리치/
-//! 이상현상 없음, 서로 배타적 — 하나를 반드시 골라야 저장 버튼이 활성화된다,
-//! 셋을 그룹 박스로 따로 묶어서 한 세트라는 걸 보여준다) → 저장/내보내기 버튼
-//! 순서다. 패널 내용이 창 높이보다 길어지면 마우스 휠/스크롤바로 볼 수 있다.
+//! 검수됨") → 밝기/채도 슬라이더 → 미니맵 → 이상현상 체크박스들(비정상 객체/
+//! 이상한 그림자/도플갱어 — 여러 개 동시 체크 가능, 그리고 배타적인 "문제없음"
+//! 하나를 구분선 아래 따로 둔다. 최소 하나는 체크해야 저장 버튼이 활성화되고,
+//! 전부 그룹 박스로 묶어 한 세트라는 걸 보여준다) → 저장/내보내기 버튼 순서다.
+//! 패널 내용이 창 높이보다 길어지면 마우스 휠/스크롤바로 볼 수 있다. 미리보기
+//! 왼쪽 위에는 지금 사진이 ????? 배치 전체 중 몇 번째인지 "N/전체" 빨간 배지로
+//! 항상 겹쳐 보여준다.
 //!
 //! 미리보기는 photos.rs 와 같은 요령으로 원본 파일을 그때그때 디코드해 텍스처로
 //! 올린다(고른 사진이 바뀔 때만 한 번). 밝기/채도 슬라이더는 이 렌더러에 셰이더
@@ -22,13 +25,13 @@
 //! 드래그로는 그 자리에서 원하는 방향으로 이동(pan)할 수 있다 — 미니맵이 지금
 //! 보고 있는 영역을 노란 테두리 상자로 보여준다.
 //!
-//! 검수 결과(사진별로 고른 카테고리)는 fs.photo_reviews 에 저장돼 게임을 다시
+//! 검수 결과(사진별로 고른 카테고리들)는 fs.photo_reviews 에 저장돼 게임을 다시
 //! 켜도 유지된다 — "검수 저장"을 누를 때마다 그 사진 하나의 결과만 fs 에 기록
 //! 한다. ????? 의 사진을 전부 검수하면(fs.photo_reviews 와 fs.photos_current 의
 //! 교집합이 photos_current 전체를 덮으면) 버튼이 "압축파일 내보내기"로 바뀌고,
-//! 누르면 시체/글리치로 체크된 사진들만 모아 FileKind::PhotoReport 압축파일을
-//! 만든다(desktop.rs 참고) — 이걸 재연구 업무 보고 메일에 첨부해 보내면 ?????
-//! 피드가 새로 갱신된다.
+//! 누르면 "문제없음" 외의 카테고리가 하나라도 체크된 사진들만 모아
+//! FileKind::PhotoReport 압축파일을 만든다(desktop.rs 참고) — 이걸 재연구 업무
+//! 보고 메일에 첨부해 보내면 ????? 피드가 새로 갱신된다.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -68,7 +71,11 @@ const ROW_GAP: f32 = 6.0;
 const BOX_TOP_MARGIN: f32 = 12.0; // 그룹박스 라벨이 위 테두리에 걸치는 만큼 위쪽에 미리 비워둘 여백
 const BOX_TOP_INSET: f32 = 14.0; // 박스 테두리 상단에서 첫 체크박스까지
 const BOX_BOTTOM_PAD: f32 = 16.0; // 마지막 체크박스 밑에서 박스 테두리까지 — 위쪽 여백과 비슷하게 맞춰서 위아래가 대칭으로 보이게 한다
-const CHECK_BOX_H: f32 = BOX_TOP_INSET + CHECK_ROW_H * 3.0 + BOX_BOTTOM_PAD;
+const CHECK_ROWS: f32 = 4.0; // 이상현상 항목 3개 + 배타적인 "문제없음" 1개
+// "문제없음" 줄 위에 그리는 구분선이 차지하는 여분의 세로 공간 — 이 절반은
+// 구분선 위 여백으로, 나머지 절반은 구분선 아래(문제없음 줄 위) 여백으로 쓴다.
+const CHECK_DIVIDER_GAP: f32 = 8.0;
+const CHECK_BOX_H: f32 = BOX_TOP_INSET + CHECK_ROW_H * CHECK_ROWS + CHECK_DIVIDER_GAP + BOX_BOTTOM_PAD;
 // 저장을 누른 뒤 미리보기가 빈 자리로 돌아가기까지의 "저장 중" 표시 시간(초).
 const SAVE_DELAY: f32 = 0.5;
 // "압축파일 내보내기"를 누른 뒤 실제로 내보내기 전 "내보내는 중" 표시 시간(초) —
@@ -96,14 +103,14 @@ pub struct HexToolApp {
     brightness: f32,
     saturation: f32,
     active_slider: i32,
-    category: Option<AnomalyCategory>, // 지금 로드된 사진에 대해 고른 체크박스(저장 전까지는 임시) — None 이면 아직 아무것도 안 고름
+    categories: Vec<AnomalyCategory>, // 지금 로드된 사진에 대해 고른 체크박스들(저장 전까지는 임시) — 여러 개 동시 체크 가능, 비어있으면 아직 아무것도 안 고름
     saving: Option<f32>, // Some(경과 시간) 이면 "저장 중" 표시 중 — SAVE_DELAY 를 넘으면 미리보기를 비운다
     // Some((경과 시간, 내보낼 사진 목록)) 이면 "압축파일 내보내기"를 막 눌러
     // "내보내는 중" 표시 중 — EXPORT_DELAY 를 넘으면 그제서야 실제로
     // AppAction::ExportPhotoReport 를 보낸다.
     export_pending: Option<(f32, Vec<String>)>,
     photos_current: Vec<String>,                  // ????? 에 지금 떠 있는 사진 식별자 전체 — 진행 상황(N) 계산용
-    reviews: HashMap<String, AnomalyCategory>,    // fs.photo_reviews 의 로컬 사본 — "저장" 할 때마다 여기도 같이 갱신해서 M 이 그 자리에서 바로 반영된다
+    reviews: HashMap<String, Vec<AnomalyCategory>>, // fs.photo_reviews 의 로컬 사본 — "저장" 할 때마다 여기도 같이 갱신해서 M 이 그 자리에서 바로 반영된다
     panel_scroll: f32,
     panel_scroll_disp: f32,
     panel_sb_drag: bool,
@@ -111,7 +118,7 @@ pub struct HexToolApp {
 }
 
 impl HexToolApp {
-    pub fn new(photos_current: Vec<String>, reviews: HashMap<String, AnomalyCategory>, settings: Rc<RefCell<Settings>>) -> HexToolApp {
+    pub fn new(photos_current: Vec<String>, reviews: HashMap<String, Vec<AnomalyCategory>>, settings: Rc<RefCell<Settings>>) -> HexToolApp {
         HexToolApp {
             loaded_photo_id: None,
             tex: None,
@@ -123,7 +130,7 @@ impl HexToolApp {
             brightness: 0.5,
             saturation: 0.5,
             active_slider: -1,
-            category: None,
+            categories: Vec::new(),
             saving: None,
             export_pending: None,
             photos_current,
@@ -137,9 +144,10 @@ impl HexToolApp {
 
     // HexPickerApp 에서 사진을 고르면 desktop.rs 가 불러준다 — 미리보기/확대/
     // 이동 상태를 새 사진 기준으로 초기화하고, 이미 저장된 검수 결과가 있으면
-    // 체크박스를 그 값으로 미리 채운다(없으면 None — 다시 골라야 저장 가능).
+    // 체크박스를 그 값들로 미리 채운다(없으면 빈 목록 — 다시 골라야 저장
+    // 가능하고, 이미 검수한 사진도 그 값을 보면서 다시 골라 덮어쓸 수 있다).
     pub(crate) fn set_selected_photo(&mut self, id: String) {
-        self.category = self.reviews.get(&id).copied();
+        self.categories = self.reviews.get(&id).cloned().unwrap_or_default();
         self.loaded_photo_id = Some(id);
         self.tex = None;
         self.tex_tried = false;
@@ -178,6 +186,7 @@ impl HexToolApp {
             let msg = t(lang, s::NO_PREVIEW);
             let tw = r.text_width(msg, 0.75);
             r.text(inner.x + ((inner.w - tw) / 2.0).max(0.0), inner.y + inner.h / 2.0 - 6.0, msg, 0.75, GRAY);
+            self.draw_page_badge(r, area);
             return;
         };
 
@@ -247,6 +256,21 @@ impl HexToolApp {
             r.text(hx, hy, hint, 0.7, [0.9, 0.9, 0.9, 0.9]);
         }
         r.set_clip(None);
+        self.draw_page_badge(r, area);
+    }
+
+    // 지금 보고 있는 사진이 photos_current(전체 배치) 안에서 몇 번째인지
+    // "N/전체" 배지로 미리보기 왼쪽 위에 항상 겹쳐 그린다 — 확대/이동으로
+    // 클립된 이미지 영역과 무관하게 항상 보이도록 area(sunken 배경 전체) 기준
+    // 좌상단에, 이미지보다 나중에 그린다.
+    fn draw_page_badge(&self, r: &mut Renderer, area: Rect) {
+        let Some(id) = &self.loaded_photo_id else { return };
+        let Some(pos) = self.photos_current.iter().position(|p| p == id) else { return };
+        let label = format!("{}/{}", pos + 1, self.photos_current.len());
+        let tw = r.text_width(&label, 0.75);
+        let (bx, by, bw, bh) = (area.x + 4.0, area.y + 4.0, tw + 8.0, 16.0);
+        r.rect(bx, by, bw, bh, [0.75, 0.15, 0.15, 1.0]);
+        r.text(bx + 4.0, by + 3.0, &label, 0.75, WHITE);
     }
 
     // 슬라이더 밑 미니맵 — 전체 이미지 축소판 위에 지금 뷰포트가 어디를 보고
@@ -274,17 +298,27 @@ impl HexToolApp {
         border(r, vx, vy, (fw * tw).max(2.0), (fh * th).max(2.0), [1.0, 0.9, 0.2, 1.0]);
     }
 
-    // 체크박스 하나(시체/글리치/이상현상 없음 중 하나) — 서로 배타적으로 동작
-    // 한다: 체크하면 self.category 가 그 값이 되고, 이미 골라져 있던 걸 다시
-    // 눌러 끄면 self.category 가 None 으로 돌아간다(그러면 저장 버튼도 다시
-    // 비활성화된다).
+    // 체크박스 하나 — 이상현상 항목들(NoAnomaly 제외)은 여러 개를 동시에 체크할
+    // 수 있다. NoAnomaly 는 예외적으로 배타적이다: 체크하면 나머지가 전부
+    // 해제되고, 반대로 다른 항목을 하나라도 체크하면 NoAnomaly 가 자동으로
+    // 해제된다 — "이상현상 없음"과 "구체적인 이상현상이 있음"은 동시에 참일
+    // 수 없는 상태라서다.
     fn draw_category_checkbox(&mut self, r: &mut Renderer, x: f32, y: f32, label: &str, cat: AnomalyCategory, win: &WinInput) {
-        let mut checked = self.category == Some(cat);
+        let was_checked = self.categories.contains(&cat);
+        let mut checked = was_checked;
         checkbox(r, x, y, label, &mut checked, win);
+        if checked == was_checked {
+            return;
+        }
         if checked {
-            self.category = Some(cat);
-        } else if self.category == Some(cat) {
-            self.category = None;
+            if cat == AnomalyCategory::NoAnomaly {
+                self.categories.clear();
+            } else {
+                self.categories.retain(|c| *c != AnomalyCategory::NoAnomaly);
+            }
+            self.categories.push(cat);
+        } else {
+            self.categories.retain(|c| *c != cat);
         }
     }
 
@@ -337,7 +371,7 @@ impl HexToolApp {
             self.draw_minimap(r, Rect::new(panel.x + (content_w - side) / 2.0, minimap_y, side, side));
         }
 
-        // 체크박스 3개를 그룹 박스로 묶어서 "이 셋이 한 세트"라는 걸 시각적으로
+        // 체크박스들을 그룹 박스로 묶어서 "이 항목들이 한 세트"라는 걸 시각적으로
         // 보여준다(settings.rs 의 그룹 박스들과 같은 위젯) — box_y 는 박스 테두리
         // 자체의 좌상단이고, 라벨은 그 위쪽 선에 걸쳐 그려지므로 그 만큼(BOX_TOP_
         // MARGIN)은 미리 위에 비워둔 채로 넘겨받았다(CHECK_BOX_Y 계산 참고).
@@ -346,14 +380,22 @@ impl HexToolApp {
             group_box(r, panel.x, box_y, content_w, CHECK_BOX_H, t(lang, s::ANOMALY_GROUP));
         }
         let checks_y = box_y + BOX_TOP_INSET;
+        // NoAnomaly(문제없음)는 나머지와 성격이 달라(배타적) 마지막 줄로 따로 두고,
+        // 그 위에 얇은 구분선을 그려서 "이건 별개"라는 걸 보여준다.
         let rows = [
-            (t(lang, s::ANOMALY_CORPSE), AnomalyCategory::Corpse),
-            (t(lang, s::ANOMALY_GLITCH), AnomalyCategory::Glitch),
+            (t(lang, s::ANOMALY_ABNORMAL_OBJECT), AnomalyCategory::AbnormalObject),
+            (t(lang, s::ANOMALY_STRANGE_SHADOW), AnomalyCategory::StrangeShadow),
+            (t(lang, s::ANOMALY_DOPPELGANGER), AnomalyCategory::Doppelganger),
             (t(lang, s::ANOMALY_NONE), AnomalyCategory::NoAnomaly),
         ];
+        let none_row = rows.len() - 1;
         for (i, (label, cat)) in rows.into_iter().enumerate() {
-            let y = checks_y + i as f32 * CHECK_ROW_H;
+            let extra = if i == none_row { CHECK_DIVIDER_GAP } else { 0.0 };
+            let y = checks_y + i as f32 * CHECK_ROW_H + extra;
             if visible(y, CHECK_ROW_H) {
+                if i == none_row {
+                    r.rect(panel.x + 6.0, y - extra / 2.0, content_w - 12.0, 1.0, GRAY);
+                }
                 self.draw_category_checkbox(r, panel.x + 6.0, y + CHECK_Y_OFFSET, label, cat, win);
             }
         }
@@ -369,8 +411,9 @@ impl HexToolApp {
         // export_pending 이 saving 보다 먼저 update() 의 우선순위를 가져가서
         // saving 타이머가 멈춘 채로 방치됐다가, 내보내기가 끝난 뒤에야 남은
         // "저장 중" 표시가 다시 잠깐 나타나는 어색한 상태가 됐었다.
-        let enabled =
-            self.export_pending.is_none() && self.saving.is_none() && (all_reviewed || (self.loaded_photo_id.is_some() && self.category.is_some()));
+        let enabled = self.export_pending.is_none()
+            && self.saving.is_none()
+            && (all_reviewed || (self.loaded_photo_id.is_some() && !self.categories.is_empty()));
         let mut result = AppAction::None;
         if visible(btn_y, BTN_H) {
             if enabled && button(r, panel.x, btn_y, content_w, BTN_H, btn_label, win) {
@@ -378,18 +421,20 @@ impl HexToolApp {
                     let flagged: Vec<String> = self
                         .photos_current
                         .iter()
-                        .filter(|id| matches!(self.reviews.get(*id), Some(AnomalyCategory::Corpse | AnomalyCategory::Glitch)))
+                        .filter(|id| self.reviews.get(*id).is_some_and(|cats| cats.iter().any(|c| *c != AnomalyCategory::NoAnomaly)))
                         .cloned()
                         .collect();
                     // 곧장 내보내지 않고 잠깐 "내보내는 중" 표시부터 보여준다 —
                     // update() 의 export_pending 처리가 EXPORT_DELAY 뒤에 실제로
                     // AppAction::ExportPhotoReport 를 보낸다.
                     self.export_pending = Some((0.0, flagged));
-                } else if let (Some(id), Some(cat)) = (self.loaded_photo_id.clone(), self.category) {
-                    self.reviews.insert(id.clone(), cat);
+                } else if let Some(id) = self.loaded_photo_id.clone()
+                    && !self.categories.is_empty()
+                {
+                    self.reviews.insert(id.clone(), self.categories.clone());
                     self.saving = Some(0.0);
-                    self.category = None;
-                    result = AppAction::SavePhotoReview(id, cat);
+                    let saved = std::mem::take(&mut self.categories);
+                    result = AppAction::SavePhotoReview(id, saved);
                 }
             } else if !enabled {
                 // 비활성 상태 — 눌러도 반응 없는 회색 버튼으로만 그린다. raw_button()

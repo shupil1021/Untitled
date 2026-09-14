@@ -10,8 +10,8 @@ use crate::apps::{
     SettingsApp, ThumbCache,
 };
 use crate::foundation::{
-    display_name, expected_anomaly, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, MY_COMPUTER_NAME,
-    OFFICIAL_SITE_URL, RECYCLE_BIN_NAME,
+    display_name, is_anomaly_photo, AnomalyCategory, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings,
+    MY_COMPUTER_NAME, OFFICIAL_SITE_URL, RECYCLE_BIN_NAME,
 };
 use crate::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
 use crate::secrets;
@@ -1590,20 +1590,23 @@ impl Scene for DesktopScene {
                     // fs.sent_mail 에 쌓아서 Mail 앱의 "Sent Items" 탭에 그대로 보여준다.
                     self.fs.sent_mail.push(SentMail { to, subject, body, attachments });
                     if sent_report {
-                        // 정상/비정상 제출 집계 — 배치 안의 사진 전부가 실제 정답
-                        // (expected_anomaly)과 정확히 일치해야 "정상"이다. photos_current
-                        // 를 새로 뽑기(refresh_photos_feed) 전, 지금 막 제출한 배치
-                        // 기준으로 먼저 판정한다. director_panel Vars 탭 표시 전용이라
-                        // 게임 자체 진행에는 영향이 없다.
+                        // 정상/비정상 제출 집계 — 배치 안의 사진 전부가 "이상현상 있음/
+                        // 없음" 여부(is_anomaly_photo, 폴더명 기준)와 실제로 체크한 카테고리
+                        // 조합이 맞아떨어져야 "정상"이다(정확히 어떤 항목인지까지는 안 본다
+                        // — foundation.rs::is_anomaly_photo 설명 참고). photos_current 를
+                        // 새로 뽑기(refresh_photos_feed) 전, 지금 막 제출한 배치 기준으로
+                        // 먼저 판정한다. director_panel Vars 탭 표시 전용이라 게임 자체
+                        // 진행에는 영향이 없다.
                         // photos_current 가 비어있으면 Iterator::all() 이 공허하게(vacuously)
                         // true 를 돌려주므로, 아무것도 검수 안 한 제출까지 "정상"으로 잘못
                         // 세는 걸 막는다.
                         let all_correct = !self.fs.photos_current.is_empty()
-                            && self
-                                .fs
-                                .photos_current
-                                .iter()
-                                .all(|id| self.fs.photo_reviews.get(id).is_some_and(|&cat| cat == expected_anomaly(id)));
+                            && self.fs.photos_current.iter().all(|id| {
+                                self.fs.photo_reviews.get(id).is_some_and(|cats| {
+                                    let flagged = cats.iter().any(|c| *c != AnomalyCategory::NoAnomaly);
+                                    flagged == is_anomaly_photo(id)
+                                })
+                            });
                         if all_correct {
                             self.fs.report_submissions_ok += 1;
                         } else {
@@ -1641,8 +1644,8 @@ impl Scene for DesktopScene {
                     }
                     self.wm.close_file(HEX_PICKER_WIN);
                 }
-                DeskAction::SavePhotoReview(id, category) => {
-                    self.fs.photo_reviews.insert(id, category);
+                DeskAction::SavePhotoReview(id, categories) => {
+                    self.fs.photo_reviews.insert(id, categories);
                     self.write_save(&f.settings);
                 }
                 DeskAction::ExportPhotoReport(photos) => {

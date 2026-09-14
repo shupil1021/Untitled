@@ -66,7 +66,7 @@ pub enum DeskAction {
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
     OpenHexPicker,
     SelectPhotoForHexTool(String),
-    SavePhotoReview(String, crate::foundation::AnomalyCategory),
+    SavePhotoReview(String, Vec<crate::foundation::AnomalyCategory>),
     ExportPhotoReport(Vec<String>),
 }
 
@@ -513,7 +513,7 @@ impl WindowManager {
                 AppAction::Restore(ids) => actions.push(DeskAction::Restore(ids)),
                 AppAction::OpenHexPicker => actions.push(DeskAction::OpenHexPicker),
                 AppAction::SelectPhotoForHexTool(id) => actions.push(DeskAction::SelectPhotoForHexTool(id)),
-                AppAction::SavePhotoReview(id, anomaly) => actions.push(DeskAction::SavePhotoReview(id, anomaly)),
+                AppAction::SavePhotoReview(id, categories) => actions.push(DeskAction::SavePhotoReview(id, categories)),
                 AppAction::ExportPhotoReport(photos) => actions.push(DeskAction::ExportPhotoReport(photos)),
             }
         }

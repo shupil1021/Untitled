@@ -89,9 +89,9 @@ pub enum AppAction {
     // HexPickerApp 에서 사진을 고르면 — 그 식별자를 HexTool 창에 꽂아주고 선택
     // 창은 닫아달라는 요청.
     SelectPhotoForHexTool(String),
-    // HexTool 의 "검수 저장" — 지금 보고 있는 사진의 이상현상 체크 여부를
-    // fs.photo_reviews 에 기록해달라는 요청(식별자, 체크 여부).
-    SavePhotoReview(String, crate::foundation::AnomalyCategory),
+    // HexTool 의 "검수 저장" — 지금 보고 있는 사진에 체크된 이상현상 카테고리들을
+    // fs.photo_reviews 에 기록해달라는 요청(식별자, 체크된 카테고리 목록).
+    SavePhotoReview(String, Vec<crate::foundation::AnomalyCategory>),
     // HexTool 의 "압축파일 내보내기"(?????의 모든 사진을 검수했을 때) — 이상현상으로
     // 체크된 사진 식별자 목록으로 FileKind::PhotoReport 압축파일을 만들어(이미
     // 있으면 내용만 갱신) 바탕화면에 둔다.

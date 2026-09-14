@@ -37,31 +37,33 @@ pub enum FileKind {
     Deleted,                                             // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
 }
 
-// HexTool 검수 화면의 세 체크박스(시체/글리치/이상현상 없음) 중 어느 걸 골랐는지.
-// FileSystem::photo_reviews 에 사진별로 하나씩 저장되고, Corpse/Glitch 로 체크된
-// 사진만 보고용 압축파일(PhotoReport)에 담긴다. "NoAnomaly" 라고 이름 붙인 건
-// Option<AnomalyCategory>::None(아직 아무것도 안 고름, 저장 버튼 비활성)과
-// 헷갈리지 않게 하기 위해서다.
+// HexTool 검수 화면의 이상현상 체크박스 중 어느 걸 골랐는지 — 사진 한 장에
+// 여러 개를 동시에 체크할 수 있어서 FileSystem::photo_reviews 는 사진마다
+// Vec<AnomalyCategory> 하나씩을 들고 있다(빈 벡터 = 아직 저장 전, 저장
+// 버튼은 최소 하나를 골라야 활성화된다). NoAnomaly 하나 이상 체크된(=
+// NoAnomaly 를 뺀 나머지가 하나라도 있는) 사진만 보고용 압축파일
+// (PhotoReport)에 담긴다. "NoAnomaly" 는 나머지 항목들과 달리 배타적이다 —
+// 이걸 고르면 나머지가 전부 해제되고, 반대로 다른 항목을 고르면 이게
+// 해제된다(hextool.rs::draw_category_checkbox).
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AnomalyCategory {
-    Corpse,
-    Glitch,
+    AbnormalObject,
+    StrangeShadow,
+    Doppelganger,
     NoAnomaly,
 }
 
 // HexTool 검수의 "정답" — assets/photo 하위 폴더명(photos.rs::scan_photos 가
-// 식별자 앞에 그대로 붙이는 "폴더명/파일명")이 곧 정답 카테고리다: corpseImage
-// 는 시체, crackImage 는 글리치, hintImage/normalImage(및 하위 폴더 없이 바로
-// 밑에 있는 사진)는 이상현상 없음. 플레이어에게 이 정답을 보여주는 화면은
-// 어디에도 없다 — desktop.rs::DeskAction::SendNewMail 이 재연구 업무 보고
-// 메일을 실제로 보낼 때 fs.photo_reviews 와 비교해서 director_panel Vars 탭에
-// 표시할 정상/비정상 제출 횟수를 셀 때만 쓴다.
-pub fn expected_anomaly(photo_id: &str) -> AnomalyCategory {
-    match photo_id.split('/').next().unwrap_or(photo_id) {
-        "corpseImage" => AnomalyCategory::Corpse,
-        "crackImage" => AnomalyCategory::Glitch,
-        _ => AnomalyCategory::NoAnomaly,
-    }
+// 식별자 앞에 그대로 붙이는 "폴더명/파일명")으로 그 사진에 이상현상이 있는지
+// 없는지만 판정한다(어떤 항목인지까지 정확히 맞혀야 하는 건 아니다 — 체크박스
+// 목록 자체가 아직 확정 전이라 폴더별로 어떤 항목이 "정답"인지 세세히 정해두지
+// 않았다). corpseImage/crackImage 는 이상현상 있음, hintImage/normalImage
+// (및 하위 폴더 없이 바로 밑에 있는 사진)는 이상현상 없음. 플레이어에게 이
+// 정답을 보여주는 화면은 어디에도 없다 — desktop.rs::DeskAction::SendNewMail
+// 이 재연구 업무 보고 메일을 실제로 보낼 때 fs.photo_reviews 와 비교해서
+// director_panel Vars 탭에 표시할 정상/비정상 제출 횟수를 셀 때만 쓴다.
+pub fn is_anomaly_photo(photo_id: &str) -> bool {
+    matches!(photo_id.split('/').next().unwrap_or(photo_id), "corpseImage" | "crackImage")
 }
 
 // 일부 fs 노드는 이름 자체가 "이건 특수 노드다"라는 표식으로 쓰인다(전용
@@ -143,11 +145,11 @@ pub struct FileSystem {
     // 이 겹치지 않게 보장하므로) 옛 항목은 자연히 교집합에서 빠져 무의미해지고,
     // 굳이 지우지 않아도 된다.
     #[serde(default)]
-    pub photo_reviews: std::collections::HashMap<String, AnomalyCategory>,
+    pub photo_reviews: std::collections::HashMap<String, Vec<AnomalyCategory>>,
     // 재연구 업무 보고 메일을 실제로 보낸 횟수 — 그 배치의 모든 사진이
-    // expected_anomaly() 정답과 정확히 일치하면 ok, 하나라도 틀렸으면 bad 로
-    // 센다(desktop.rs::DeskAction::SendNewMail). 게임 안 어디에도 안 보여주고
-    // director_panel 의 Vars 탭 디버그 표시 전용이다.
+    // is_anomaly_photo() 정답(이상현상 있음/없음)과 일치하면 ok, 하나라도
+    // 틀렸으면 bad 로 센다(desktop.rs::DeskAction::SendNewMail). 게임 안
+    // 어디에도 안 보여주고 director_panel 의 Vars 탭 디버그 표시 전용이다.
     #[serde(default)]
     pub report_submissions_ok: u32,
     #[serde(default)]

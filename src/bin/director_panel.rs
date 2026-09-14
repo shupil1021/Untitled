@@ -146,8 +146,9 @@ fn draw_director_tab(
 
 // "Vars" 탭 내용 — 스토리 진행 플래그(hex_tool_installed/mail_arrived)와
 // 재연구 업무 보고 메일의 정상/비정상 제출 횟수(report_submissions_ok/bad —
-// 그 배치의 모든 사진이 foundation::expected_anomaly() 정답과 일치하면
-// ok, 하나라도 틀렸으면 bad)를 강제로 바꾸는 개발용 디버그 화면. 이 창은
+// 그 배치의 모든 사진이 foundation::is_anomaly_photo() 정답(이상현상 있음/
+// 없음)과 일치하면 ok, 하나라도 틀렸으면 bad)를 강제로 바꾸는 개발용 디버그
+// 화면. 이 창은
 // 게임(crackhead.exe)과 다른 프로세스라 그 값을 직접 들고 있지 않으므로,
 // 매 프레임 게임 저장 파일(palaceos_save.json)을 그냥 읽어서 "지금 값"만
 // 보여준다 — 실제로 값을 바꾸는 건 버튼을 눌러 director_state.json 에
