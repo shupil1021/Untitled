@@ -5,47 +5,19 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::apps::{
-    draw_thumb_or_icon, ensure_photos_selected, explorer_app_for_folder, explorer_app_refreshed, mail_attachable_files, open,
-    refresh_photos_feed, CreditsApp, ExplorerApp, ExplorerLocation, HexPickerApp, HexToolApp, MailApp, MoveDest, OfficialSiteApp, Opened,
-    SettingsApp, ThumbCache,
+    explorer_app_for_folder, explorer_app_refreshed, mail_attachable_files, open, CreditsApp, ExplorerApp, ExplorerLocation, MailApp,
+    MoveDest, OfficialSiteApp, Opened, SettingsApp,
 };
 use crate::foundation::{
-    display_name, is_anomaly_photo, AnomalyCategory, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings,
-    MY_COMPUTER_NAME, OFFICIAL_SITE_URL, RECYCLE_BIN_NAME,
+    display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, MY_COMPUTER_NAME, OFFICIAL_SITE_URL,
+    RECYCLE_BIN_NAME,
 };
 use crate::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
-use crate::secrets;
 use crate::strings::{common, credits, desktop as s, explorer, official_site, settings, t};
 use crate::ui::*;
 use crate::window_manager::{DeskAction, Gui, WindowManager};
 
 use super::{EraseScene, Frame, Scene, ShutdownScene, Transition};
-
-// 아주 단순한 xorshift64 의사난수 — lobby.rs/boot.rs 등과 같은 용도지만, 씬마다
-// 쓰는 자리가 달라서 공유 모듈로 안 뽑고 각자 작게 둔다(이 프로젝트 관례).
-// Photos 아이콘의 랜덤 글리치 타이밍에 쓴다.
-struct Rng(u64);
-impl Rng {
-    fn new(seed: u64) -> Rng {
-        Rng(seed | 1)
-    }
-    fn next_u32(&mut self) -> u32 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        (self.0 >> 16) as u32
-    }
-    fn range_f32(&mut self, min: f32, max: f32) -> f32 {
-        min + (self.next_u32() % 1_000_000) as f32 / 1_000_000.0 * (max - min)
-    }
-}
-
-// Photos("?????"로 보이는, 일부러 깨뜨린 이름) 아이콘에 이따금 짧게 스치는
-// 색수차 글리치 — 이 앱 자체가 훼손된 폐 건물 사진들을 다루는 컨셉이라, 그
-// 아이콘도 가끔 화면이 잠깐 지지직거리는 것처럼 보이게 했다.
-const ICON_GLITCH_BURST: f32 = 0.18; // 글리치가 지속되는 시간(초)
-const ICON_GLITCH_GAP_MIN: f32 = 4.0; // 글리치 사이 최소 대기(초)
-const ICON_GLITCH_GAP_MAX: f32 = 11.0; // 글리치 사이 최대 대기(초)
 
 const TASKBAR_H: f32 = 28.0;
 const IC_SIZE: f32 = 26.0; // 실제 그려지는 아이콘 텍스처 크기
@@ -104,11 +76,10 @@ fn menu_item_label(lang: Language, key: &str) -> &'static str {
 const CTX_TEXT_SCALE: f32 = 0.75;
 const CTX_ROW_H: f32 = CELL_H * CTX_TEXT_SCALE + 4.0;
 
-// 설정/크레딧/HexTool 이미지 선택 창을 구분하는 특수 FileId (실제 파일 아님).
+// 설정/크레딧/공식 사이트 창을 구분하는 특수 FileId (실제 파일 아님).
 const SETTINGS_WIN: FileId = usize::MAX - 1;
 const CREDITS_WIN: FileId = usize::MAX - 2;
 const OFFICIAL_SITE_WIN: FileId = usize::MAX - 3;
-const HEX_PICKER_WIN: FileId = usize::MAX - 4;
 
 // 작업표시줄 와이파이 아이콘용 — 실제 이 PC 의 인터넷 연결 상태를 물어본다.
 // (와이파이인지 유선인지까지는 구분 안 하고, 그냥 "연결돼 있는지"만 확인)
@@ -252,36 +223,14 @@ pub struct DesktopScene {
     secret_unlocked: bool, // Photos.lock 이 풀렸는지 (저장/복원용)
     save_timer: f32,       // 자동 저장 주기 타이머
     erase_confirm: bool,   // "Erase All Memory" 확인창 — 화면 전체(다른 창 포함)를 덮는 진짜 모달
-    idiot_confirm: bool, // Photos("?????") 아이콘을 휴지통에 넣으려 하면 뜨는 "Are You idiot?" 모달
-    mail_timer: f32,      // 첫 메일이 도착할 때까지 세는 타이머 (도착하면 더 안 씀)
-    toast: Option<(String, String)>, // 우측 하단에 잠깐 뜨는 알림(발신자, 제목) — 없으면 안 보임
-    toast_timer: f32,                // 위 알림이 사라지기까지 남은 시간
     // 창을 열었다 옮기거나 크기를 바꾼 적 있으면 마지막 자리를 여기 기억해둔다(파일
     // ID 로 키) — 지금 열려있는 창은 매 프레임 wm 에서 값을 다시 읽어와 갱신하고,
     // 닫힌 파일의 항목은 다음에 다시 열 때까지 그대로 남아있는다. write_save() 가
     // 이걸 그대로 저장한다.
     window_geometry: HashMap<FileId, (Rect, bool)>,
-    icon_glitch_rng: Rng,
-    icon_glitch_timer: f32,  // 다음 아이콘 글리치까지 남은 시간
-    icon_glitch_active: f32, // 지금 글리치가 진행 중이면 남은 지속시간(> 0)
-    icon_glitch_offset: f32, // 이번 버스트의 색 채널 어긋남 폭(버스트 시작 때 한 번만 뽑음)
-    thumb_cache: ThumbCache, // 바탕화면의 FileKind::Photo 아이콘을 실제 사진 축소판으로 그릴 때 쓰는 지연 로딩 캐시
-    debug_sync_timer: f32,  // director_panel "변수" 탭의 강제 변경 요청을 확인하는 주기 타이머
 }
 
 const AUTOSAVE_INTERVAL: f32 = 5.0; // 이 주기(초)마다 설정/바탕화면 상태를 자동 저장한다.
-// director_panel "변수" 탭에서 스토리 진행 플래그를 강제로 바꾸는 요청은 매
-// 프레임 확인할 필요까지는 없는 개발용 디버그 기능이라, 이 주기(초)마다만
-// director_state.json 을 다시 읽는다.
-const DEBUG_SYNC_INTERVAL: f32 = 1.0;
-const MAIL_ARRIVAL_DELAY: f32 = 5.0; // 데스크톱에 들어오고 이만큼 지나면 첫 메일(입사 안내)이 도착한다.
-const MAIL_AUTO_ARRIVE: bool = true;
-const TOAST_DURATION: f32 = 5.0; // 우측 하단 알림이 떠있는 시간(초)
-// 재연구 업무 메일이 말하는 "회사 이메일" — 입사 안내 메일을 보낸 그 주소로
-// 그대로 보고를 보내는 것으로 취급한다. 여기로 HexTool 검수 결과 압축파일
-// (FileKind::PhotoReport)을 첨부해 보내면 ????? 피드가 새로 갱신된다
-// (DeskAction::SendNewMail 참고).
-const REPORT_EMAIL: &str = "test@mail.com";
 
 impl Default for DesktopScene {
     fn default() -> Self {
@@ -294,7 +243,7 @@ impl DesktopScene {
         // 저장 파일엔 FileSystem 전체가 있었던 그대로 스냅샷돼 있다 — 이름으로 하나하나
         // 다시 찾아 재구성하지 않고 그대로 복원하므로 복원 순서를 신경 쓸 필요가 없다.
         let save = crate::foundation::load();
-        let (mut fs, mut icon_pos, window_geometry) = match save {
+        let (fs, mut icon_pos, window_geometry) = match save {
             Some(save) => {
                 let wg = save
                     .window_geometry
@@ -309,10 +258,6 @@ impl DesktopScene {
                 (fs, icon_pos, HashMap::new())
             }
         };
-        // ?????(Photos) 이 처음 열려도 곧장 랜덤 셔플 없이 보여줄 수 있도록, 새
-        // 게임이든 예전 저장 파일이든 여기서 미리 한 번 뽑아둔다(이미 있으면
-        // 그대로 둔다 — ensure_photos_selected() 자체가 멱등).
-        ensure_photos_selected(&mut fs);
         // icon_pos 는 항상 fs.desktop 과 같은 길이여야 한다 — 수동으로 손댄 저장
         // 파일 등으로 길이가 어긋나 있으면, 모자란 만큼 기본 격자 위치로 채운다.
         while icon_pos.len() < fs.desktop.len() {
@@ -322,8 +267,6 @@ impl DesktopScene {
         // Photos.lock 이 풀려서 폴더로 바뀌었는지는 이제 별도 플래그 없이 fs 스냅샷
         // 자체(이름이 이미 "Photos" 로 바뀌어 있는지)로 판단한다.
         let unlocked = fs.find_by_name("Photos").is_some();
-        let mut icon_glitch_rng = Rng::new((miniquad::date::now() * 1e6) as u64);
-        let icon_glitch_timer = icon_glitch_rng.range_f32(ICON_GLITCH_GAP_MIN, ICON_GLITCH_GAP_MAX);
 
         DesktopScene {
             fs,
@@ -343,17 +286,7 @@ impl DesktopScene {
             secret_unlocked: unlocked,
             save_timer: 0.0,
             erase_confirm: false,
-            idiot_confirm: false,
-            mail_timer: 0.0,
-            toast: None,
-            toast_timer: 0.0,
             window_geometry,
-            icon_glitch_rng,
-            icon_glitch_timer,
-            icon_glitch_active: 0.0,
-            icon_glitch_offset: 0.0,
-            thumb_cache: ThumbCache::new(),
-            debug_sync_timer: 0.0,
         }
     }
 
@@ -390,82 +323,17 @@ impl DesktopScene {
         }
     }
 
-    // Mail 이 지금 열려있으면 내용을 새로고침한다 — 첫 메일이 막 도착했는데 이미
-    // 열려있던 (그래서 빈 편지함 스냅샷인) 창엔 반영이 안 되는 경우에 쓴다. 골라둔
-    // 메시지가 있었으면(주기 새로고침 도중에도) 그 선택을 그대로 이어간다.
-    fn refresh_mail_if_open(&mut self, settings: &Rc<RefCell<Settings>>) {
-        if let Some(mail_id) = self.fs.find_by_name("Mail")
-            && self.wm.is_open(mail_id)
-        {
-            let app_ref = self.wm.app_mut(mail_id).and_then(|app| app.as_any_mut().downcast_mut::<MailApp>());
-            let sel = app_ref.as_ref().and_then(|app| app.selected());
-            // 골라둔 메시지뿐 아니라 폴더 트리 선택(Inbox 등)도 이어가야 한다 — 안 그러면
-            // MailApp::new() 가 항상 folder=None 으로 다시 시작해서, 메일 도착 새로고침
-            // 때마다 "폴더를 선택하세요" 화면으로 도로 튕겨 보인다. 읽음 여부는 따로
-            // 이어받을 필요가 없다 — open() 이 매번 fs.mail_read(진짜 기록)로 다시
-            // 초기화해주므로 새 인스턴스에도 그대로 반영된다.
-            let folder = app_ref.and_then(|app| app.folder_idx());
-            let op = open(&self.fs, mail_id, settings);
-            self.wm.refresh_app(mail_id, op.app);
-            if let Some(app) = self.wm.app_mut(mail_id).and_then(|app| app.as_any_mut().downcast_mut::<MailApp>()) {
-                // 폴더를 먼저 되돌려야 한다 — set_selected() 가 Inbox/Sent 중 어느
-                // 목록 길이에 맞춰 clamp 할지 지금 self.folder 를 보고 정하기 때문이다.
-                app.set_folder_idx(folder);
-                if let Some(sel) = sel {
-                    app.set_selected(Some(sel));
-                }
-            }
-        }
-    }
-
     // Mail 의 "Write Mail" 첨부 목록(attachable)이 지금 열려있는 창에도 최신
     // 상태로 반영되도록 — 다운로드/이동/삭제로 fs.desktop/downloads 가 바뀌었는데
-    // Mail 을 이미 열어둔 채였다면(예: HexTool 로 파일을 검토하는 동안 다른 창에서
-    // Mail 을 열어놨다가, 그사이 Photos 에서 새 사진을 받는 경우) 창을 닫았다 다시
-    // 열기 전까진 목록에 새 파일이 안 보이던 문제 — refresh_mail_if_open() 처럼
-    // 통째로 새 MailApp 을 만드는 대신(그러면 "Write Mail" 에 작성 중이던 초안이
-    // 통째로 날아간다) attachable 목록만 그 자리에서 바꿔치기한다.
+    // Mail 을 이미 열어둔 채였다면 창을 닫았다 다시 열기 전까진 목록에 새 파일이
+    // 안 보이던 문제 — 통째로 새 MailApp 을 만드는 대신(그러면 "Write Mail" 에
+    // 작성 중이던 초안이 통째로 날아간다) attachable 목록만 그 자리에서 바꿔치기한다.
     fn refresh_mail_attachable_if_open(&mut self) {
         if let Some(mail_id) = self.fs.find_by_name("Mail")
             && self.wm.is_open(mail_id)
             && let Some(app) = self.wm.app_mut(mail_id).and_then(|app| app.as_any_mut().downcast_mut::<MailApp>())
         {
             app.refresh_attachable(mail_attachable_files(&self.fs));
-        }
-    }
-
-    // ????? 피드가 새로 갱신되면(재연구 업무 보고 메일을 실제로 보내서) HexTool
-    // 이 지금 열려있어도 진행 상황(N개 중 M개) 계산 기준이 최신이 되도록 그
-    // 자리에서 photos_current 만 바꿔치기한다(통째로 새로 열면 지금 보고 있던
-    // 미리보기/확대/슬라이더 상태가 다 날아간다).
-    fn refresh_hextool_photos_if_open(&mut self) {
-        if let Some(hextool_id) = self.fs.find_by_name("HexTool")
-            && self.wm.is_open(hextool_id)
-            && let Some(app) = self.wm.app_mut(hextool_id).and_then(|app| app.as_any_mut().downcast_mut::<HexToolApp>())
-        {
-            app.refresh_photos_current(self.fs.photos_current.clone());
-        }
-        // HexTool 의 "이미지 선택" 창(HexPickerApp)도 열려있으면 같이 갱신한다 —
-        // 안 그러면 사진을 안 고른 채 이 창을 열어두고 있다가 피드가 갱신됐을 때
-        // 이제 없는 옛 배치 사진을 계속 고를 수 있게 된다(HexPickerApp::refresh_ids
-        // 설명 참고).
-        if self.wm.is_open(HEX_PICKER_WIN)
-            && let Some(app) = self.wm.app_mut(HEX_PICKER_WIN).and_then(|app| app.as_any_mut().downcast_mut::<HexPickerApp>())
-        {
-            app.refresh_ids(self.fs.photos_current.clone());
-        }
-    }
-
-    // ?????(Photos) 이 지금 열려있으면 새로 뽑힌 fs.photos_current 로 통째로
-    // 다시 연다 — 재연구 업무 보고 메일을 보내는 순간(refresh_photos_feed 가 막
-    // 불린 직후)에만 호출하므로, 스크롤 위치가 초기화되는 정도는(콘텐츠 자체가
-    // 통째로 바뀌니) 자연스럽다.
-    fn refresh_photos_if_open(&mut self, settings: &Rc<RefCell<Settings>>) {
-        if let Some(photos_id) = self.fs.find_by_name(secrets::PHOTOS_APP_NAME)
-            && self.wm.is_open(photos_id)
-        {
-            let op = open(&self.fs, photos_id, settings);
-            self.wm.refresh_app(photos_id, op.app);
         }
     }
 
@@ -480,37 +348,6 @@ impl DesktopScene {
             icon_pos: self.icon_pos.clone(),
             window_geometry,
         });
-    }
-
-    // director_panel "변수" 탭에서 스토리 진행 플래그(hex_tool_installed/
-    // mail_arrived)나 제출 횟수(report_submissions_ok/bad)를 강제로 바꿔달라는
-    // 요청이 director_state.json 에 와 있는지 확인한다(개발용 디버그 기능 —
-    // director_ipc.rs 모듈 설명 참고). 있으면 fs 에 반영하고 그 자리만 None 으로
-    // 지워서(jump_to 와 같은 "일회성 명령" 요령) 다음 주기에 또 적용되는 일이
-    // 없게 한다.
-    fn sync_debug_vars(&mut self, settings: &Rc<RefCell<Settings>>) {
-        let mut state = crate::director_ipc::load();
-        let mut changed = false;
-        if let Some(v) = state.set_hex_tool_installed.take() {
-            self.fs.hex_tool_installed = v;
-            changed = true;
-        }
-        if let Some(v) = state.set_mail_arrived.take() {
-            self.fs.mail_arrived = v;
-            changed = true;
-        }
-        if let Some(v) = state.set_report_submissions_ok.take() {
-            self.fs.report_submissions_ok = v;
-            changed = true;
-        }
-        if let Some(v) = state.set_report_submissions_bad.take() {
-            self.fs.report_submissions_bad = v;
-            changed = true;
-        }
-        if changed {
-            crate::director_ipc::save(&state);
-            self.write_save(settings);
-        }
     }
 
     // 두 점으로부터 정규화된(음수 없는) 사각형을 만든다.
@@ -584,19 +421,13 @@ impl DesktopScene {
         (0, 0) // 격자가 완전히 꽉 찼으면 어쩔 수 없이 겹쳐서라도 첫 칸에 둔다.
     }
 
-    // fs 에 새 파일을 만들어 바탕화면에 아이콘으로 추가한다 — 지금까지는 바탕화면
-    // 아이콘이 전부 시작할 때 한 번만 고정으로 깔렸는데(fs.desktop 이 이후로 안 바뀜),
-    // 설치 마법사를 끝내면 "설치된 프로그램" 아이콘이 실행 중에 새로 생겨야 해서
-    // 처음으로 런타임에 fs.desktop/icon_pos 를 늘리는 경로가 생겼다.
-    fn add_desktop_icon(&mut self, name: &str, kind: FileKind) {
-        let id = self.fs.add(name, kind);
-        self.fs.desktop.push(id);
-        let (fc, fr) = self.first_free_tile();
-        self.icon_pos.push(Self::tile_to_pos(fc, fr));
-    }
+    // 새 파일을 바탕화면에 아이콘으로 추가한다 — 지금까지는 바탕화면 아이콘이 전부
+    // 시작할 때 한 번만 고정으로 깔렸는데(fs.desktop 이 이후로 안 바뀜), 나중에
+    // "설치된 프로그램" 처럼 실행 중에 새 아이콘이 생기는 흐름이 생기면 여기에
+    // add_desktop_icon(name, kind) 형태로(fs.add → fs.desktop.push → icon_pos.push,
+    // 아래 add_existing_to_desktop 과 같은 자리 배치 요령) 다시 만들면 된다.
 
-    // add_desktop_icon 과 같은 자리 배치 요령이지만, 새 파일을 만드는 대신 File
-    // Explorer 에서 드래그해온 기존 파일(id)을 바탕화면에 놓는다 — Downloads/폴더에서
+    // File Explorer 에서 드래그해온 기존 파일(id)을 바탕화면에 놓는다 — Downloads/폴더에서
     // 옮겨오는 경우. drop_at 은 실제로 마우스를 놓은 화면 좌표 — 그 위치에서 가장
     // 가까운 빈 칸(nearest_free_tile)에 둬서 "마우스로 놓은 자리"에 실제로 놓인다.
     fn add_existing_to_desktop(&mut self, id: FileId, drop_at: (f32, f32)) {
@@ -646,16 +477,6 @@ impl DesktopScene {
             if matches!(dest, MoveDest::Folder(_))
                 && (matches!(self.fs.get(id).kind, FileKind::Explorer) || self.fs.get(id).name == RECYCLE_BIN_NAME)
             {
-                continue;
-            }
-            // Photos 앱("?????"로 보이는 아이콘)도 같은 이유로 어떤 폴더로도 못
-            // 옮긴다 — 다만 휴지통으로 넣으려는 시도(=지우려는 시도)일 땐 조용히
-            // 막는 대신 "Are You idiot?" 모달을 띄워서 대놓고 못 지운다는 걸
-            // 알려준다.
-            if matches!(dest, MoveDest::Folder(_)) && matches!(self.fs.get(id).kind, FileKind::PhotoGallery) {
-                if into_recycle_bin {
-                    self.idiot_confirm = true;
-                }
                 continue;
             }
             // 지금 창이 열려있는 파일은 휴지통으로 못 보낸다 — 열어서 보고 있는 걸
@@ -859,47 +680,6 @@ impl DesktopScene {
         }
     }
 
-    fn idiot_confirm_layout() -> Rect {
-        let dw = 200.0;
-        let dh = 90.0;
-        let dr = Rect::new((SCREEN_W - dw) / 2.0, (SCREEN_H - dh) / 2.0, dw, dh);
-        let bw = 70.0;
-        Rect::new(dr.x + (dr.w - bw) / 2.0, dr.y + dr.h - 32.0, bw, 22.0)
-    }
-
-    // Photos("?????") 아이콘을 휴지통으로 끌어다 놓으려 하면 뜨는 놀림 모달 —
-    // erase_confirm 과 같은 요령으로 진짜 WindowManager 창이 아니라 화면 전체를
-    // 덮는 오버레이로 직접 그린다. 최소화/최대화/크기조절/닫기 버튼 자체가 없는
-    // 것도 그래서다(진짜 창이 아니니 애초에 그런 버튼을 그릴 일이 없다) — 오직
-    // "Yes" 버튼 하나만 눌러야 닫힌다.
-    fn draw_idiot_confirm(&self, r: &mut Renderer, mouse: (f32, f32)) {
-        r.rect(0.0, 0.0, SCREEN_W, SCREEN_H, [0.0, 0.0, 0.0, 0.55]);
-
-        let dw = 200.0;
-        let dh = 90.0;
-        let dr = Rect::new((SCREEN_W - dw) / 2.0, (SCREEN_H - dh) / 2.0, dw, dh);
-        raised(r, dr.x, dr.y, dr.w, dr.h);
-
-        // 진짜 창처럼 보이는 파란 타이틀바 — 다만 버튼은 하나도 안 그린다(장식만).
-        let tb = Rect::new(dr.x, dr.y, dr.w, 18.0);
-        r.rect(tb.x, tb.y, tb.w, tb.h, NAVY);
-        r.text(tb.x + 4.0, tb.y, "System", 0.8, WHITE);
-
-        let msg = "Are You idiot?";
-        let tw = r.text_width(msg, 0.9);
-        r.text(dr.x + (dr.w - tw) / 2.0, dr.y + 36.0, msg, 0.9, BLACK);
-
-        let yes_btn = Self::idiot_confirm_layout();
-        let hover = yes_btn.contains(mouse.0, mouse.1);
-        if hover {
-            sunken(r, yes_btn.x, yes_btn.y, yes_btn.w, yes_btn.h);
-        } else {
-            raised(r, yes_btn.x, yes_btn.y, yes_btn.w, yes_btn.h);
-        }
-        let yw = r.text_width("Yes", 1.0);
-        r.text(yes_btn.x + (yes_btn.w - yw) / 2.0, yes_btn.y + 1.0, "Yes", 1.0, BLACK);
-    }
-
     fn taskbar_buttons(&self) -> Vec<(u32, String, Rect, bool, bool)> {
         let ty = SCREEN_H - TASKBAR_H;
         let items = self.wm.taskbar_items();
@@ -931,56 +711,14 @@ impl DesktopScene {
         None
     }
 
-    // 글리치 버스트를 랜덤한 간격으로 발생/진행시킨다 — lobby.rs::tick_glitch 와
-    // 같은 요령. 버스트가 막 시작되는 순간에만 이번 버스트의 색 채널 어긋남 폭을
-    // 새로 뽑아서 그 버스트 내내 고정해 쓴다(매 프레임 다시 뽑으면 떨리기만 하고
-    // "한 번 찢어진" 느낌이 안 난다).
-    fn tick_icon_glitch(&mut self, dt: f32) {
-        if self.icon_glitch_active > 0.0 {
-            self.icon_glitch_active -= dt;
-            return;
-        }
-        self.icon_glitch_timer -= dt;
-        if self.icon_glitch_timer <= 0.0 {
-            self.icon_glitch_active = ICON_GLITCH_BURST;
-            self.icon_glitch_offset = self.icon_glitch_rng.range_f32(1.5, 3.5);
-            self.icon_glitch_timer = self.icon_glitch_rng.range_f32(ICON_GLITCH_GAP_MIN, ICON_GLITCH_GAP_MAX);
-        }
-    }
-
-    // Photos 아이콘 전용 — 살짝 어긋난 색 채널 세 겹(빨강은 왼쪽으로, 파랑은
-    // 오른쪽으로)을 겹쳐 그려서 Director 글리치와 같은 색수차 느낌을 미니어처로
-    // 낸다. draw_icon() 은 흰색으로만 그리게 돼 있어(공용 API) 여기선 그 대신
-    // assets.icon_photos 텍스처를 직접 색을 입혀 그린다.
-    fn draw_photos_icon_glitched(r: &mut Renderer, assets: &Assets, x: f32, y: f32, s: f32, off: f32) {
-        r.sprite(assets.icon_photos, x - off, y, s, s, [1.0, 0.35, 0.35, 0.85]);
-        r.sprite(assets.icon_photos, x, y, s, s, [0.35, 1.0, 0.35, 0.7]);
-        r.sprite(assets.icon_photos, x + off, y, s, s, [0.35, 0.35, 1.0, 0.85]);
-    }
-
     #[allow(clippy::too_many_arguments)]
-    fn draw_one_icon(
-        &mut self, ctx: &mut dyn miniquad::RenderingBackend, r: &mut Renderer, assets: &Assets, x: f32, y: f32, fid: FileId, photo_id: Option<&String>,
-        icon: &IconType, name: &str, selected: bool,
-    ) {
-        // Archive/Installer 는 텍스처가 아니라 직접 그리는 벡터 도형이라(draw_archive_icon/
-        // draw_installer_icon), 실제로 칠해지는 면적이 s×s 상자 안에서 꽤 여백을
-        // 두고 작게 그려져 다른(텍스처 기반) 아이콘들보다 눈에 띄게 작아 보였다 —
-        // 이 둘만 조금 더 키운다. 다만 실제로 그려지는 크기가 얼마든 아이콘의 세로
-        // 중심은 항상 ICON_AREA_TOP+ICON_BASE_SIZE/2(고정값) 에 맞추고, 그 아래
-        // 글자 시작 위치(ty0)도 항상 그 고정값 기준으로만 잡는다 — 아이콘이 커져도
-        // 글자가 덩달아 밀려 내려가 다음 줄 아이콘과 겹치는 일이 없다.
-        let icon_s = match icon {
-            IconType::Archive | IconType::Installer => IC_SIZE * 1.3,
-            _ => IC_SIZE,
-        };
+    fn draw_one_icon(&mut self, r: &mut Renderer, assets: &Assets, x: f32, y: f32, icon: &IconType, name: &str, selected: bool) {
+        // 아이콘의 세로 중심은 항상 ICON_AREA_TOP+ICON_BASE_SIZE/2(고정값) 에 맞추고,
+        // 그 아래 글자 시작 위치(ty0)도 항상 그 고정값 기준으로만 잡는다.
+        let icon_s = IC_SIZE;
         let icon_center_y = y + ICON_AREA_TOP + ICON_BASE_SIZE / 2.0;
         let (icon_x, icon_y) = (x + IC_W / 2.0 - icon_s / 2.0, icon_center_y - icon_s / 2.0);
-        if matches!(icon, IconType::PhotosApp) && self.icon_glitch_active > 0.0 {
-            Self::draw_photos_icon_glitched(r, assets, icon_x, icon_y, icon_s, self.icon_glitch_offset);
-        } else {
-            draw_thumb_or_icon(ctx, r, assets, &mut self.thumb_cache, fid, photo_id, icon, icon_x, icon_y, icon_s);
-        }
+        draw_icon(r, assets, icon, icon_x, icon_y, icon_s);
         let ls = LABEL_TEXT_SCALE;
         let lines = wrap_two_lines(r, name, ls, LABEL_MAX_W);
         let line_h = LABEL_LINE_H;
@@ -1009,16 +747,15 @@ impl DesktopScene {
     // 드래그 중에도 icon_pos 는 원래 자리 그대로라(더는 실시간으로 안 움직인다 —
     // 대신 update() 가 반투명 고스트를 커서 쪽에 따로 그린다), 예전처럼 드래그 중인
     // 아이콘을 맨 위에 다시 그려줄 필요가 없어져서 한 번에 순서대로만 그리면 된다.
-    fn draw_icons(&mut self, ctx: &mut dyn miniquad::RenderingBackend, r: &mut Renderer, assets: &Assets, lang: Language) {
+    fn draw_icons(&mut self, r: &mut Renderer, assets: &Assets, lang: Language) {
         for i in 0..self.fs.desktop.len() {
             let fid = self.fs.desktop[i];
             let node = self.fs.get(fid);
             let (x, y) = self.icon_pos[i];
             let name = display_name(lang, &node.name).into_owned();
-            let photo_id = if let FileKind::Photo(pid) = &node.kind { Some(pid.clone()) } else { None };
             let icon = icon_of(node);
             let selected = self.selected.contains(&i);
-            self.draw_one_icon(ctx, r, assets, x, y, fid, photo_id.as_ref(), &icon, &name, selected);
+            self.draw_one_icon(r, assets, x, y, &icon, &name, selected);
         }
     }
 
@@ -1149,39 +886,6 @@ impl DesktopScene {
         }
     }
 
-    // "New Mail" 토스트 자리 — update_toast() 와 커서 판정(update()) 양쪽에서
-    // 같이 써서 자리가 어긋나지 않게 한다(wifi_popup_rect 와 같은 요령).
-    fn toast_rect() -> Rect {
-        const W: f32 = 190.0;
-        const H: f32 = 72.0;
-        let ty = SCREEN_H - TASKBAR_H;
-        let x = SCREEN_W - W - 8.0;
-        let y = ty - H - 8.0;
-        Rect::new(x, y, W, H)
-    }
-
-    // 시스템 메시지가 새로 생기면(지금은 메일 도착) 우측 하단(작업표시줄 바로 위,
-    // 와이파이/시계 트레이 근처)에 잠깐 떴다가 TOAST_DURATION 뒤 저절로 사라지는
-    // 알림. 누르면 바로 Mail 을 열고 닫힌다.
-    fn update_toast(&mut self, f: &mut Frame, work: Rect, lang: Language) {
-        let Some((from, subject)) = self.toast.clone() else { return };
-        let Rect { x, y, w, h } = Self::toast_rect();
-        raised(f.r, x, y, w, h);
-        f.r.rect(x + 2.0, y + 2.0, w - 4.0, 16.0, DARK_GRAY);
-        f.r.text(x + 6.0, y + 3.0, t(lang, s::NEW_MAIL), 0.8, WHITE);
-        f.r.text_clipped(x + 6.0, y + 26.0, &from, 0.8, BLACK, w - 12.0);
-        f.r.text_clipped(x + 6.0, y + 46.0, &subject, 0.8, GRAY, w - 12.0);
-
-        if Rect::new(x, y, w, h).contains(f.input.mouse.0, f.input.mouse.1) && f.input.mouse_clicked {
-            self.toast = None;
-            self.toast_timer = 0.0;
-            if let Some(mail_id) = self.fs.find_by_name("Mail") {
-                let op = open(&self.fs, mail_id, &f.settings);
-                self.wm.open(op, Some(mail_id), work);
-            }
-        }
-    }
-
     // 와이파이 아이콘을 누르면 뜨는 연결 정보(상태/SSID/IP) 팝업.
     fn draw_wifi_popup(&self, r: &mut Renderer, lang: Language) {
         let pr = self.wifi_popup_rect();
@@ -1302,13 +1006,12 @@ impl Scene for DesktopScene {
         let mut shutdown = false;
         let mut erase = false;
         let lang = f.settings.borrow().language;
-        self.tick_icon_glitch(f.dt);
 
         // "Erase All Memory" 확인창 — 이 모달이 떠 있는 동안은 시작메뉴/아이콘/다른
         // 창 등 화면의 무엇도 클릭에 반응하면 안 되므로, 아래에서 나머지 로직이 보는
         // click 을 아예 꺼버린다. 모달 자체의 버튼 판정은 꺼지기 전의(raw) 클릭으로
         // 여기서 먼저 처리한다.
-        let modal_was_open = self.erase_confirm || self.idiot_confirm;
+        let modal_was_open = self.erase_confirm;
         if self.erase_confirm {
             let (_, erase_btn, cancel_btn) = Self::erase_confirm_layout();
             if click {
@@ -1318,15 +1021,6 @@ impl Scene for DesktopScene {
                 } else if cancel_btn.contains(m.0, m.1) {
                     self.erase_confirm = false;
                 }
-            }
-        }
-        if self.idiot_confirm {
-            // "Yes" 하나뿐이라 다른 선택지로 빠져나갈 방법이 없다 — 최소화/최대화/
-            // 크기조절/닫기 버튼 자체가 없는 화면 전체 모달이라(진짜 창이 아니다)
-            // 이 버튼 말고는 어디를 눌러도 안 닫힌다.
-            let yes_btn = Self::idiot_confirm_layout();
-            if click && yes_btn.contains(m.0, m.1) {
-                self.idiot_confirm = false;
             }
         }
         let click = click && !modal_was_open;
@@ -1408,7 +1102,7 @@ impl Scene for DesktopScene {
         }
 
         // 3) 바탕화면 아이콘 (창 뒤에 먼저 그림)
-        self.draw_icons(f.ctx, f.r, f.assets, lang);
+        self.draw_icons(f.r, f.assets, lang);
 
         // 고무줄 선택 박스 진행 중이면 매 프레임 선택을 갱신하고 그린다 — 창들보다 먼저
         // 그려서 항상 창 아래(뒤)에 깔리게 한다 (마우스를 떼기 전에도 실시간으로 갱신).
@@ -1480,35 +1174,18 @@ impl Scene for DesktopScene {
                         }
                     }
                 }
-                DeskAction::OpenPhoto(filename) => {
-                    // ????? 피드에서 썸네일을 클릭하면 예전엔 뷰어 창이 따로 열렸는데,
-                    // 이제는 클릭 한 번으로 곧장 다운로드만 되고(Explorer 의 Downloads
-                    // 탭에서 실제로 열어보면 된다) 별도의 창은 뜨지 않는다.
-                    let id = self.fs.find_or_add_photo(&filename);
-                    self.fs.download(id);
-                    self.refresh_explorer_if_open(&f.settings);
-                    self.refresh_mail_attachable_if_open();
-                    self.write_save(&f.settings);
-                }
                 DeskAction::RequestErase => self.erase_confirm = true,
                 DeskAction::Download(id) => {
                     self.fs.download(id);
                     // 지금 File Explorer 가 열려있으면 Downloads 탭에 바로 반영되도록
-                    // 새로고침한다 — 안 그러면 창을 닫았다 다시 열어야만 보인다. Mail/
-                    // HexTool 의 파일 선택 목록도 같은 이유로 같이 새로고침한다 — 안
-                    // 그러면 방금 받은 파일을 그 창들에서 곧장 첨부/검토할 수가 없었다
-                    // (다시 열어야만 보이던 문제).
+                    // 새로고침한다 — 안 그러면 창을 닫았다 다시 열어야만 보인다. Mail 의
+                    // 파일 선택 목록도 같은 이유로 같이 새로고침한다 — 안 그러면 방금
+                    // 받은 파일을 그 창에서 곧장 첨부할 수가 없었다(다시 열어야만
+                    // 보이던 문제).
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
                     // 다운로드 직후 그 즉시 저장 — 5초 자동저장을 기다리는 사이 창이
                     // 닫히면 방금 다운로드한 기록이 통째로 사라지는 문제가 있었다.
-                    self.write_save(&f.settings);
-                }
-                DeskAction::InstallComplete => {
-                    // HexTool Setup.exe 마법사를 Finish 까지 끝냈다 — 실제 프로그램을 설치한
-                    // 것처럼 바탕화면에 HexTool 아이콘이 생긴다.
-                    self.fs.hex_tool_installed = true;
-                    self.add_desktop_icon("HexTool", FileKind::HexTool);
                     self.write_save(&f.settings);
                 }
                 DeskAction::DeletePermanently(id) => {
@@ -1578,95 +1255,9 @@ impl Scene for DesktopScene {
                     }
                 }
                 DeskAction::SendNewMail { to, subject, body, attachments } => {
-                    // 재연구 업무 메일이 시킨 "이상현상 검수 보고"를 실제로 해내면
-                    // (REPORT_EMAIL 앞으로, HexTool 검수 결과 압축파일(FileKind::
-                    // PhotoReport)을 첨부해 보내면) ????? 피드를 새로 갱신한다 — 이게
-                    // "?????가 완전 랜덤이 아니라 특정 조건을 만족해야 바뀐다"의 그
-                    // 조건이다. 첨부 목록을 SentMail 로 옮기기(move) 전에 먼저 확인해야
-                    // 한다.
-                    let sent_report = to.trim().eq_ignore_ascii_case(REPORT_EMAIL)
-                        && attachments.iter().any(|&(id, _)| matches!(&self.fs.get(id).kind, FileKind::PhotoReport(_)));
                     // Mail 의 "Write Mail" 탭에서 완전히 새로 작성해 보낸 메일 — 내용째
                     // fs.sent_mail 에 쌓아서 Mail 앱의 "Sent Items" 탭에 그대로 보여준다.
                     self.fs.sent_mail.push(SentMail { to, subject, body, attachments });
-                    if sent_report {
-                        // 정상/비정상 제출 집계 — 배치 안의 사진 전부가 "이상현상 있음/
-                        // 없음" 여부(is_anomaly_photo, 폴더명 기준)와 실제로 체크한 카테고리
-                        // 조합이 맞아떨어져야 "정상"이다(정확히 어떤 항목인지까지는 안 본다
-                        // — foundation.rs::is_anomaly_photo 설명 참고). photos_current 를
-                        // 새로 뽑기(refresh_photos_feed) 전, 지금 막 제출한 배치 기준으로
-                        // 먼저 판정한다. director_panel Vars 탭 표시 전용이라 게임 자체
-                        // 진행에는 영향이 없다.
-                        // photos_current 가 비어있으면 Iterator::all() 이 공허하게(vacuously)
-                        // true 를 돌려주므로, 아무것도 검수 안 한 제출까지 "정상"으로 잘못
-                        // 세는 걸 막는다.
-                        let all_correct = !self.fs.photos_current.is_empty()
-                            && self.fs.photos_current.iter().all(|id| {
-                                self.fs.photo_reviews.get(id).is_some_and(|cats| {
-                                    let flagged = cats.iter().any(|c| *c != AnomalyCategory::NoAnomaly);
-                                    flagged == is_anomaly_photo(id)
-                                })
-                            });
-                        if all_correct {
-                            self.fs.report_submissions_ok += 1;
-                        } else {
-                            self.fs.report_submissions_bad += 1;
-                        }
-                        refresh_photos_feed(&mut self.fs);
-                        self.refresh_photos_if_open(&f.settings);
-                        self.refresh_hextool_photos_if_open();
-                    }
-                    self.write_save(&f.settings);
-                }
-                DeskAction::OpenHexPicker => {
-                    // HexTool 의 "이미지 선택" — My Computer 와 비슷한 별도 창을 연다.
-                    // 실제 fs 노드가 아니라서 file 자리엔 HEX_PICKER_WIN(가짜 id)을 써서
-                    // 이미 열려있으면 새로 안 열고 앞으로만 가져온다.
-                    let op = Opened {
-                        app: Box::new(HexPickerApp::new(self.fs.photos_current.clone(), f.settings.clone())),
-                        title: t(f.settings.borrow().language, crate::strings::hex_picker::TITLE).to_string(),
-                        size: (360.0, 300.0),
-                        maximized: false,
-                        resizable: true,
-                        maximizable: true,
-                        movable: true,
-                        min_size: (260.0, 200.0),
-                    };
-                    self.wm.open(op, Some(HEX_PICKER_WIN), work);
-                }
-                DeskAction::SelectPhotoForHexTool(id) => {
-                    // 선택 창에서 사진을 골랐다 — HexTool 창에 그대로 꽂아주고
-                    // 선택 창은 곧장 닫는다(파일 열기 대화상자처럼).
-                    if let Some(hextool_id) = self.fs.find_by_name("HexTool")
-                        && let Some(app) = self.wm.app_mut(hextool_id).and_then(|app| app.as_any_mut().downcast_mut::<HexToolApp>())
-                    {
-                        app.set_selected_photo(id);
-                    }
-                    self.wm.close_file(HEX_PICKER_WIN);
-                }
-                DeskAction::SavePhotoReview(id, categories) => {
-                    self.fs.photo_reviews.insert(id, categories);
-                    self.write_save(&f.settings);
-                }
-                DeskAction::ExportPhotoReport(photos) => {
-                    // HexTool 이 ????? 사진을 전부 검수하고 "압축파일 내보내기"를
-                    // 눌렀다 — 바탕화면이 아니라 메일 첨부를 "Download" 하는 것과
-                    // 같은 취급으로 File Explorer 의 Downloads 탭에 바로 넣는다.
-                    // set_photo_report() 는 이미 압축파일이 있으면 내용만 갈아끼우고
-                    // 같은 id 를 재사용하므로, fs.download() 도 매번 다시 불러도
-                    // 안전하다(이미 목록에 있으면 아무 일도 안 한다).
-                    let (id, _) = self.fs.set_photo_report(photos);
-                    self.fs.download(id);
-                    // 압축파일 창(ArchiveApp)이 이미 열려있으면(예: 지난번 내보내기
-                    // 결과를 열어둔 채로 재검수 후 또 내보낸 경우) 그 창은 새로 안
-                    // 열리고 그대로 앞으로만 와서(WindowManager::open) 예전 장수를 계속
-                    // 보여주는 채로 남는다 — 통째로 다시 열어서 최신 개수로 맞춘다.
-                    if self.wm.is_open(id) {
-                        let op = open(&self.fs, id, &f.settings);
-                        self.wm.refresh_app(id, op.app);
-                    }
-                    self.refresh_explorer_if_open(&f.settings);
-                    self.refresh_mail_attachable_if_open();
                     self.write_save(&f.settings);
                 }
                 DeskAction::EmptyTrash(ids) => {
@@ -1797,29 +1388,9 @@ impl Scene for DesktopScene {
         // File Explorer/Mail 은 주기적으로 무조건 새로고침하지 않는다 — 그렇게 하면
         // 트리에서 방금 펼친 하위 폴더처럼 새로고침이 다시 만들어낼 수 없는 로컬
         // 상태(현재 활성 탭이 아닌 다른 카테고리를 펼쳐둔 상태 등)가 몇 초마다 조용히
-        // 사라져 보이는 문제가 있었다. 대신 다운로드/잠금해제/메일도착처럼 fs 내용이
-        // 실제로 바뀌는 이벤트가 생길 때 그 즉시(refresh_explorer_if_open/
-        // refresh_mail_if_open 직접 호출) 새로고침한다.
-
-        // 첫 메일 도착 — 데스크톱에 들어오고 MAIL_ARRIVAL_DELAY 초 뒤에 한 번만 발생.
-        if MAIL_AUTO_ARRIVE && !self.fs.mail_arrived {
-            self.mail_timer += f.dt;
-            if self.mail_timer >= MAIL_ARRIVAL_DELAY {
-                self.fs.mail_arrived = true;
-                self.refresh_mail_if_open(&f.settings);
-                let lang = f.settings.borrow().language;
-                let subject = t(lang, secrets::PALACE_MAIL_SUBJECT);
-                self.toast = Some(("test@mail.com".to_string(), subject.to_string()));
-                self.toast_timer = TOAST_DURATION;
-                self.write_save(&f.settings);
-            }
-        }
-        if self.toast_timer > 0.0 {
-            self.toast_timer -= f.dt;
-            if self.toast_timer <= 0.0 {
-                self.toast = None;
-            }
-        }
+        // 사라져 보이는 문제가 있었다. 대신 다운로드/잠금해제처럼 fs 내용이 실제로
+        // 바뀌는 이벤트가 생길 때 그 즉시(refresh_explorer_if_open 직접 호출)
+        // 새로고침한다.
 
         // 6) 작업표시줄 + 시작 메뉴 (맨 위)
         // 한 번만 계산해서 그리기와 아래 커서 판정에 같이 쓴다 (제목 문자열 복제+정렬
@@ -1834,9 +1405,6 @@ impl Scene for DesktopScene {
         }
         if self.wifi_info.is_some() {
             self.draw_wifi_popup(f.r, lang);
-        }
-        if !self.erase_confirm {
-            self.update_toast(f, work, lang);
         }
 
         // 파일을 드래그로 옮기는 중이면(바탕화면 아이콘이든 File Explorer 안이든)
@@ -1867,16 +1435,6 @@ impl Scene for DesktopScene {
         if self.erase_confirm {
             self.draw_erase_confirm(f.r, f.time, m, lang);
         }
-        if self.idiot_confirm {
-            self.draw_idiot_confirm(f.r, m);
-        }
-
-        // director_panel "변수" 탭 디버그 요청 확인 (아래 sync_debug_vars 참고).
-        self.debug_sync_timer += f.dt;
-        if self.debug_sync_timer >= DEBUG_SYNC_INTERVAL {
-            self.debug_sync_timer = 0.0;
-            self.sync_debug_vars(&f.settings);
-        }
 
         // 자동 저장: 주기적으로, 그리고 종료할 때 한 번 더 확실히 저장한다.
         // (Erase All Memory 로 지우는 도중이면 절대 다시 써서 되살리면 안 된다.)
@@ -1902,11 +1460,9 @@ impl Scene for DesktopScene {
         // 다시 시작한다 — 그중 실제로 클릭 가능한 항목(시작메뉴/우클릭메뉴 행)은
         // 바로 아래 Hand 판정에서 다시 Hand 로 바뀐다.
         let over_overlay = self.erase_confirm
-            || self.idiot_confirm
             || (self.start_open && self.start_menu_rect(f.r, lang).contains(m.0, m.1))
             || self.context_menu.is_some_and(|pos| Self::context_menu_rect(f.r, lang, pos).contains(m.0, m.1))
-            || (self.wifi_info.is_some() && self.wifi_popup_rect().contains(m.0, m.1))
-            || (self.toast.is_some() && Self::toast_rect().contains(m.0, m.1));
+            || (self.wifi_info.is_some() && self.wifi_popup_rect().contains(m.0, m.1));
         f.cursor = if over_overlay { CursorKind::Arrow } else { wm_cursor };
         if f.cursor == CursorKind::Arrow {
             let dragging_icon = self.drag.as_ref().is_some_and(|d| d.moved);

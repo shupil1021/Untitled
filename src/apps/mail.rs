@@ -11,7 +11,6 @@ use miniquad::{KeyCode, RenderingBackend};
 
 use crate::foundation::{display_name, FileId, Language, Settings};
 use crate::gfx::{Assets, Color, Rect, Renderer, CELL_H};
-use crate::secrets;
 use crate::strings::{mail as s, t};
 use crate::ui::*;
 
@@ -37,34 +36,11 @@ pub struct SentMailView {
     pub attachments: Vec<(FileId, String, IconType)>,
 }
 
-// STORY.md 프롤로그의 "입사 안내 메일" — 새 게임을 시작하고 MAIL_ARRIVAL_DELAY 초
-// 뒤에 도착하는 첫(그리고 지금은 유일한) 메일. arrived 가 false 면(아직 도착 전)
-// 받은편지함이 비어있다 — DesktopScene 이 타이머로 도착시킨다. hextool_id 는
-// FileSystem::new() 가 미리 만들어둔 실제 FileKind::Installer 노드(fs.mail_hextool_attachment,
-// "HexTool Setup.exe")를 그대로 받아 첨부로 건다 — 다운로드해서 실행하면
-// installer.rs 의 설치 마법사가 뜨고, Finish 까지 마쳐야 바탕화면에 진짜 HexTool
-// 이 생긴다.
-// from/to/cc 는 이메일 주소라 언어와 무관하게 그대로 두고, subject/body 만 t() 로
-// 언어별 문구를 고른다(MailApp::update 가 설정 언어가 바뀔 때마다 다시 불러준다).
-//
-// 메일 제목/본문(스토리 스포일러)은 secrets.rs 에 따로 모아둔다 — 본문 안의
-// secrets::PHOTOS_APP_NAME(5자)은 바탕화면 Photos 앱(foundation.rs::FileSystem::new())
-// 과 같은 개체를 가리키는 상수를 공유한다. secrets::UNNAMED_ENTITY(7자)는 아직
-// 게임에 실제로 등장하지 않는 무언가를 가리키는 복선용 자리표시자다 — 둘 다 폰트
-// 아틀라스에 없는 키릴 문자라 항상 두부(마름모+물음표)로 보인다.
-fn seed_messages(arrived: bool, lang: Language, hextool_id: FileId) -> Vec<MailMsg> {
-    if !arrived {
-        return Vec::new();
-    }
-    vec![MailMsg {
-        from: "test@mail.com",
-        to: "toast@mail.com",
-        cc: "",
-        subject: t(lang, secrets::PALACE_MAIL_SUBJECT),
-        body: t(lang, secrets::PALACE_MAIL_BODY),
-        attachment: Some((hextool_id, crate::foundation::HEXTOOL_SETUP_EXE_NAME.to_string())),
-    }]
-}
+// 기획이 갈아엎이면서 여기 있던 입사 안내 메일(HexTool Setup.exe 첨부) 시드
+// 콘텐츠를 걷어냈다 — 다음 기획에서는 메일로 "게임 설치 마법사"를 받는 방식이
+// 될 예정이지만, 아직 그 콘텐츠는 없다. 그래서 Inbox 는 항상 빈 상태로
+// 시작한다(messages: Vec::new()). 나중에 새 시드 메일이 생기면 여기에 언어별
+// 문구를 만드는 함수를 다시 추가하면 된다.
 
 // 왼쪽 폴더 트리 항목 — Deleted Items/Drafts 는 삭제/임시보관 기능 자체가 아직
 // 없어서(눌러도 항상 빈 상태 안내뿐이라 의미가 없었다) 트리에서 뺐다. Sent
@@ -174,13 +150,7 @@ impl NewMailState {
 }
 
 pub struct MailApp {
-    messages: Vec<MailMsg>,
-    // seed_messages() 를 다시 부를 때 필요한 원본 인자 — messages 의 subject/body
-    // 는 언어별로 번역되므로, 설정 언어가 바뀌면 이 값들로 다시 만들어야 한다
-    // (update() 가 매 프레임 lang 을 확인해서 바뀌었으면 다시 만든다).
-    arrived: bool,
-    hextool_id: FileId, // seed_messages() 를 다시 부를 때(언어가 바뀔 때) 첨부에 또 넘겨줘야 한다
-    built_lang: Language, // messages 를 마지막으로 만들 때 쓴 언어 — 캐시 무효화 키.
+    messages: Vec<MailMsg>, // 지금은 시드 콘텐츠가 없어서 항상 빈 상태로 시작한다
     // 왼쪽 폴더 트리에서 고른 폴더 — 처음엔 아무것도 안 골라서(Outlook Express 를
     // 막 열었을 때처럼) 오른쪽이 빈 안내 상태로 시작한다.
     folder: Option<MailFolder>,
@@ -239,19 +209,14 @@ pub struct MailApp {
 
 impl MailApp {
     pub(super) fn new(
-        arrived: bool, read_indices: &[usize], attachable: Vec<(FileId, String, IconType)>, sent: Vec<SentMailView>,
-        hextool_id: FileId, settings: Rc<RefCell<Settings>>,
+        read_indices: &[usize], attachable: Vec<(FileId, String, IconType)>, sent: Vec<SentMailView>, settings: Rc<RefCell<Settings>>,
     ) -> MailApp {
-        let lang = settings.borrow().language;
-        let messages = seed_messages(arrived, lang, hextool_id);
+        let messages: Vec<MailMsg> = Vec::new();
         let read = (0..messages.len()).map(|i| read_indices.contains(&i)).collect();
         let downloaded = vec![false; messages.len()];
         let downloading = vec![None; messages.len()];
         MailApp {
             messages,
-            arrived,
-            hextool_id,
-            built_lang: lang,
             folder: None,
             selected: None,
             read,
@@ -520,16 +485,6 @@ impl App for MailApp {
         r.rect(area.x, area.y, area.w, area.h, FACE);
         let smooth = self.settings.borrow().smooth_scroll;
         let lang = self.settings.borrow().language;
-        // Inbox 시드 메일의 제목/본문은 언어별 문구라, 창을 새로 안 열어도(설정에서
-        // 바로) 언어를 바꾸면 즉시 반영되게 여기서 다시 만든다 — 나머지 라벨들이
-        // 이미 다 이런 식으로 즉시 반응하는 것과 맞춘다. read/downloaded/downloading
-        // 은 메시지 개수 자체가 안 바뀌므로 그대로 유지해도 인덱스가 안 어긋난다.
-        if lang != self.built_lang {
-            self.messages = seed_messages(self.arrived, lang, self.hextool_id);
-            self.built_lang = lang;
-            self.body_wrapped_key = (usize::MAX, i32::MIN);
-        }
-
         self.draw_menu_bar(r, area, lang);
 
         let body_top = area.y + MENU_H;

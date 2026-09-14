@@ -72,26 +72,6 @@ pub mod password {
     pub const WRONG_PASSWORD: S = S { en: "Wrong password!", ko: "비밀번호가 틀렸습니다!", ja: "パスワードが違います!" };
 }
 
-// apps/archive.rs — 이상현상 보고 압축파일(FileKind::PhotoReport) 안내 창.
-pub mod archive {
-    use super::S;
-
-    // HexTool 에서 "압축파일 내보내기"로 만든 보고용 압축파일(FileKind::PhotoReport)
-    // 을 열었을 때 — {n}/{app} 은 render 시점에 실제 값으로 치환한다. {app} 은
-    // secrets::PHOTOS_APP_NAME(????? 이름) 이 들어갈 자리 — 스토리 스포일러라
-    // secrets.rs 밖인 이 파일엔 원문을 직접 못 적어두고 치환으로 처리한다.
-    pub const REPORT_LINE1: S = S {
-        en: "Contains {n} photo(s) marked as anomalies.",
-        ko: "이상현상으로 체크한 사진 {n}장이 들어 있습니다.",
-        ja: "異常現象としてチェックした写真{n}枚が入っています。",
-    };
-    pub const REPORT_LINE2: S = S {
-        en: "Attach it to the re-investigation report mail to refresh {app}.",
-        ko: "재연구 업무 보고 메일에 첨부해서 보내면 {app}가 새로 갱신됩니다.",
-        ja: "再調査業務の報告メールに添付して送ると{app}が更新されます。",
-    };
-}
-
 // apps/official_site.rs — WebView2 캡처 창.
 pub mod official_site {
     use super::S;
@@ -107,81 +87,9 @@ pub mod video_player {
     pub const PUT_VIDEO_AT: S = S { en: "Put a video at", ko: "다음 경로에 동영상을 넣으세요:", ja: "動画を次の場所に置いてください:" };
 }
 
-// apps/installer.rs — HexTool Setup.exe 설치 마법사.
-pub mod installer {
-    use super::S;
-    pub const STEP_COPYING: S = S { en: "Copying files...", ko: "파일 복사 중...", ja: "ファイルをコピー中..." };
-    pub const STEP_REGISTERING: S = S { en: "Registering HexTool.dll...", ko: "HexTool.dll 등록 중...", ja: "HexTool.dllを登録中..." };
-    pub const STEP_UPDATING: S = S { en: "Updating configuration...", ko: "설정 업데이트 중...", ja: "設定を更新中..." };
-    pub const STEP_VERIFYING: S = S { en: "Verifying installation...", ko: "설치 확인 중...", ja: "インストールを確認中..." };
-    pub const STEP_FINALIZING: S = S { en: "Finalizing...", ko: "마무리 중...", ja: "仕上げ中..." };
-    pub const DONE: S = S { en: "Done.", ko: "완료.", ja: "完了。" };
-
-    pub const LICENSE_TEXT: S = S {
-        en: "HEXTOOL LICENSE AGREEMENT\n\n\
-             By installing this software you agree to the terms below. HexTool Corp. accepts no \
-             liability for any data recovered, restored, or otherwise disturbed by use of this \
-             utility. All extracted content remains the property of its original owner. This \
-             agreement remains binding for as long as HexTool is installed on this computer.",
-        ko: "HEXTOOL 이용 약관\n\n\
-             이 소프트웨어를 설치하면 아래 약관에 동의하는 것으로 간주됩니다. HexTool Corp.는 \
-             이 유틸리티 사용으로 복구, 복원되거나 그 밖의 방식으로 영향을 받은 데이터에 대해 \
-             어떠한 책임도 지지 않습니다. 추출된 모든 콘텐츠의 소유권은 원 소유자에게 있습니다. \
-             이 약관은 HexTool이 이 컴퓨터에 설치되어 있는 동안 계속 유효합니다.",
-        ja: "HEXTOOL 使用許諾契約\n\n\
-             本ソフトウェアをインストールすることで、以下の規約に同意したものとみなされます。 \
-             HexTool Corp.は、本ユーティリティの使用によって復元、復旧、またはその他の形で影響を \
-             受けたデータについて一切責任を負いません。抽出されたすべてのコンテンツの所有権は \
-             元の所有者に帰属します。本契約は、HexToolがこのコンピューターにインストールされて \
-             いる間、効力を持ち続けます。",
-    };
-
-    pub const BACK: S = S { en: "Back", ko: "이전", ja: "戻る" };
-    pub const NEXT: S = S { en: "Next", ko: "다음", ja: "次へ" };
-    pub const FINISH: S = S { en: "Finish", ko: "마침", ja: "完了" };
-
-    pub const PAGE_ALREADY_INSTALLED: S = S { en: "Already Installed", ko: "이미 설치됨", ja: "インストール済み" };
-    pub const PAGE_WELCOME: S = S { en: "Select Installation Type", ko: "설치 유형 선택", ja: "インストールタイプの選択" };
-    pub const PAGE_LICENSE: S = S { en: "License Agreement", ko: "사용권 계약", ja: "使用許諾契約" };
-    pub const PAGE_INSTALLING: S = S { en: "Installing", ko: "설치 중", ja: "インストール中" };
-    pub const PAGE_FINISH: S = S { en: "Setup Complete", ko: "설치 완료", ja: "セットアップ完了" };
-
-    pub const ALREADY_INSTALLED_MSG: S = S {
-        en: "HexTool is already installed on this computer.",
-        ko: "이 컴퓨터에는 HexTool이 이미 설치되어 있습니다.",
-        ja: "このコンピューターにはすでにHexToolがインストールされています。",
-    };
-    pub const CLICK_FINISH_TO_CLOSE: S =
-        S { en: "Click Finish to close this wizard.", ko: "마침을 클릭해 이 마법사를 닫으세요.", ja: "完了をクリックしてこのウィザードを閉じてください。" };
-    pub const WELCOME_MSG: S = S {
-        en: "This will install HexTool, a photo review utility.",
-        ko: "HexTool을 설치합니다. 설치하면 사진 검수 도구를 쓸 수 있습니다.",
-        ja: "HexToolをインストールします。これにより写真の検証ツールが使えるようになります。",
-    };
-    pub const CLICK_NEXT_OR_CANCEL: S = S {
-        en: "Click Next to continue, or Cancel to exit Setup.",
-        ko: "계속하려면 다음을, 설치를 종료하려면 취소를 클릭하세요.",
-        ja: "続けるには次へ、セットアップを終了するにはキャンセルをクリックしてください。",
-    };
-    pub const ACCEPT_TERMS: S = S { en: "I accept the terms", ko: "약관에 동의합니다", ja: "利用規約に同意します" };
-    pub const INSTALLING_MSG: S = S {
-        en: "Please wait while Setup installs HexTool on your computer.",
-        ko: "설치 프로그램이 컴퓨터에 HexTool을 설치하는 동안 기다려 주세요.",
-        ja: "セットアップがコンピューターにHexToolをインストールする間、お待ちください。",
-    };
-    pub const FINISH_MSG: S = S {
-        en: "Setup has finished installing HexTool on your computer.",
-        ko: "설치 프로그램이 컴퓨터에 HexTool 설치를 완료했습니다.",
-        ja: "セットアップはコンピューターへのHexToolのインストールを完了しました。",
-    };
-}
-
 // apps/mail.rs — 메일 앱(Outlook Express 스타일).
 pub mod mail {
     use super::S;
-
-    // 메일 제목/본문(스토리 스포일러)은 secrets.rs::PALACE_MAIL_SUBJECT/PALACE_MAIL_BODY 로
-    // 옮겨졌다 — 안티 리버싱(문자열 암호화) 작업 시 그 파일 하나만 손대면 되도록 하기 위함.
 
     pub const FOLDER_INBOX: S = S { en: "Inbox", ko: "받은편지함", ja: "受信トレイ" };
     pub const FOLDER_SENT: S = S { en: "Sent Items", ko: "보낸편지함", ja: "送信済みアイテム" };
@@ -247,7 +155,6 @@ pub mod desktop {
     pub const ERASE_LINE2: S =
         S { en: "and restart PalaceOS?", ko: "지우고 PalaceOS를 다시 시작할까요?", ja: "すべて消去してPalaceOSを再起動?" };
     pub const ERASE: S = S { en: "Erase", ko: "지우기", ja: "消去" };
-    pub const NEW_MAIL: S = S { en: "New Mail", ko: "새 메일", ja: "新着メール" };
     pub const NETWORK: S = S { en: "Network", ko: "네트워크", ja: "ネットワーク" };
     pub const STATUS: S = S { en: "Status", ko: "상태", ja: "状態" };
     pub const CONNECTED: S = S { en: "Connected", ko: "연결됨", ja: "接続済み" };
@@ -279,52 +186,6 @@ pub mod settings {
     pub const LANGUAGE: S = S { en: "Language", ko: "언어", ja: "言語" };
     pub const BACKGROUND_COLOR: S = S { en: "Background color", ko: "배경색", ja: "背景色" };
     pub const ERASE_ALL_MEMORY: S = S { en: "Erase All Memory", ko: "모든 기록 지우기", ja: "すべての記憶を消去" };
-}
-
-// apps/hextool.rs — 이미지/영상 미리보기 도구.
-pub mod hextool {
-    use super::S;
-    pub const NO_PREVIEW: S = S {
-        en: "No live preview for this file type.",
-        ko: "이 파일 형식은 미리볼 수 없습니다.",
-        ja: "このファイル形式はプレビューできません。",
-    };
-    pub const SCROLL_HINT: S = S {
-        en: "Scroll to zoom, drag to pan",
-        ko: "휠로 확대/축소, 드래그로 이동",
-        ja: "スクロールで拡大縮小、ドラッグで移動",
-    };
-    pub const NO_FILES_FOUND: S = S { en: "No files found.", ko: "파일이 없습니다.", ja: "ファイルが見つかりません。" };
-    pub const NO_FILE_SELECTED: S = S { en: "(no file selected)", ko: "(선택한 파일 없음)", ja: "(ファイル未選択)" };
-    pub const CLICK_TO_SELECT: S = S { en: "Click to select a file", ko: "클릭해서 파일 선택", ja: "クリックしてファイルを選択" };
-    pub const BRIGHTNESS: S = S { en: "Brightness", ko: "밝기", ja: "明るさ" };
-    pub const SATURATION: S = S { en: "Saturation", ko: "채도", ja: "彩度" };
-    // ????? 검수 진행 상황 — {n}=총 개수, {m}=검수 완료 개수.
-    pub const REVIEW_STATUS: S = S { en: "{m} of {n} images reviewed", ko: "{n}개의 이미지 중 {m}개 검수됨", ja: "{n}枚中{m}枚検収済み" };
-    // 체크박스들을 감싸는 그룹 박스(ui::group_box) 라벨.
-    pub const ANOMALY_GROUP: S = S { en: "Anomaly", ko: "이상현상", ja: "異常現象" };
-    // 이상현상 항목들 — 여러 개를 동시에 체크할 수 있다(서로 배타적이지 않음).
-    // 새 항목을 늘릴 땐 여기 상수만 추가하고 hextool.rs::AnomalyCategory 와
-    // update_panel() 의 rows 배열에 짝을 맞춰 넣으면 된다.
-    pub const ANOMALY_ABNORMAL_OBJECT: S = S { en: "Abnormal Object", ko: "비정상 객체", ja: "異常な物体" };
-    pub const ANOMALY_STRANGE_SHADOW: S = S { en: "Strange Shadow", ko: "이상한 그림자", ja: "奇妙な影" };
-    pub const ANOMALY_DOPPELGANGER: S = S { en: "Doppelganger", ko: "도플갱어", ja: "ドッペルゲンガー" };
-    // 위 항목들과 달리 배타적이다 — 이걸 고르면 나머지가 전부 해제되고, 반대로
-    // 다른 항목을 고르면 이게 해제된다(hextool.rs::draw_category_checkbox).
-    pub const ANOMALY_NONE: S = S { en: "No anomaly", ko: "이상현상 없음", ja: "異常現象なし" };
-    // 검수 저장을 누르면 미리보기가 빈 자리로 돌아가기 전 잠깐 보여주는 문구.
-    pub const SAVING: S = S { en: "Saving...", ko: "저장 중...", ja: "保存中..." };
-    // "압축파일 내보내기"를 누르면 잠깐 보여주는 문구.
-    pub const EXPORTING: S = S { en: "Exporting...", ko: "내보내는 중...", ja: "書き出し中..." };
-    pub const SAVE_REVIEW: S = S { en: "Save Review", ko: "검수 저장", ja: "検収を保存" };
-    // ????? 의 사진을 전부 검수하면 SAVE_REVIEW 대신 이 버튼으로 바뀐다.
-    pub const EXPORT_ARCHIVE: S = S { en: "Export Archive", ko: "압축파일 내보내기", ja: "圧縮ファイルを書き出す" };
-}
-
-// apps/hex_picker.rs — HexTool 이 여는 "My Computer" 스타일 이미지 선택 창.
-pub mod hex_picker {
-    use super::S;
-    pub const TITLE: S = S { en: "Select Image", ko: "이미지 선택", ja: "画像を選択" };
 }
 
 // apps/recycle_bin.rs — 왼쪽 안내 패널 문단.

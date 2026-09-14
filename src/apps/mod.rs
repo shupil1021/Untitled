@@ -3,40 +3,28 @@
 //! 새 앱을 추가할 땐 이 디렉터리에 파일 하나 만들고, 아래 `mod` 목록에 추가하고,
 //! FileKind 에 해당하는 경우라면 open() 의 match 에 한 줄만 더하면 된다.
 
-mod archive;
 mod credits;
 mod explorer;
-mod hex_picker;
 mod image_viewer;
-mod installer;
 mod mail;
 mod notepad;
 mod official_site;
 mod password;
-mod photos;
 mod recycle_bin;
 mod settings;
-mod hextool;
 mod video_player;
 mod widgets;
 
-pub use archive::ArchiveApp;
 pub use credits::CreditsApp;
 pub use explorer::{ExplorerApp, ExplorerLocation};
-pub use hex_picker::HexPickerApp;
 pub use image_viewer::ImageViewerApp;
-pub use installer::InstallerApp;
 pub use mail::{MailApp, SentMailView};
 pub use notepad::NotepadApp;
 pub use official_site::OfficialSiteApp;
 pub use password::PasswordApp;
-pub(crate) use photos::{ensure_photos_selected, refresh_photos_feed};
-pub use photos::{PhotoViewerApp, PhotosApp};
 pub use recycle_bin::RecycleBinApp;
 pub use settings::SettingsApp;
-pub use hextool::HexToolApp;
 pub use video_player::VideoApp;
-pub(crate) use widgets::{draw_thumb_or_icon, ThumbCache};
 
 use std::any::Any;
 use std::cell::RefCell;
@@ -67,12 +55,8 @@ pub enum AppAction {
     Close,
     Unlock(FileId),          // 비밀번호 성공 → 잠금파일을 폴더로
     Open(FileId),            // 탐색기에서 자식 열기
-    OpenPhoto(String),       // ????? 피드에서 썸네일 클릭 → desktop.rs 가 assets/photo 파일명으로
-                             // FileKind::Photo 를 새로(또는 재사용해) 만들어 곧장 다운로드까지
-                             // 등록한 뒤 별개의 창으로 연다(클릭 한 번으로 다운로드까지 끝난다)
     RequestErase,            // 설정의 "Erase All Memory" → 화면 전체를 덮는 확인창을 띄워달라는 요청
     Download(FileId),        // 메일 첨부파일 "Download" → File Explorer 의 Downloads 탭에 추가
-    InstallComplete,         // HexTool Setup.exe 마법사를 Finish 까지 끝냄 → hex_tool_installed 를 true 로
     Resize(f32, f32),        // 이 창의 크기를 (너비,높이)로 바꿔달라는 요청 — 중심은 그대로 두고 크기만
     DeletePermanently(FileId), // 파일을 영구히 지워달라는 요청
     MoveFiles(Vec<FileId>, MoveDest), // File Explorer 에서 사이드바로 드래그해 옮긴 파일들
@@ -82,20 +66,6 @@ pub enum AppAction {
     // Mail 의 "Write Mail" 탭에서 새 메일을 작성해 보냄 — fs.sent_mail 에 내용째 쌓는다.
     // 첨부는 여러 개를 붙일 수 있어서 Vec(순서대로 붙인 순서).
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
-    // HexTool 의 "이미지 선택"을 누르면 — "My Computer" 와 비슷한 별도 창(HexPickerApp)
-    // 을 열어달라는 요청. 그 창 자체는 실제 fs 노드가 아니라서 FileId 가 없다
-    // (desktop.rs 가 usize::MAX 근처의 가짜 id 로 dedup 한다).
-    OpenHexPicker,
-    // HexPickerApp 에서 사진을 고르면 — 그 식별자를 HexTool 창에 꽂아주고 선택
-    // 창은 닫아달라는 요청.
-    SelectPhotoForHexTool(String),
-    // HexTool 의 "검수 저장" — 지금 보고 있는 사진에 체크된 이상현상 카테고리들을
-    // fs.photo_reviews 에 기록해달라는 요청(식별자, 체크된 카테고리 목록).
-    SavePhotoReview(String, Vec<crate::foundation::AnomalyCategory>),
-    // HexTool 의 "압축파일 내보내기"(?????의 모든 사진을 검수했을 때) — 이상현상으로
-    // 체크된 사진 식별자 목록으로 FileKind::PhotoReport 압축파일을 만들어(이미
-    // 있으면 내용만 갱신) 바탕화면에 둔다.
-    ExportPhotoReport(Vec<String>),
 }
 
 // File Explorer 사이드바 드래그로 파일을 옮길 수 있는 대상 — Desktop/Downloads 는
@@ -166,9 +136,7 @@ pub(crate) fn mail_attachable_files(fs: &FileSystem) -> Vec<(FileId, String, Ico
         ids.retain(|&fid| !matches!(fs.get(fid).kind, FileKind::Folder { .. } | FileKind::Explorer | FileKind::Mail { .. }));
         ids
     };
-    // 메일 첨부 목록은 아이콘만 보여주는 flat 목록이라 썸네일 식별자(4번째 필드)는
-    // 필요 없다 — folder_items() 를 그대로 재사용하되 그 자리만 버린다.
-    folder_items(fs, &attachable_ids).into_iter().map(|(id, name, icon, _)| (id, name, icon)).collect()
+    folder_items(fs, &attachable_ids)
 }
 
 pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Opened {
@@ -265,7 +233,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
                 })
                 .collect();
             Opened {
-                app: Box::new(MailApp::new(fs.mail_arrived, &fs.mail_read, attachable, sent, fs.mail_hextool_attachment, settings.clone())),
+                app: Box::new(MailApp::new(&fs.mail_read, attachable, sent, settings.clone())),
                 title: name,
                 // Outlook Express/Exchange 참고 레이아웃 — 메뉴바 + 폴더 트리(150) +
                 // 상태바(20)까지 들어가야 해서 기존보다 좌우/위아래로 넉넉해야 한다.
@@ -293,75 +261,11 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (340.0, 260.0),
         },
-        FileKind::Installer => Opened {
-            app: Box::new(InstallerApp::new(settings.clone(), fs.hex_tool_installed)),
-            title: name,
-            size: (380.0, 260.0),
-            maximized: false,
-            resizable: false,
-            maximizable: false,
-            movable: true,
-            min_size: (150.0, 90.0), // resizable 이 꺼져있어 실제로는 안 쓰임
-        },
-        FileKind::PhotoReport(photos) => Opened {
-            app: Box::new(ArchiveApp::new_report(photos.len(), settings.clone())),
-            title: name,
-            size: (340.0, 160.0),
-            maximized: false,
-            resizable: false,
-            maximizable: false,
-            movable: true,
-            min_size: (150.0, 90.0), // resizable 이 꺼져있어 실제로는 안 쓰임
-        },
-        FileKind::HexTool => Opened {
-            app: Box::new(HexToolApp::new(fs.photos_current.clone(), fs.photo_reviews.clone(), settings.clone())),
-            title: name,
-            // 오른쪽 패널에 검수 현황/밝기·채도 슬라이더/미니맵/체크박스/버튼이
-            // 다 들어가야 해서 예전 뷰어보다 세로로 넉넉하게 잡았다.
-            size: (440.0, 380.0),
-            maximized: false,
-            resizable: true,
-            maximizable: true,
-            movable: true,
-            min_size: (380.0, 300.0),
-        },
-        FileKind::Photo(filename) => Opened {
-            // 이 경로(open())는 Explorer/Downloads 탭에서 더블클릭해서 여는
-            // 경우에만 탄다 — Photos 피드에서 썸네일을 클릭하는 경로는
-            // desktop.rs::DeskAction::OpenPhoto 가 이 함수를 거치지 않고 따로
-            // PhotoViewerApp 을 만든다.
-            app: Box::new(PhotoViewerApp::new(filename.clone())),
-            title: name,
-            size: (420.0, 320.0),
-            maximized: false,
-            resizable: true,
-            maximizable: true,
-            movable: true,
-            min_size: (150.0, 90.0),
-        },
-        FileKind::PhotoGallery => Opened {
-            // fs.photos_current 를 그대로 받는다 — 여기서 새로 뽑지 않는다(랜덤으로
-            // 매번 바뀌지 않게 하려고 desktop.rs::DesktopScene::new() 가 미리
-            // ensure_photos_selected() 로 채워둔 걸 그대로 쓴다).
-            app: Box::new(PhotosApp::new(fs.photos_current.clone())),
-            title: name,
-            // 썸네일 3열x3행이 스크롤 없이 딱 맞게 보이는 고정 크기 — 사용자가
-            // 준 스크린샷 크기 그대로. 크기 조절(드래그/최대화) 둘 다 막는다.
-            size: (350.0, 350.0),
-            maximized: false,
-            resizable: false,
-            maximizable: false,
-            movable: true,
-            min_size: (350.0, 350.0), // resizable 이 꺼져있어 실제로는 안 쓰임
-        },
         FileKind::Deleted => unreachable!("삭제된 파일은 그 무엇에서도 더는 참조되지 않아 열릴 일이 없다"),
     }
 }
 
-// 네 번째 필드는 이 항목을 아이콘 대신 실제 이미지 축소판으로 그릴 수 있으면
-// 그 assets/photo/ 식별자(FileKind::Photo 일 때만) — explorer.rs/recycle_bin.rs
-// 가 이걸로 지연 디코드해서 진짜 사진을 보여준다(apps/hex_picker.rs 와 같은 요령).
-type ExplorerItems = Vec<(FileId, String, crate::ui::IconType, Option<String>)>;
+type ExplorerItems = Vec<(FileId, String, crate::ui::IconType)>;
 // (탭 이름, 안의 항목들, 부모 카테고리 이름, 자기 자신의 FileId) — 부모가 있으면
 // 그 카테고리의 하위 폴더로 취급해서 트리에서 들여쓰기하고 주소창에도 경로로 이어
 // 보여준다. FileId 는 드릴다운 탭(폴더 자신)일 때만 Some — 새로고침 뒤에도 같은
@@ -375,16 +279,7 @@ type ExplorerTabs = Vec<(String, ExplorerItems, Option<String>, Option<FileId>)>
 // explorer.rs 의 draw_list_view/icon_grid 가 그릴 때마다 display_name() 을 다시
 // 불러서, 창이 열려있는 동안 언어를 바꿔도 그 자리에서 바로 반영된다.
 fn folder_items(fs: &FileSystem, ids: &[FileId]) -> ExplorerItems {
-    ids.iter()
-        .map(|&cid| {
-            let c = fs.get(cid);
-            let photo_id = match &c.kind {
-                FileKind::Photo(id) => Some(id.clone()),
-                _ => None,
-            };
-            (cid, c.name.clone(), icon_of(c), photo_id)
-        })
-        .collect()
+    ids.iter().map(|&cid| (cid, fs.get(cid).name.clone(), icon_of(fs.get(cid)))).collect()
 }
 
 // File Explorer 의 고정 카테고리 4개(Downloads/Desktop/Videos/Images). Videos/Images 는

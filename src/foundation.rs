@@ -25,58 +25,17 @@ pub enum FileKind {
     #[serde(rename = "Email")]
     Mail { attachment: Option<FileId> },                // 메일 앱 (첨부파일 하나까지)
     Explorer,                                           // 바탕화면의 File Explorer (탭 있는 탐색기)
-    Installer,                                           // HexTool 을 설치해주는 설치 마법사(.exe)
-    HexTool,                                             // Installer 를 끝까지 마치면 바탕화면에 생기는 설치된 프로그램 아이콘
-    PhotoGallery,                                        // 바탕화면의 Photos 앱 — assets/photo/ 사진들을 피드로 훑어보고 다운로드
-    Photo(String),                                       // Photos 앱에서 다운로드한 사진 한 장 — assets/photo/ 안의 파일명
-    // HexTool 로 ????? 의 사진들을 검수해 "이상현상 있음"으로 체크한 것들만 담은
-    // 압축파일 — 담긴 목록은 apps/hextool.rs 의 검수 결과, Vec 안 문자열은
-    // Photo(String) 과 같은 assets/photo/ 식별자. 재연구 업무 보고 메일에 이
-    // 파일을 첨부해 보내면(desktop.rs::REPORT_EMAIL) ????? 피드가 새로 갱신된다.
-    PhotoReport(Vec<String>),
     Deleted,                                             // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
-}
-
-// HexTool 검수 화면의 이상현상 체크박스 중 어느 걸 골랐는지 — 사진 한 장에
-// 여러 개를 동시에 체크할 수 있어서 FileSystem::photo_reviews 는 사진마다
-// Vec<AnomalyCategory> 하나씩을 들고 있다(빈 벡터 = 아직 저장 전, 저장
-// 버튼은 최소 하나를 골라야 활성화된다). NoAnomaly 하나 이상 체크된(=
-// NoAnomaly 를 뺀 나머지가 하나라도 있는) 사진만 보고용 압축파일
-// (PhotoReport)에 담긴다. "NoAnomaly" 는 나머지 항목들과 달리 배타적이다 —
-// 이걸 고르면 나머지가 전부 해제되고, 반대로 다른 항목을 고르면 이게
-// 해제된다(hextool.rs::draw_category_checkbox).
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AnomalyCategory {
-    AbnormalObject,
-    StrangeShadow,
-    Doppelganger,
-    NoAnomaly,
-}
-
-// HexTool 검수의 "정답" — assets/photo 하위 폴더명(photos.rs::scan_photos 가
-// 식별자 앞에 그대로 붙이는 "폴더명/파일명")으로 그 사진에 이상현상이 있는지
-// 없는지만 판정한다(어떤 항목인지까지 정확히 맞혀야 하는 건 아니다 — 체크박스
-// 목록 자체가 아직 확정 전이라 폴더별로 어떤 항목이 "정답"인지 세세히 정해두지
-// 않았다). corpseImage/crackImage 는 이상현상 있음, hintImage/normalImage
-// (및 하위 폴더 없이 바로 밑에 있는 사진)는 이상현상 없음. 플레이어에게 이
-// 정답을 보여주는 화면은 어디에도 없다 — desktop.rs::DeskAction::SendNewMail
-// 이 재연구 업무 보고 메일을 실제로 보낼 때 fs.photo_reviews 와 비교해서
-// director_panel Vars 탭에 표시할 정상/비정상 제출 횟수를 셀 때만 쓴다.
-pub fn is_anomaly_photo(photo_id: &str) -> bool {
-    matches!(photo_id.split('/').next().unwrap_or(photo_id), "corpseImage" | "crackImage")
 }
 
 // 일부 fs 노드는 이름 자체가 "이건 특수 노드다"라는 표식으로 쓰인다(전용
 // FileKind 대신 이름 문자열로 구분) — 예: Folder 중에서 이름이 정확히
 // RECYCLE_BIN_NAME 인 것만 휴지통 취급. 화면엔 display_name()/strings.rs::t()
 // 로 언어별 문구가 나가지만, fs 안에 실제로 저장되는 원문은 항상 이 영어
-// 상수 그대로다. 리터럴 "My Computer"/"Recycle Bin"/"HexTool Setup.exe" 를
-// 여러 파일에 따로 타이핑하면 오타 하나로 매칭이 조용히 깨질 수 있어 상수로
-// 모아뒀다.
+// 상수 그대로다. 리터럴 "My Computer"/"Recycle Bin" 을 여러 파일에 따로
+// 타이핑하면 오타 하나로 매칭이 조용히 깨질 수 있어 상수로 모아뒀다.
 pub const MY_COMPUTER_NAME: &str = "My Computer";
 pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
-pub const HEXTOOL_SETUP_EXE_NAME: &str = "HexTool Setup.exe";
-pub const PHOTO_REPORT_NAME: &str = "Report.zip";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FileNode {
@@ -98,11 +57,6 @@ pub struct FileSystem {
     // 폴더)을 바탕화면으로 옮기면 downloads 에서 빠지면서 "아직 안 받음" 취급돼 다시
     // 다운로드 버튼이 나타나는 문제가 있었다.
     pub ever_downloaded: Vec<FileId>,
-    // #[serde(rename)] 로 저장 파일의 JSON 키는 예전 이름 그대로 유지한다 — Rust
-    // 쪽 필드 이름만 email_* 에서 mail_* 로 바꿔서 예전 저장 파일도 계속 불러와진다.
-    #[serde(rename = "email_arrived")]
-    pub mail_arrived: bool,     // 첫 메일이 도착했는지 — 도착 전엔 받은편지함이 빈 상태
-    pub hex_tool_installed: bool, // HexTool Setup.exe 설치 마법사를 끝까지 마쳤는지 — 이게 true 여야 바탕화면에 실제 HexTool 이 생긴다
     // 읽은 메일의 인덱스(MailApp::seed_messages 순번) — MailApp 자체는 창을 닫거나
     // 3초 주기 새로고침으로 새로 만들어질 때마다 통째로 새 인스턴스가 되므로, 읽음
     // 여부를 여기(저장 파일에 실리는 fs)에 둬야 새로고침은 물론 게임을 종료했다
@@ -120,40 +74,6 @@ pub struct FileSystem {
     // (복구되든, 다른 곳으로 다시 옮겨지든) desktop.rs 가 이 기록을 지운다.
     #[serde(default)]
     pub trash_origin: Vec<(FileId, FileOrigin)>,
-    // 입사 안내 메일(seed_messages)이 첨부로 거는 실제 FileKind::HexTool 노드의
-    // id — 메일 쪽(apps/mail.rs::seed_messages)은 fs 를 직접 들고 있지 않아서
-    // 첨부에 쓸 FileId 를 스스로 만들 수 없다. 그래서 FileSystem::new() 가 미리
-    // 하나 만들어서 이 필드에 박아두고, apps/mod.rs::open() 의 FileKind::Mail
-    // 분기가 매번 이 값을 MailApp::new() 로 그대로 넘겨준다.
-    #[serde(default)]
-    pub mail_hextool_attachment: FileId,
-    // ?????(Photos) 피드에 지금 떠 있는 사진들의 식별자(assets/photo/ 기준
-    // "폴더명/파일명") — 예전엔 앱을 열 때마다 통째로 다시 랜덤 셔플했는데,
-    // 이제 한 번 정해지면 photos.rs::refresh_photos_feed() 가 불릴 때까지
-    // (재연구 업무 보고 메일을 보내야 한다) 그대로 유지된다. #[serde(default)]
-    // 라 이 필드가 없던 예전 저장 파일을 불러오면 빈 상태로 시작하고,
-    // DesktopScene::new() 가 즉시 ensure_photos_selected() 로 채워준다.
-    #[serde(default)]
-    pub photos_current: Vec<String>,
-    // photos_current 에 지금까지 한 번이라도 들어갔던 식별자 전부 — 다음 갱신 때
-    // 이미 봤던 사진이 또 나오지 않도록 제외하는 데 쓴다.
-    #[serde(default)]
-    pub photos_seen: Vec<String>,
-    // HexTool 에서 사진별로 "검수 저장"을 누른 결과 — 식별자 → 고른 카테고리.
-    // 존재한다는 것 자체가 "검수 완료"라는 뜻이라, apps/hextool.rs 가 photos_current
-    // 와 교집합을 세어 "N개 중 M개 검수됨"을 계산한다. 새 배치가 오면(photos_seen
-    // 이 겹치지 않게 보장하므로) 옛 항목은 자연히 교집합에서 빠져 무의미해지고,
-    // 굳이 지우지 않아도 된다.
-    #[serde(default)]
-    pub photo_reviews: std::collections::HashMap<String, Vec<AnomalyCategory>>,
-    // 재연구 업무 보고 메일을 실제로 보낸 횟수 — 그 배치의 모든 사진이
-    // is_anomaly_photo() 정답(이상현상 있음/없음)과 일치하면 ok, 하나라도
-    // 틀렸으면 bad 로 센다(desktop.rs::DeskAction::SendNewMail). 게임 안
-    // 어디에도 안 보여주고 director_panel 의 Vars 탭 디버그 표시 전용이다.
-    #[serde(default)]
-    pub report_submissions_ok: u32,
-    #[serde(default)]
-    pub report_submissions_bad: u32,
 }
 
 // Mail 의 "Write Mail" 탭에서 보낸 메일 한 통 — fs.sent_mail 에 쌓인다. 첨부는
@@ -222,41 +142,19 @@ impl FileSystem {
             desktop: Vec::new(),
             downloads: Vec::new(),
             ever_downloaded: Vec::new(),
-            // STORY.md 프롤로그대로 새 게임을 시작하면 받은편지함이 빈 상태로
-            // 시작하고, desktop.rs 의 MAIL_AUTO_ARRIVE 타이머가 MAIL_ARRIVAL_DELAY
-            // 초 뒤에 입사 안내 메일을 도착시킨다.
-            mail_arrived: false,
-            hex_tool_installed: false,
             mail_read: Vec::new(),
             sent_mail: Vec::new(),
             trash_origin: Vec::new(),
-            mail_hextool_attachment: 0, // 아래에서 실제 노드를 만들고 바로 채운다
-            photos_current: Vec::new(), // DesktopScene::new() 가 ensure_photos_selected() 로 채운다
-            photos_seen: Vec::new(),
-            photo_reviews: std::collections::HashMap::new(),
-            report_submissions_ok: 0,
-            report_submissions_bad: 0,
         };
 
-        // 바탕화면엔 고정 아이콘 두 개만 둔다 — 나머지 예제 파일들은 다 치웠다.
+        // 바탕화면엔 고정 아이콘들만 둔다 — 나머지 예제 파일들은 다 치웠다.
         let explorer = fs.add(MY_COMPUTER_NAME, FileKind::Explorer);
-        // Photos.tar/Photos.lock/HexTool Setup.exe 로 이어지던 첫 챕터용 플레이스홀더
-        // 사진 콘텐츠(photo01/02.jpg)를 걷어냈다 — 실제 검수 로직 없이 그냥 열어볼
-        // 수 있는 사진 두 장뿐이던 임시 내용이라, 진짜 Chapter 1 콘텐츠로 다시 채울
-        // 예정. HexTool 은 그 뒤 사진 검수 도구로 다시 만들어져 실제로 쓰이지만,
-        // 이 콘텐츠를 그리던 나머지 앱(image_viewer.rs)과 관련 FileKind(Lock/Img)
-        // 자체는 나중에 다른 콘텐츠로 재사용할 수 있게 그대로 남겨뒀다 — 지금은
-        // 그냥 아무 데서도 안 만들어질 뿐이다.
+        // 기획이 갈아엎이면서 예전에 여기 있던 HexTool 설치 마법사 첨부 + 입사
+        // 안내 메일 자동 도착 + ?????(Photos) 피드 관련 콘텐츠를 전부 걷어냈다 —
+        // 재검토 중이라 Mail 은 빈 받은편지함인 채로 시작하는 껍데기만 남았다.
+        // 다음 기획에서는 메일로 "게임 설치 마법사"를 받아 그걸로 플레이하는
+        // 방식이 될 예정이지만, 아직 그 콘텐츠는 없다.
         let mail = fs.add("Mail", FileKind::Mail { attachment: None });
-        // Mail 바로 아래(fs.desktop 에서 mail 다음 순번 = 같은 열의 바로 아랫칸,
-        // desktop.rs::grid_pos 가 열 우선으로 채운다) 사진 피드 앱. 이름은 읽을
-        // 수 있는 글자를 하나도 안 섞고 전부 폰트 아틀라스에 없는 문자(키릴
-        // 문자)로만 채웠다 — gfx.rs::Renderer::draw_tofu() 가 전부
-        // "마름모+물음표"(두부, tofu) 자리표시자로 그려준다. 자모를 섞어봤던
-        // 이전 시도는 여전히 다 읽히는 글자라 부족하다는 피드백이 왔었다.
-        // display_name() 에 이 이름을 위한 번역 항목이 없어서 어떤 언어
-        // 설정이든 이 원문 그대로 나온다.
-        let photos = fs.add(crate::secrets::PHOTOS_APP_NAME, FileKind::PhotoGallery);
 
         // 휴지통도 그냥 이름이 "Recycle Bin"인 빈 Folder — 드래그로 파일을 옮기면
         // desktop_folder_drop_target_at 이 다른 폴더와 똑같이 인식하고, 더블클릭하면
@@ -264,15 +162,7 @@ impl FileSystem {
         // 이름으로 특수 취급(비었으면 RecycleEmpty, 아니면 RecycleFull).
         let recycle_bin = fs.add(RECYCLE_BIN_NAME, FileKind::Folder { children: vec![] });
 
-        fs.desktop = vec![recycle_bin, explorer, mail, photos];
-
-        // 입사 안내 메일이 첨부로 거는 HexTool 설치 마법사 — 바탕화면/Downloads
-        // 어디에도 아직 안 걸려있는, 오직 메일 첨부용으로만 미리 만들어두는 실제
-        // 노드. 다운로드해야 비로소 Downloads 탭에 나타나고, 그걸 열면(FileKind::
-        // Installer) installer.rs 의 마법사가 뜬다 — Finish 까지 마쳐야 바탕화면에
-        // 진짜 HexTool 이 생긴다(완성된 프로그램을 곧장 쥐여주던 이전 방식 대신,
-        // 이제 원래 있던 설치 마법사 흐름을 그대로 탄다).
-        fs.mail_hextool_attachment = fs.add(HEXTOOL_SETUP_EXE_NAME, FileKind::Installer);
+        fs.desktop = vec![recycle_bin, explorer, mail];
         fs
     }
 
@@ -298,37 +188,10 @@ impl FileSystem {
         (0..self.nodes.len()).find(|&i| self.nodes[i].name == name)
     }
 
-    // Photos 앱에서 사진을 "다운로드"하면 부른다 — 같은 파일명으로 이미 만들어둔
-    // FileKind::Photo 노드가 있으면 그걸 그대로 재사용하고(같은 사진을 두 번
-    // 다운로드해도 Downloads 탭에 중복으로 안 쌓임), 없으면 새로 만든다.
-    pub fn find_or_add_photo(&mut self, filename: &str) -> FileId {
-        if let Some(id) = (0..self.nodes.len()).find(|&i| matches!(&self.nodes[i].kind, FileKind::Photo(f) if f == filename)) {
-            return id;
-        }
-        // filename 은 assets/photo 하위 폴더(corpseImage 등)까지 포함한 식별자라
-        // "corpseImage/corpseImage1.jpg" 형태일 수 있다 — Explorer/Downloads
-        // 탭에 보여줄 이름(name)은 그 마지막 조각(파일명)만 쓴다.
-        let display = filename.rsplit('/').next().unwrap_or(filename);
-        self.add(display, FileKind::Photo(filename.to_string()))
-    }
-
     // 폴더 위치와 상관없이 전체에서 조건에 맞는 파일들을 찾는다 — File Explorer 의
     // Videos/Images 탭처럼 "어디 있든 이 종류인 파일 전부" 를 보여줄 때 쓴다.
     pub fn all_of_kind(&self, pred: impl Fn(&FileKind) -> bool) -> Vec<FileId> {
         (0..self.nodes.len()).filter(|&i| pred(&self.nodes[i].kind)).collect()
-    }
-
-    // HexTool 검수를 마치고 "압축파일 내보내기"를 누르면 부른다 — 이미 만들어둔
-    // 보고서 압축파일이 있으면 내용만 최신 걸로 갈아끼우고(재검수/재수출할 때마다
-    // 바탕화면에 아이콘이 중복으로 쌓이지 않게), 없으면 새 노드만 만들어 id 를
-    // 돌려준다(바탕화면에 실제로 놓는 건 desktop.rs 가 처음 한 번만 한다 — 여기선
-    // 아이콘 위치를 모른다). 두 번째 반환값은 "새로 만들었는지".
-    pub fn set_photo_report(&mut self, photos: Vec<String>) -> (FileId, bool) {
-        if let Some(id) = (0..self.nodes.len()).find(|&i| matches!(&self.nodes[i].kind, FileKind::PhotoReport(_))) {
-            self.nodes[id].kind = FileKind::PhotoReport(photos);
-            return (id, false);
-        }
-        (self.add(PHOTO_REPORT_NAME, FileKind::PhotoReport(photos)), true)
     }
 
     // 메일 첨부파일 등을 "다운로드" — Downloads 탭에 추가한다(이미 있으면 무시).
@@ -580,8 +443,8 @@ impl Settings {
 
 use std::path::PathBuf;
 
-// fs 필드가 FileSystem 전체(노드 배열/desktop/downloads/ever_downloaded/mail_arrived/
-// hex_tool_installed 전부)를 그대로 담으므로, 이름으로 다시 찾아 재구성해야 했던
+// fs 필드가 FileSystem 전체(노드 배열/desktop/downloads/ever_downloaded 전부)를
+// 그대로 담으므로, 이름으로 다시 찾아 재구성해야 했던
 // 예전 필드들(desktop 이름 목록/downloaded/downloaded_ever/unlocked/folders 등)은
 // 전부 필요 없어졌다 — 있었던 상태 그대로 저장하고 그대로 복원한다.
 #[derive(Serialize, Deserialize)]

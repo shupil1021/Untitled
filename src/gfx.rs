@@ -119,7 +119,6 @@ pub struct Assets {
     pub icon_envelope: TextureId, // Mail 앱 폴더 트리의 Inbox 아이콘
     pub icon_recycle_empty: TextureId, // 휴지통(비어있음)
     pub icon_recycle_full: TextureId,  // 휴지통(안에 파일이 있음)
-    pub icon_photos: TextureId, // Photos 앱(바탕화면 이름은 일부러 깨진 글자) 아이콘 — 사용자 제공
     // "팔라스 OS가 생성한 이미지" 로 바탕화면에 놓이는 실제 사진들 — FileKind::Img(idx) 의
     // idx 가 이 Vec 의 인덱스다. (텍스처, 원본 픽셀 폭, 원본 픽셀 높이) — 종횡비를 살려서
     // 레터박스로 그리려면 원본 크기가 필요해서 아이콘 텍스처들과 달리 크기도 같이 들고 있는다.
@@ -141,7 +140,6 @@ impl Assets {
             icon_envelope: load_texture(ctx, include_bytes!("../assets/icon_envelope.png")),
             icon_recycle_empty: load_texture(ctx, include_bytes!("../assets/icon_recycle_empty.png")),
             icon_recycle_full: load_texture(ctx, include_bytes!("../assets/icon_recycle_full.png")),
-            icon_photos: load_texture(ctx, include_bytes!("../assets/icon_photos.png")),
             // Photos.tar/photo01·02.jpg 플레이스홀더 스토리 콘텐츠를 걷어내면서
             // 비웠다 — FileKind::Img(usize)/ImageViewerApp 자체는 나중에 진짜
             // Chapter 1 사진이 생기면 그대로 다시 쓸 수 있게 남겨뒀다.

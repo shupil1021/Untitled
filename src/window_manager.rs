@@ -54,20 +54,14 @@ const EDGE: f32 = 6.0; // 리사이즈 감지 여백
 pub enum DeskAction {
     Unlock(FileId),
     Open(FileId),
-    OpenPhoto(String),
     RequestErase,
     Download(FileId),
-    InstallComplete,
     DeletePermanently(FileId),
     MoveFiles(Vec<FileId>, MoveDest),
     EmptyTrash(Vec<FileId>),
     MarkMailRead(usize),
     Restore(Vec<FileId>),
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
-    OpenHexPicker,
-    SelectPhotoForHexTool(String),
-    SavePhotoReview(String, Vec<crate::foundation::AnomalyCategory>),
-    ExportPhotoReport(Vec<String>),
 }
 
 // 창 관리자에 넘기는 입력 상태.
@@ -184,14 +178,6 @@ impl WindowManager {
     // 특정 파일에 연결된 창이 지금 열려 있는지.
     pub fn is_open(&self, file: FileId) -> bool {
         self.windows.iter().any(|w| w.file == Some(file))
-    }
-
-    // 특정 파일에 연결된 창을 바로 닫는다 — HexPickerApp 처럼 "고르면 곧장 확정되고
-    // 창은 저절로 닫히는" UI에서, 고른 뒤 desktop.rs 가 직접 닫아줄 때 쓴다(그
-    // 앱 자신은 AppAction::Close 를 반환하는 대신 SelectPhotoForHexTool 만 반환
-    // 하므로, 창을 닫는 책임은 desktop.rs 쪽에 있다).
-    pub fn close_file(&mut self, file: FileId) {
-        self.windows.retain(|w| w.file != Some(file));
     }
 
     // 열려있는 창의 앱을 downcast 해서 상태를 읽으려고 쓴다(예: 새로고침 전에 File
@@ -481,16 +467,10 @@ impl WindowManager {
                     close_ids.push(self.windows[i].id);
                 }
                 AppAction::Open(id) => actions.push(DeskAction::Open(id)),
-                AppAction::OpenPhoto(filename) => actions.push(DeskAction::OpenPhoto(filename)),
                 AppAction::RequestErase => actions.push(DeskAction::RequestErase),
                 AppAction::Download(id) => actions.push(DeskAction::Download(id)),
-                // 설치 마법사는 진행바가 다 찬 순간 이걸 한 번만 보내고(바탕화면
-                // 아이콘이 그 타이밍에 생기게) 창은 그대로 열어둔 채 Finish 페이지를
-                // 계속 보여준다 — Unlock/Download 와 달리 여기선 창을 안 닫는다.
-                AppAction::InstallComplete => actions.push(DeskAction::InstallComplete),
-                // 앱이 페이지를 넘어가면서 필요한 화면 크기가 확 바뀔 때(예: HexTool 이
-                // 파일 고르는 작은 창에서 편집용 큰 창으로) 쓴다. 중심을 그대로 두고
-                // 크기만 바꾸되, 작업영역 밖으로 나가면 안으로 당겨 넣는다.
+                // 앱이 페이지를 넘어가면서 필요한 화면 크기가 확 바뀔 때 쓴다. 중심을
+                // 그대로 두고 크기만 바꾸되, 작업영역 밖으로 나가면 안으로 당겨 넣는다.
                 AppAction::Resize(w, h) => {
                     let win = &mut self.windows[i];
                     let cx = win.rect.x + win.rect.w / 2.0;
@@ -511,10 +491,6 @@ impl WindowManager {
                     actions.push(DeskAction::SendNewMail { to, subject, body, attachments })
                 }
                 AppAction::Restore(ids) => actions.push(DeskAction::Restore(ids)),
-                AppAction::OpenHexPicker => actions.push(DeskAction::OpenHexPicker),
-                AppAction::SelectPhotoForHexTool(id) => actions.push(DeskAction::SelectPhotoForHexTool(id)),
-                AppAction::SavePhotoReview(id, categories) => actions.push(DeskAction::SavePhotoReview(id, categories)),
-                AppAction::ExportPhotoReport(photos) => actions.push(DeskAction::ExportPhotoReport(photos)),
             }
         }
 

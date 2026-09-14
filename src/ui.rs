@@ -438,12 +438,8 @@ pub enum IconType {
     Lock,
     Folder,
     Mail,
-    Archive, // 압축파일(FileKind::PhotoReport) 전용 아이콘 — HexTool "압축파일 내보내기"로 만든 Report.zip 에만 쓰인다
-    Installer,
-    HexTool,
     Computer,
     Img,
-    PhotosApp, // 바탕화면의 Photos 앱 — 낱장 사진 파일(Img)과 구분되는 "사진첩" 아이콘
     Envelope, // Mail 폴더 트리의 Inbox 아이콘
     RecycleEmpty,
     RecycleFull,
@@ -473,30 +469,18 @@ pub fn icon_of(node: &FileNode) -> IconType {
         FileKind::Folder { .. } => IconType::Folder,
         FileKind::Mail { .. } => IconType::Mail,
         FileKind::Explorer => IconType::Computer,
-        FileKind::Installer => IconType::Installer,
-        FileKind::HexTool => IconType::HexTool,
         FileKind::Img(_) => IconType::Img,
-        FileKind::PhotoGallery => IconType::PhotosApp,
-        FileKind::Photo(_) => IconType::Img,
-        FileKind::PhotoReport(_) => IconType::Archive,
         FileKind::Deleted => IconType::Folder, // 그 무엇에서도 더는 참조 안 되니 실제로 그려질 일이 없다
     }
 }
 
 // s 크기의 파일 아이콘을 텍스처로 그린다 (Windows 98 아이콘 팩에서 뽑아온 PNG).
-// Archive/Installer/HexTool 은 아직 전용 PNG 에셋이 없어서 텍스처 대신 직접 그리는
-// 모양으로 대신한다(draw_scale/draw_wifi 처럼 이 파일에 이미 있는 벡터 아이콘들과
-// 같은 요령). Computer 는 원래 이 방식으로 직접 그렸었는데, 사용자가 준 Windows 98
-// 아이콘 팩 안에 이미 "컴퓨터 + 탐색기 창" 느낌의 정확히 맞는 아이콘
-// (`computer_explorer`, 32x32)이 있어서 그걸 그대로 `assets/icon_computer.png` 로
-// 가져와 다른 파일 아이콘들과 같은 텍스처 방식으로 바꿨다.
+// Computer 는 원래 직접 그리는 벡터 도형이었는데(draw_scale/draw_wifi 처럼 이
+// 파일에 이미 있는 벡터 아이콘들과 같은 요령), 사용자가 준 Windows 98 아이콘 팩
+// 안에 이미 "컴퓨터 + 탐색기 창" 느낌의 정확히 맞는 아이콘(`computer_explorer`,
+// 32x32)이 있어서 그걸 그대로 `assets/icon_computer.png` 로 가져와 다른 파일
+// 아이콘들과 같은 텍스처 방식으로 바꿨다.
 pub fn draw_icon(r: &mut Renderer, assets: &Assets, icon: &IconType, x: f32, y: f32, s: f32) {
-    match icon {
-        IconType::Archive => return draw_archive_icon(r, x, y, s),
-        IconType::Installer => return draw_installer_icon(r, x, y, s),
-        IconType::HexTool => return draw_hextool_icon(r, x, y, s),
-        _ => {}
-    }
     let tex = match icon {
         IconType::Folder => assets.icon_folder,
         IconType::Txt => assets.icon_txt,
@@ -508,8 +492,6 @@ pub fn draw_icon(r: &mut Renderer, assets: &Assets, icon: &IconType, x: f32, y: 
         IconType::Envelope => assets.icon_envelope,
         IconType::RecycleEmpty => assets.icon_recycle_empty,
         IconType::RecycleFull => assets.icon_recycle_full,
-        IconType::PhotosApp => assets.icon_photos,
-        IconType::Archive | IconType::Installer | IconType::HexTool => unreachable!(),
     };
     r.sprite(tex, x, y, s, s, WHITE);
 }
@@ -533,81 +515,6 @@ pub fn draw_drag_ghost(r: &mut Renderer, assets: &Assets, icon: &IconType, label
     let label_y = y + s + 2.0;
     r.rect(x + s / 2.0 - tw / 2.0 - 3.0, label_y, tw + 6.0, 16.0, [0.95, 0.95, 0.97, 0.7]);
     r.text_clipped(x + s / 2.0 - tw / 2.0, label_y + 2.0, label, 0.75, [0.25, 0.25, 0.25, 0.7], tw);
-}
-
-// 압축파일 아이콘 — 노란 폴더 몸체 위에 지퍼(세로 중앙선 + 지그재그 이빨)를
-// 그려서 "압축돼 봉인된 폴더" 라는 걸 한눈에 알아보게 한다(고전 zip 아이콘 느낌).
-fn draw_archive_icon(r: &mut Renderer, x: f32, y: f32, s: f32) {
-    let body = [0.88, 0.72, 0.2, 1.0];
-    let tab = [0.75, 0.6, 0.15, 1.0];
-    let zip = [0.35, 0.28, 0.05, 1.0];
-    let bx = x + s * 0.1;
-    let by = y + s * 0.28;
-    let bw = s * 0.8;
-    let bh = s * 0.56;
-    // 폴더 탭(위쪽으로 살짝 튀어나온 부분)과 몸체.
-    r.rect(bx + s * 0.06, by - s * 0.1, s * 0.32, s * 0.1, tab);
-    r.rect(bx, by, bw, bh, body);
-    border(r, bx, by, bw, bh, BLACK);
-    // 지퍼: 세로 중앙선 + 좌우로 번갈아 튀어나온 이빨.
-    let cx = x + s * 0.5;
-    r.rect(cx - s * 0.015, by, s * 0.03, bh, zip);
-    const TEETH: i32 = 5;
-    for i in 0..TEETH {
-        let t = (i as f32 + 0.5) / TEETH as f32;
-        let ty = by + t * bh;
-        let side = if i % 2 == 0 { 1.0 } else { -1.0 };
-        r.rect(cx + side * s * 0.03 - s * 0.025, ty - s * 0.025, s * 0.05, s * 0.05, zip);
-    }
-}
-
-// 설치 프로그램(.exe) 아이콘 — 모니터 모양 안에 아래로 향하는 화살표를 그려서
-// "설치/다운로드" 느낌을 낸다. installer.rs 가 설치 마법사 왼쪽 삽화 칸에 크게
-// 그릴 때도 재사용하므로 pub(crate) 로 열어둔다.
-pub(crate) fn draw_installer_icon(r: &mut Renderer, x: f32, y: f32, s: f32) {
-    let screen = [0.85, 0.85, 0.9, 1.0];
-    let frame = [0.3, 0.3, 0.35, 1.0];
-    let bx = x + s * 0.08;
-    let by = y + s * 0.1;
-    let bw = s * 0.84;
-    let bh = s * 0.58;
-    r.rect(bx, by, bw, bh, frame);
-    r.rect(bx + s * 0.05, by + s * 0.05, bw - s * 0.1, bh - s * 0.1, screen);
-    r.rect(x + s * 0.38, y + s * 0.72, s * 0.24, s * 0.08, frame); // 받침대
-    // 화면 안의 아래 화살표(세로 막대 + 삼각형).
-    let cx = x + s * 0.5;
-    r.rect(cx - s * 0.04, by + s * 0.1, s * 0.08, s * 0.2, NAVY);
-    for i in 0..4 {
-        let t = i as f32;
-        let half = (4.0 - t) * s * 0.03;
-        r.rect(cx - half, by + s * 0.3 + t * s * 0.03, half * 2.0, s * 0.03, NAVY);
-    }
-}
-
-// 설치된 HexTool 프로그램 아이콘 — installer.rs 와 같은 모니터 몸체를 초록빛으로
-// 바꾸고, 화살표 대신 톱니바퀴(도구/유틸리티 느낌)를 넣어서 "설치 중"인 Installer
-// 아이콘과 구분되게 한다.
-fn draw_hextool_icon(r: &mut Renderer, x: f32, y: f32, s: f32) {
-    let screen = [0.85, 0.92, 0.85, 1.0];
-    let frame = [0.25, 0.32, 0.25, 1.0];
-    let bx = x + s * 0.08;
-    let by = y + s * 0.1;
-    let bw = s * 0.84;
-    let bh = s * 0.58;
-    r.rect(bx, by, bw, bh, frame);
-    r.rect(bx + s * 0.05, by + s * 0.05, bw - s * 0.1, bh - s * 0.1, screen);
-    r.rect(x + s * 0.38, y + s * 0.72, s * 0.24, s * 0.08, frame); // 받침대
-
-    let cx = x + s * 0.5;
-    let cy = by + s * 0.29;
-    let r_out = s * 0.14;
-    fill_circle(r, cx, cy, r_out * 0.55, NAVY);
-    for i in 0..8 {
-        let ang = i as f32 / 8.0 * std::f32::consts::TAU;
-        let tx = cx + ang.cos() * r_out;
-        let ty = cy + ang.sin() * r_out;
-        r.rect(tx - 1.5, ty - 1.5, 3.0, 3.0, NAVY);
-    }
 }
 
 // 저울(balance scale) — 작업표시줄 시작 버튼용. s 크기, color 색.
