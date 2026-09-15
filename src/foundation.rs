@@ -71,6 +71,11 @@ pub struct FileSystem {
     // 분기가 매번 이 값을 MailApp::new() 로 그대로 넘겨준다.
     #[serde(default)]
     pub mail_game_attachment: FileId,
+    // Game.exe(FileKind::Game) 를 열면 처음엔 항상 설치 마법사(GameInstallerApp)가
+    // 뜨는데, 설치가 끝나면(진행바가 다 찬 순간) true 로 바뀐다 — 그 뒤로 같은
+    // 파일을 다시 열면 마법사를 건너뛰고 바로 팩맨 창(PacmanApp)이 뜬다.
+    #[serde(default)]
+    pub game_installed: bool,
     // 읽은 메일의 인덱스(MailApp::seed_messages 순번) — MailApp 자체는 창을 닫거나
     // 3초 주기 새로고침으로 새로 만들어질 때마다 통째로 새 인스턴스가 되므로, 읽음
     // 여부를 여기(저장 파일에 실리는 fs)에 둬야 새로고침은 물론 게임을 종료했다
@@ -158,6 +163,7 @@ impl FileSystem {
             ever_downloaded: Vec::new(),
             mail_arrived: false,
             mail_game_attachment: 0, // 아래에서 실제 노드를 만들고 바로 채운다
+            game_installed: false,
             mail_read: Vec::new(),
             sent_mail: Vec::new(),
             trash_origin: Vec::new(),

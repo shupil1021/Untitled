@@ -1284,6 +1284,14 @@ impl Scene for DesktopScene {
                     self.refresh_mail_attachable_if_open();
                     self.write_save(&f.settings);
                 }
+                // 설치 마법사 진행바가 다 찬 순간 한 번 온다 — 지금 열려있는 마법사
+                // 창 자체는 그대로 두고(Finish 버튼으로 사용자가 직접 닫는다) 다음에
+                // 이 파일을 다시 열 때부터 곧장 PacmanApp 이 뜨도록 플래그만 켠다.
+                // (지금은 설치 가능한 파일이 Game 하나뿐이라 어떤 id 인지는 안 따진다.)
+                DeskAction::InstallComplete(_id) => {
+                    self.fs.game_installed = true;
+                    self.write_save(&f.settings);
+                }
                 DeskAction::MarkMailRead(i) => {
                     // fs 에 기록해야 3초 주기 새로고침은 물론 게임 재시작 후에도 읽음
                     // 표시가 유지된다 — MailApp 자체의 read 는 창이 새로 만들어질
