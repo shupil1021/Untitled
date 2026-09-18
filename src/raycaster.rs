@@ -374,12 +374,14 @@ impl Raycaster {
     // props(책상/의자 등 각진 상자)를 진짜 입체로 그린다 — 빌보드처럼 항상
     // 카메라를 향하는 평면이 아니라, 플레이어 위치를 기준으로 실제로 보이는
     // 면(옆면은 동/서/남/북 중 플레이어가 바깥쪽에 있는 면들, 위/아래 면은
-    // 항상 시도)만 골라서 그린다. 옆면은 벽과 똑같은 컬럼별 레이-평면 교차라
-    // 정확하고, 위/아래 면은 우리 광선(z 없이 xy 평면 위에서만 움직인다)으로는
-    // 절대 못 만나는 수평 평면이라 대신 꼭짓점 4개를 화면에 투영해서 컬럼별로
-    // 채우는 스캔라인(render_horizontal_face)을 쓴다 — 그래서 옆으로 돌아가면
-    // 실제로 옆면이, 눈높이(0.5)보다 낮은 물체는 내려다본 윗면이 보인다(둘 다
-    // 그리기 전엔 그 자리가 그냥 비어 보여서 뒤가 훤히 비쳐 보였다).
+    // 항상 시도)만 골라서 그린다. 옆면은 벽과 똑같이 광선-평면 교차로, 위/아래
+    // 면은 광선이 상자 발자국(바닥 사각형)을 지나는 깊이 구간(AABB 슬래브
+    // 교차)으로 구한다 — 둘 다 벽처럼 "컬럼마다 광선을 다시 쏘는" 방식이라
+    // 정확하다(render_horizontal_face 주석 참고 — 처음엔 꼭짓점을 화면에
+    // 투영해서 화면-공간에서 보간했는데, 이 엔진의 가로 투영이 각도-선형이라
+    // 그 보간이 실제 3D 위치와 어긋나 윗면이 비거나 엉뚱하게 어두웠다). 그래서
+    // 옆으로 돌아가면 실제로 옆면이, 눈높이(0.5)보다 낮은 물체는 내려다본
+    // 윗면이 보인다.
     //
     // props 는 먼 것부터(화가 알고리즘) 그린다 — 안 그러면 가까운(짧은) 물체를
     // 먼저 그렸을 때, 그 뒤에 더 큰(키가 큰) 물체가 있어도 "이 컬럼엔 이미
@@ -478,101 +480,79 @@ impl Raycaster {
         }
     }
 
-    // 플레이어 기준 각도/거리로 world 좌표 한 점을 화면 좌표로 투영한다 —
-    // render_billboards 가 쓰는 것과 같은 공식이지만, 여기서는 임의의 z(높이)
-    // 까지 받아서 위/아래 면의 꼭짓점 투영에 쓴다. 카메라 뒤에 있으면 None.
-    fn project_point(&self, area: Rect, fov: f32, wx: f32, wy: f32, wz: f32) -> Option<(f32, f32, f32)> {
-        let rel_x = wx - self.player_x;
-        let rel_y = wy - self.player_y;
-        let dist = rel_x.hypot(rel_y);
-        if dist < 1e-4 {
-            return None;
-        }
-        let mut rel_angle = rel_y.atan2(rel_x) - self.player_dir;
-        while rel_angle > PI {
-            rel_angle -= 2.0 * PI;
-        }
-        while rel_angle < -PI {
-            rel_angle += 2.0 * PI;
-        }
-        let depth = dist * rel_angle.cos();
-        if depth <= 0.0001 {
-            return None; // 카메라 뒤
-        }
-        let camera_x = rel_angle / (fov / 2.0);
-        let screen_x = area.x + (camera_x + 1.0) / 2.0 * area.w;
-        let screen_y = area.y + area.h / 2.0 - (wz - 0.5) * (area.h / depth);
-        Some((screen_x, screen_y, depth))
-    }
-
-    // 한 변(p0→p1, 둘 다 (화면x, 화면y, 깊이))이 화면 x=x_at 를 지나는 지점의
-    // (화면y, 깊이)를 선형보간으로 구한다 — render_horizontal_face 의 스캔라인
-    // 채우기에 쓰는 보조 함수.
-    fn edge_at_x(p0: (f32, f32, f32), p1: (f32, f32, f32), x_at: f32) -> Option<(f32, f32)> {
-        let (x0, y0, d0) = p0;
-        let (x1, y1, d1) = p1;
-        if !((x0 <= x_at && x_at <= x1) || (x1 <= x_at && x_at <= x0)) {
-            return None;
-        }
-        let t = if (x1 - x0).abs() < 1e-6 { 0.0 } else { (x_at - x0) / (x1 - x0) };
-        Some((y0 + (y1 - y0) * t, d0 + (d1 - d0) * t))
-    }
-
-    // 수평 평면(z=const) 하나 — 상자의 윗면/아랫면 — 을 화면에 채운다. 네
-    // 꼭짓점을 각각 투영한 뒤(project_point), 그 투영이 걸치는 컬럼마다
-    // 사각형의 위/아래 변을 선형보간(edge_at_x)으로 구해 세로띠를 그리는 아주
-    // 단순한 스캔라인 채우기다 — 꼭짓점 하나라도 카메라 바로 뒤로 넘어가면
-    // (아주 가까이 붙어서 보는 드문 경우) 이번 프레임엔 그냥 생략한다.
+    // 수평 평면(z=const) 하나 — 상자의 윗면/아랫면 — 을 화면에 채운다.
+    //
+    // 처음엔 네 꼭짓점을 화면에 각각 투영한 뒤 컬럼별로 화면-공간에서 선형보간
+    // (스캔라인)하는 방식으로 짰는데, 이 엔진의 가로 투영이 진짜 원근(탄젠트
+    // 기반) 이 아니라 "각도에 선형" 이라(카메라 평면 대신 각도로 컬럼을 나눈다
+    // — cast_ray 의 fisheye 보정 주석 참고) 화면-공간에서 두 꼭짓점 사이를 선형
+    // 보간하면 실제 3D 위치와 어긋난다 — 가까이서 보면 윗면이 비거나(각도 폭이
+    // 넓어서 두 꼭짓점 사이 보간이 실제 사각형보다 훨씬 좁아짐) 엉뚱하게
+    // 어두워 보였다(보간된 깊이가 실제보다 훨씬 커짐).
+    //
+    // 그래서 대신 벽/옆면과 똑같이 "이 컬럼의 광선이 실제로 어디를 지나는지"를
+    // 컬럼마다 다시 계산한다 — 광선(2D, z 없음)이 상자의 바닥 발자국
+    // [min_x,max_x]×[min_y,max_y] 을 통과하는 구간(t_near..t_far, 표준
+    // AABB-레이 슬래브 교차)을 구하면, 그 구간의 가까운/먼 끝이 곧 이 컬럼에서
+    // z=z 평면이 보이는 깊이 범위다(z=z 자체와는 절대 안 만나지만, "이 컬럼이
+    // 상자 발자국 위를 지나는 동안"이 곧 "그 z 평면이 보이는 동안"과 같다).
     #[allow(clippy::too_many_arguments)]
     fn render_horizontal_face(
         &self, r: &mut Renderer, area: Rect, fov: f32, col_w: f32, col_depth: &mut [f32], min_x: f32, max_x: f32, min_y: f32, max_y: f32,
         z: f32, color: [f32; 4],
     ) {
-        let corners_world = [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)];
-        let mut proj = [(0.0f32, 0.0f32, 0.0f32); 4];
-        for (i, &(wx, wy)) in corners_world.iter().enumerate() {
-            match self.project_point(area, fov, wx, wy, z) {
-                Some(p) => proj[i] = p,
-                None => return,
-            }
-        }
-
         let num_rays = col_depth.len();
-        let min_screen_x = proj.iter().map(|p| p.0).fold(f32::INFINITY, f32::min);
-        let max_screen_x = proj.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max);
-        let min_col = (((min_screen_x - area.x) / col_w).floor().max(0.0)) as usize;
-        let max_col = (((max_screen_x - area.x) / col_w).ceil().max(0.0)) as usize;
-        let max_col = max_col.min(num_rays.saturating_sub(1));
-        if min_col > max_col {
-            return;
-        }
+        let half_fov = fov / 2.0;
 
-        for (col, depth_slot) in col_depth.iter_mut().enumerate().take(max_col + 1).skip(min_col) {
-            let cx = area.x + (col as f32 + 0.5) * col_w;
-            let mut hits: Vec<(f32, f32)> = Vec::new(); // (화면y, 깊이)
-            for i in 0..4 {
-                if let Some(hit) = Self::edge_at_x(proj[i], proj[(i + 1) % 4], cx) {
-                    hits.push(hit);
-                }
-            }
-            if hits.len() < 2 {
-                continue;
-            }
-            hits.sort_by(|a, b| a.0.total_cmp(&b.0));
-            let (y_top, d_top) = hits[0];
-            let (y_bottom, d_bottom) = hits[hits.len() - 1];
-            let depth = ((d_top + d_bottom) / 2.0).max(0.0001);
-            if depth >= *depth_slot {
-                continue;
+        for (col, depth_slot) in col_depth.iter_mut().enumerate() {
+            let camera_x = 2.0 * (col as f32 + 0.5) / num_rays as f32 - 1.0;
+            let rel_angle = camera_x * half_fov;
+            let ray_angle = self.player_dir + rel_angle;
+            let dir_x = ray_angle.cos();
+            let dir_y = ray_angle.sin();
+
+            // 표준 슬래브(slab) 교차 — 각 축에서 [min,max] 범위에 들어가는
+            // t 구간을 구해 교집합을 취한다. 광선이 그 축과 거의 평행하면
+            // (dir≈0) 그 축은 아예 제한을 안 거는 것으로 친다(±무한대) —
+            // 플레이어가 이미 그 축 범위 밖에 있으면 어차피 다른 축에서 걸러진다.
+            let (tx0, tx1) = if dir_x.abs() < 1e-6 {
+                (f32::NEG_INFINITY, f32::INFINITY)
+            } else {
+                let a = (min_x - self.player_x) / dir_x;
+                let b = (max_x - self.player_x) / dir_x;
+                (a.min(b), a.max(b))
+            };
+            let (ty0, ty1) = if dir_y.abs() < 1e-6 {
+                (f32::NEG_INFINITY, f32::INFINITY)
+            } else {
+                let a = (min_y - self.player_y) / dir_y;
+                let b = (max_y - self.player_y) / dir_y;
+                (a.min(b), a.max(b))
+            };
+            let t_near = tx0.max(ty0).max(0.0001);
+            let t_far = tx1.min(ty1);
+            if t_near >= t_far {
+                continue; // 이 컬럼의 광선은 상자 발자국을 아예 안 지난다
             }
 
-            let fog = (1.0 - (depth / self.fog_dist).clamp(0.0, 1.0) * 0.75).max(0.18);
+            let cos_correction = rel_angle.cos(); // cast_ray 와 같은 fisheye 보정
+            let depth_near = (t_near * cos_correction).max(0.0001);
+            let depth_far = (t_far * cos_correction).max(0.0001);
+            if depth_near >= *depth_slot {
+                continue; // 가까운 끝부터 이미 벽/다른 물체에 가려짐
+            }
+
+            let y_for_z = |depth: f32| area.h / 2.0 - (z - 0.5) * (area.h / depth);
+            let y_near = y_for_z(depth_near);
+            let y_far = y_for_z(depth_far);
+            let top = y_near.min(y_far).clamp(0.0, area.h);
+            let bottom = y_near.max(y_far).clamp(0.0, area.h);
+
+            let fog = (1.0 - (depth_near / self.fog_dist).clamp(0.0, 1.0) * 0.75).max(0.18);
             let c = [color[0] * fog, color[1] * fog, color[2] * fog, color[3]];
-            let top = y_top.clamp(area.y, area.y + area.h);
-            let bottom = y_bottom.clamp(area.y, area.y + area.h);
             let x = area.x + col as f32 * col_w;
-            r.rect(x, top, col_w + 0.6, (bottom - top).max(0.0), c);
-            *depth_slot = depth;
+            r.rect(x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), c);
+            *depth_slot = depth_near;
         }
     }
 }
