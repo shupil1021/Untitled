@@ -8,10 +8,12 @@
 //! false) 키 입력을 아예 안 읽는다 — 다른 창을 조작하다가 실수로 팩맨이 움직이는
 //! 것을 막는다.
 //!
-//! 미로는 1~4라운드는 매번 재귀 백트래커(randomized DFS)로 새로 생성하고(ROOMS×
-//! ROOMS 개의 방을 완전미로 — 루프 없이 전부 연결된 트리 — 로 파서 (2×ROOMS+1)
-//! 크기 격자에 옮겨 담는다), 5라운드만 고정 시드로 생성해 항상 같은 미로가
-//! 나오게 한다. 코인은 시작 칸을 뺀 바닥 칸 전부에 놓는다.
+//! 미로는 1~4라운드는 매번 랜덤 Prim 알고리즘으로 새로 생성하고(ROOMS×ROOMS 개의
+//! 방을 완전미로 — 루프 없이 전부 연결된 트리 — 로 파서 (2×ROOMS+1) 크기 격자에
+//! 옮겨 담는다), 5라운드만 고정 시드로 생성해 항상 같은 미로가 나오게 한다. 랜덤
+//! Prim 은 재귀 백트래커보다 짧은 막다른 길과 급한 방향 전환이 훨씬 많이 나와서
+//! 매판 더 꼬여 보인다(generate_maze 주석 참고). 코인은 시작 칸을 뺀 바닥 칸
+//! 전부에 놓는다.
 //!
 //! 렌더링은 컬럼(화면 x 좌표)마다 광선 하나씩 DDA(Digital Differential Analysis)로
 //! 쏴서 가장 가까운 벽까지 거리를 구하고, 그 거리에 반비례하는 높이의 세로띠를
@@ -26,7 +28,7 @@ use crate::ui::{fill_circle, WHITE};
 
 use super::{App, AppAction, WinInput};
 
-// 라운드별 맵 크기 — 재귀 백트래커가 만들 "방" 격자의 한 변 길이(방 개수)다.
+// 라운드별 맵 크기 — generate_maze(랜덤 Prim)가 만들 "방" 격자의 한 변 길이(방 개수)다.
 // 실제 미로 격자 크기는 (2*map_size+1) — 방 사이사이에 벽을 끼워 넣는 표준적인
 // 미로-생성 표현이라, 방이 N개면 격자는 2N+1칸이 된다. map_size 는 1~14 사이로
 // 쓴다(요청받은 범위). 코인은 라운드별 목표 개수를 따로 정하지 않고 그 라운드
@@ -75,11 +77,42 @@ impl Rng {
     }
 }
 
-// 재귀 백트래커(randomized DFS)로 완전미로(루프 없는 스패닝 트리)를 만든다.
-// rooms×rooms 개의 "방"을 하나씩 방문하며, 아직 안 가본 이웃 방으로 넘어갈
-// 때마다 그 사이 벽을 하나씩 허문다 — 다 돌면 모든 방이 정확히 하나의 경로로만
-// 연결된 미로가 된다. 반환하는 격자는 (2*rooms+1) 크기이고, 방은 홀수 좌표
-// (2r+1, 2c+1)에, 방 사이 벽은 그 중간 짝수 좌표에 온다(바깥 테두리는 항상 벽).
+// (from 방, to 방) 간선 하나 — generate_maze(랜덤 Prim)의 frontier 목록 원소.
+type RoomEdge = ((usize, usize), (usize, usize));
+
+// room 의 아직 안 가본 이웃 방들을 (from, to) 간선으로 frontier 에 추가한다 —
+// generate_maze(랜덤 Prim) 가 매 반복 이 목록에서 하나씩 골라 쓴다.
+fn push_frontier(rooms: usize, room: (usize, usize), visited: &[Vec<bool>], frontier: &mut Vec<RoomEdge>) {
+    let (x, y) = room;
+    let mut neighbors: Vec<(usize, usize)> = Vec::new();
+    if x > 0 {
+        neighbors.push((x - 1, y));
+    }
+    if x + 1 < rooms {
+        neighbors.push((x + 1, y));
+    }
+    if y > 0 {
+        neighbors.push((x, y - 1));
+    }
+    if y + 1 < rooms {
+        neighbors.push((x, y + 1));
+    }
+    for n in neighbors {
+        if !visited[n.1][n.0] {
+            frontier.push((room, n));
+        }
+    }
+}
+
+// 랜덤 Prim 알고리즘으로 완전미로(루프 없는 스패닝 트리)를 만든다. rooms×rooms
+// 개의 "방" 중 지금까지 미로에 편입된 방들의 "경계에 걸친" 간선들을 frontier
+// 에 모아두고, 그중 완전히 무작위로 하나를 뽑아 편입시키는 과정을 반복한다 —
+// 재귀 백트래커(한 번 뚫은 방향으로 갈 수 있는 데까지 쭉 파고들어서 길게 뻗은
+// 복도가 되기 쉽다)와 달리, "지금 미로 전체의 어느 가장자리에서" 다음 칸을
+// 파도 상관없어서 짧은 막다른 길과 급한 방향 전환이 훨씬 많이 나온다 — 매판이
+// 훨씬 더 꼬여 보이는 이유. 반환하는 격자는 (2*rooms+1) 크기이고, 방은 홀수
+// 좌표(2r+1, 2c+1)에, 방 사이 벽은 그 중간 짝수 좌표에 온다(바깥 테두리는
+// 항상 벽).
 fn generate_maze(rooms: usize, rng: &mut Rng) -> Vec<Vec<bool>> {
     let rooms = rooms.max(1);
     let dim = rooms * 2 + 1;
@@ -88,34 +121,23 @@ fn generate_maze(rooms: usize, rng: &mut Rng) -> Vec<Vec<bool>> {
 
     visited[0][0] = true;
     walls[1][1] = false;
-    let mut stack = vec![(0usize, 0usize)];
+    let mut frontier: Vec<RoomEdge> = Vec::new();
+    push_frontier(rooms, (0, 0), &visited, &mut frontier);
 
-    while let Some(&(cx, cy)) = stack.last() {
-        let mut neighbors: Vec<(usize, usize)> = Vec::new();
-        if cx > 0 && !visited[cy][cx - 1] {
-            neighbors.push((cx - 1, cy));
+    while !frontier.is_empty() {
+        // swap_remove 면 순서가 흐트러지지만 어차피 매번 무작위로 고르므로 상관없고,
+        // Vec::remove 처럼 뒤 원소들을 매번 당겨오지 않아도 돼서 더 빠르다.
+        let i = rng.gen_range(frontier.len());
+        let (from, to) = frontier.swap_remove(i);
+        if visited[to.1][to.0] {
+            continue; // 그 사이 다른 간선으로 이미 편입된 방이면 버린다
         }
-        if cx + 1 < rooms && !visited[cy][cx + 1] {
-            neighbors.push((cx + 1, cy));
-        }
-        if cy > 0 && !visited[cy - 1][cx] {
-            neighbors.push((cx, cy - 1));
-        }
-        if cy + 1 < rooms && !visited[cy + 1][cx] {
-            neighbors.push((cx, cy + 1));
-        }
-
-        if neighbors.is_empty() {
-            stack.pop();
-            continue;
-        }
-        let (nx, ny) = neighbors[rng.gen_range(neighbors.len())];
-        // 두 방 grid 좌표가 (2cx+1,2cy+1)/(2nx+1,2ny+1) 이므로, 그 중간(허물 벽)은
-        // 항상 (cx+nx+1, cy+ny+1) — 가로/세로 어느 쪽으로 옮기든 이 식 하나로 된다.
-        walls[cy + ny + 1][cx + nx + 1] = false;
-        walls[2 * ny + 1][2 * nx + 1] = false;
-        visited[ny][nx] = true;
-        stack.push((nx, ny));
+        // 두 방 grid 좌표가 (2fx+1,2fy+1)/(2tx+1,2ty+1) 이므로, 그 중간(허물 벽)은
+        // 항상 (fx+tx+1, fy+ty+1) — 가로/세로 어느 쪽이든 이 식 하나로 된다.
+        walls[from.1 + to.1 + 1][from.0 + to.0 + 1] = false;
+        walls[2 * to.1 + 1][2 * to.0 + 1] = false;
+        visited[to.1][to.0] = true;
+        push_frontier(rooms, to, &visited, &mut frontier);
     }
     walls
 }
