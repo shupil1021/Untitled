@@ -203,6 +203,7 @@ pub mod desktop {
     pub const CONNECTED: S = S { en: "Connected", ko: "연결됨", ja: "接続済み" };
     pub const DISCONNECTED: S = S { en: "Disconnected", ko: "연결 안 됨", ja: "未接続" };
     pub const UNKNOWN: S = S { en: "(unknown)", ko: "(알 수 없음)", ja: "(不明)" };
+    pub const NEW_MAIL: S = S { en: "New Mail", ko: "새 메일", ja: "新着メール" };
 }
 
 // apps/settings.rs — 설정 창.

@@ -63,7 +63,9 @@ cargo run
 - Outlook Express 스타일: 폴더 트리(Inbox/Sent Items/Write Mail) + 오른쪽 내용 패널,
   하단 상태 표시줄("N Item(s), N Unread").
 - **Inbox**: 새 게임을 시작하면 처음엔 비어있다가, 5초(`MAIL_ARRIVAL_DELAY`, `scenes/
-  desktop.rs`) 뒤에 메일이 한 통 자동으로 도착한다. 제목/본문은 지금 일부러 비워뒀고
+  desktop.rs`) 뒤에 메일이 한 통 자동으로 도착한다. 도착하는 순간 화면 우측
+  하단(작업표시줄 바로 위)에 5초짜리 "New Mail" 토스트 알림이 뜨는데, 누르면 바로
+  Mail 을 연다(`DesktopScene::update_toast`). 제목/본문은 지금 일부러 비워뒀고
   (`(게임 이름) Setup.exe` 첨부만 걸려있다, 예: `Pacman Setup.exe`) — 지금은 "메일 →
   다운로드 → 설치 마법사 → 바탕화면에 설치" 파이프라인만 만드는 단계라 내용은 다음
   기획 확정 때 채운다. 첨부를 다운로드하면 그 즉시 창이 뜨는데, 처음 열 때는(그

@@ -226,6 +226,8 @@ pub struct DesktopScene {
     // (fs.mail_arrived 를 true 로) — 이미 도착했으면(불러온 저장에서 이미
     // true 였거나 이번 세션에서 이미 울렸으면) 더 안 잰다.
     mail_timer: f32,
+    toast: Option<(String, String)>, // 우측 하단에 잠깐 뜨는 알림(발신자, 제목) — 없으면 안 보임
+    toast_timer: f32,                // 위 알림이 사라지기까지 남은 시간
     erase_confirm: bool,   // "Erase All Memory" 확인창 — 화면 전체(다른 창 포함)를 덮는 진짜 모달
     // 창을 열었다 옮기거나 크기를 바꾼 적 있으면 마지막 자리를 여기 기억해둔다(파일
     // ID 로 키) — 지금 열려있는 창은 매 프레임 wm 에서 값을 다시 읽어와 갱신하고,
@@ -236,6 +238,7 @@ pub struct DesktopScene {
 
 const AUTOSAVE_INTERVAL: f32 = 5.0; // 이 주기(초)마다 설정/바탕화면 상태를 자동 저장한다.
 const MAIL_ARRIVAL_DELAY: f32 = 5.0; // 게임 시작 후 이만큼(초) 지나면 메일이 도착한다.
+const TOAST_DURATION: f32 = 5.0; // 우측 하단 알림이 떠있는 시간(초)
 
 impl Default for DesktopScene {
     fn default() -> Self {
@@ -291,6 +294,8 @@ impl DesktopScene {
             secret_unlocked: unlocked,
             save_timer: 0.0,
             mail_timer: 0.0,
+            toast: None,
+            toast_timer: 0.0,
             erase_confirm: false,
             window_geometry,
         }
@@ -923,6 +928,39 @@ impl DesktopScene {
         }
     }
 
+    // "New Mail" 토스트 자리 — update_toast() 와 커서 판정(update()) 양쪽에서
+    // 같이 써서 자리가 어긋나지 않게 한다(wifi_popup_rect 와 같은 요령).
+    fn toast_rect() -> Rect {
+        const W: f32 = 190.0;
+        const H: f32 = 72.0;
+        let ty = SCREEN_H - TASKBAR_H;
+        let x = SCREEN_W - W - 8.0;
+        let y = ty - H - 8.0;
+        Rect::new(x, y, W, H)
+    }
+
+    // 시스템 메시지가 새로 생기면(지금은 메일 도착) 우측 하단(작업표시줄 바로 위,
+    // 와이파이/시계 트레이 근처)에 잠깐 떴다가 TOAST_DURATION 뒤 저절로 사라지는
+    // 알림. 누르면 바로 Mail 을 열고 닫힌다.
+    fn update_toast(&mut self, f: &mut Frame, work: Rect, lang: Language) {
+        let Some((from, subject)) = self.toast.clone() else { return };
+        let Rect { x, y, w, h } = Self::toast_rect();
+        raised(f.r, x, y, w, h);
+        f.r.rect(x + 2.0, y + 2.0, w - 4.0, 16.0, DARK_GRAY);
+        f.r.text(x + 6.0, y + 3.0, t(lang, s::NEW_MAIL), 0.8, WHITE);
+        f.r.text_clipped(x + 6.0, y + 26.0, &from, 0.8, BLACK, w - 12.0);
+        f.r.text_clipped(x + 6.0, y + 46.0, &subject, 0.8, GRAY, w - 12.0);
+
+        if Rect::new(x, y, w, h).contains(f.input.mouse.0, f.input.mouse.1) && f.input.mouse_clicked {
+            self.toast = None;
+            self.toast_timer = 0.0;
+            if let Some(mail_id) = self.fs.find_by_name("Mail") {
+                let op = open(&self.fs, mail_id, &f.settings);
+                self.wm.open(op, Some(mail_id), work);
+            }
+        }
+    }
+
     // 와이파이 아이콘을 누르면 뜨는 연결 정보(상태/SSID/IP) 팝업.
     fn draw_wifi_popup(&self, r: &mut Renderer, lang: Language) {
         let pr = self.wifi_popup_rect();
@@ -1446,7 +1484,17 @@ impl Scene for DesktopScene {
             if self.mail_timer >= MAIL_ARRIVAL_DELAY {
                 self.fs.mail_arrived = true;
                 self.refresh_mail_if_open(&f.settings);
+                // 메일이 도착했다고 우측 하단에 알려준다 — 제목은 지금 일부러 비워둔
+                // 그대로("빈 내용의 메일") 빈 줄로 보인다.
+                self.toast = Some(("system@mail.com".to_string(), String::new()));
+                self.toast_timer = TOAST_DURATION;
                 self.write_save(&f.settings);
+            }
+        }
+        if self.toast_timer > 0.0 {
+            self.toast_timer -= f.dt;
+            if self.toast_timer <= 0.0 {
+                self.toast = None;
             }
         }
 
@@ -1470,6 +1518,9 @@ impl Scene for DesktopScene {
         }
         if self.wifi_info.is_some() {
             self.draw_wifi_popup(f.r, lang);
+        }
+        if !self.erase_confirm {
+            self.update_toast(f, work, lang);
         }
 
         // 파일을 드래그로 옮기는 중이면(바탕화면 아이콘이든 File Explorer 안이든)
@@ -1527,7 +1578,8 @@ impl Scene for DesktopScene {
         let over_overlay = self.erase_confirm
             || (self.start_open && self.start_menu_rect(f.r, lang).contains(m.0, m.1))
             || self.context_menu.is_some_and(|pos| Self::context_menu_rect(f.r, lang, pos).contains(m.0, m.1))
-            || (self.wifi_info.is_some() && self.wifi_popup_rect().contains(m.0, m.1));
+            || (self.wifi_info.is_some() && self.wifi_popup_rect().contains(m.0, m.1))
+            || (self.toast.is_some() && Self::toast_rect().contains(m.0, m.1));
         f.cursor = if over_overlay { CursorKind::Arrow } else { wm_cursor };
         if f.cursor == CursorKind::Arrow {
             let dragging_icon = self.drag.as_ref().is_some_and(|d| d.moved);
@@ -1536,7 +1588,8 @@ impl Scene for DesktopScene {
                 || (self.start_open && self.start_menu_rect(f.r, lang).contains(m.0, m.1))
                 || self.context_menu.is_some_and(|pos| Self::context_menu_rect(f.r, lang, pos).contains(m.0, m.1))
                 || taskbar_buttons.iter().any(|(_, _, r, ..)| r.contains(m.0, m.1))
-                || (!over_window && !consumed && self.icon_hit(m).is_some());
+                || (!over_window && !consumed && self.icon_hit(m).is_some())
+                || (self.toast.is_some() && Self::toast_rect().contains(m.0, m.1));
             if dragging_icon || over_clickable {
                 f.cursor = CursorKind::Hand;
             }
