@@ -257,7 +257,12 @@ impl App for PacmanApp {
         // 시야각 안에 들고, 그 각도가 가리키는 컬럼에서 벽보다 코인이 더 가까울
         // 때만(안 가려졌을 때만) 그린다. 세로 위치는 "그 깊이에서 바닥이 화면의
         // 어디에 보이는지"(위 벽 렌더링의 bottom 과 같은 식)를 그대로 재사용해서
-        // 벽과 어긋나 붕 떠 보이지 않게 한다.
+        // 벽과 어긋나 붕 떠 보이지 않게 한다. 깊이 버퍼가 따로 없는 빌보드라
+        // 코인끼리는 먼저 전부 모아서 먼 것부터(화가 알고리즘) 그려야 한 복도
+        // 안에 여러 개가 늘어서 있을 때 가까운(큰) 코인이 먼(작은) 코인을 제대로
+        // 가린다 — 격자 순서 그대로 그리면 먼 코인이 나중에 그려져 가까운 코인
+        // 위로 삐져나와 보이는 문제가 있었다.
+        let mut visible_coins: Vec<(f32, f32, f32, f32, [f32; 4])> = Vec::new(); // (depth, screen_x, floor_y, radius, color)
         for (y, row) in self.coins.iter().enumerate() {
             for (x, &has_coin) in row.iter().enumerate() {
                 if !has_coin {
@@ -291,15 +296,20 @@ impl App for PacmanApp {
                 let floor_y = area.y + ((area.h + wall_h) / 2.0).clamp(0.0, area.h);
                 let screen_x = area.x + (camera_x + 1.0) / 2.0 * area.w;
                 // 벽 높이(wall_h = 1 월드유닛 / depth * area.h)와 같은 식으로 코인도
-                // "지름 COIN_WORLD_DIAMETER 월드유닛짜리 공"이라고 보고 투영한다 —
-                // 예전엔 반지름을 1.5..14px 로 너무 좁게 clamp 해놔서 가까이 다가가도
-                // 거의 안 커 보였다(원근감이 없어 보이는 원인). 이제 실제로 다가갈수록
-                // 화면을 꽉 채울 만큼 커지고, 멀어질수록 벽처럼 점점 작아진다.
-                let radius = (COIN_WORLD_DIAMETER / 2.0 * area.h / depth).clamp(1.0, area.h * 0.5);
+                // "지름 COIN_WORLD_DIAMETER 월드유닛짜리 공"이라고 보고 투영한다.
+                // 위쪽 clamp 를 너무 좁게 두면(예전 area.h*0.5) 아주 가까이 다가갔을
+                // 때 자라다 말고 그 크기에서 멈춘 것처럼 보인다 — 창 밖으로 자연스럽게
+                // 넘쳐서 window_manager 의 클립(area)에 잘리도록 넉넉히 풀어둔다.
+                let radius = (COIN_WORLD_DIAMETER / 2.0 * area.h / depth).clamp(1.0, area.h * 4.0);
                 let fog = (1.0 - (depth / MAX_DIST).clamp(0.0, 1.0) * 0.75).max(0.18);
                 let color = [COIN_COLOR[0] * fog, COIN_COLOR[1] * fog, COIN_COLOR[2] * fog, 1.0];
-                fill_circle(r, screen_x, floor_y - radius, radius, color);
+                visible_coins.push((depth, screen_x, floor_y, radius, color));
             }
+        }
+        // 먼 것부터(depth 내림차순) 그려서 가까운 코인이 항상 위에 온다.
+        visible_coins.sort_by(|a, b| b.0.total_cmp(&a.0));
+        for (_, screen_x, floor_y, radius, color) in visible_coins {
+            fill_circle(r, screen_x, floor_y - radius, radius, color);
         }
 
         // 상단 HUD — 지금 먹은 코인 / 맵의 전체 코인.
