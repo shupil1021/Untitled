@@ -104,42 +104,16 @@ pub fn generate_maze(rooms: usize, rng: &mut Rng) -> Vec<Vec<bool>> {
     walls
 }
 
-// 빌보드(항상 카메라를 향하는 평면 하나)로 그릴 모양 — 진짜 입체는 아니고
-// "정면에서 본 실루엣"만 원근감 있게 투영한다. 옆에서 보면 납작해 보이는 건
-// 이 엔진(벽 DDA + 평면 스프라이트)의 근본적인 한계다 — 각도에 따라 진짜
-// 다른 면이 보이는 물체(책상/의자를 옆에서 봤을 때 등)가 필요해지면 벽처럼
-// 격자에 다시 박아 넣는(부분 높이 벽 등) 훨씬 큰 확장이 필요하다.
-pub enum BillboardShape {
-    Circle, // 코인처럼 완전히 둥근 물체 — world_width 를 지름으로 쓴다(world_height 무시)
-    Rect,   // 책상/의자처럼 각진 물체 — world_width × world_height 사각형을 그대로 그린다
-}
-
-// 바닥 위(또는 바닥에서 world_base 만큼 띄운 자리)에 놓인 작은 물체 하나.
-// world_width/world_height/world_base 는 전부 칸 크기(=1.0)를 기준으로 한 실제
-// 치수다. render_billboards() 가 벽과 같은 척도로 투영해서 원근감 있게 그린다 —
-// 의자의 등받이처럼 바닥에서 살짝 뜬 부분을 표현하고 싶으면 world_base 를 쓴다.
+// 바닥에 놓인 완전히 둥근 물체(코인 등) 하나 — 항상 카메라를 향하는 평면
+// (빌보드)으로 그린다. world_diameter 는 칸 크기(=1.0)를 기준으로 한 실제
+// 지름이다. 둥근 물체는 어느 각도에서 봐도 실루엣이 원이라 빌보드로 그려도
+// 티가 안 나지만, 책상/의자처럼 각진 물체는 옆에서 보면 납작해 보이는 게
+// 뻔히 드러나서 그런 물체는 대신 Prop3D(진짜 입체, 아래 참고)를 쓴다.
 pub struct Billboard {
     pub x: f32,
     pub y: f32,
-    pub world_width: f32,
-    pub world_height: f32,
-    pub world_base: f32, // 바닥 ~ 이 물체의 밑면까지 띄운 높이 — 0 이면 바닥에 붙어있다
+    pub world_diameter: f32,
     pub color: [f32; 4],
-    pub shape: BillboardShape,
-}
-
-impl Billboard {
-    // 코인처럼 바닥에 붙은 원형 물체 — 지금까지 쓰던 3-필드짜리 생성 코드를
-    // 그대로 대체한다.
-    pub fn coin(x: f32, y: f32, world_diameter: f32, color: [f32; 4]) -> Billboard {
-        Billboard { x, y, world_width: world_diameter, world_height: world_diameter, world_base: 0.0, color, shape: BillboardShape::Circle }
-    }
-
-    // 책상/의자 등받이처럼 각진 물체 — base 는 바닥에서 밑면까지 띄운 높이(의자
-    // 등받이면 좌판 높이만큼, 그 외엔 보통 0.0).
-    pub fn prop(x: f32, y: f32, world_width: f32, world_height: f32, base: f32, color: [f32; 4]) -> Billboard {
-        Billboard { x, y, world_width, world_height, world_base: base, color, shape: BillboardShape::Rect }
-    }
 }
 
 // 그리드 미로 하나 + 그 안을 돌아다니는 플레이어(위치/바라보는 각도) — 벽
@@ -320,14 +294,14 @@ impl Raycaster {
     }
 
     // billboards 를 바닥에 놓인 작은 원으로 그린다. 시야각 안에 들고, 그 각도가
-    // 가리키는 컬럼에서 벽보다 가까울 때만(col_depth — render_walls() 가 돌려준
-    // 값) 그린다. 깊이 버퍼가 따로 없는 빌보드라 먼 것부터(화가 알고리즘) 그려야
-    // 한 복도 안에 여러 개가 늘어서 있을 때 가까운(큰) 것이 먼(작은) 것을
-    // 제대로 가린다.
+    // 가리키는 컬럼에서 (벽이든 render_props() 로 이미 그려둔 물체든) col_depth
+    // 보다 가까울 때만 그린다. 깊이 버퍼가 따로 없는 빌보드라 먼 것부터(화가
+    // 알고리즘) 그려야 한 복도 안에 여러 개가 늘어서 있을 때 가까운(큰) 것이
+    // 먼(작은) 것을 제대로 가린다.
     pub fn render_billboards(&self, r: &mut Renderer, area: Rect, fov: f32, col_depth: &[f32], billboards: &[Billboard]) {
         let num_rays = col_depth.len();
         let half_fov = fov / 2.0;
-        let mut visible: Vec<VisibleBillboard> = Vec::new();
+        let mut visible: Vec<(f32, f32, f32, f32, [f32; 4])> = Vec::new(); // (depth, screen_x, floor_y, radius, color)
         for b in billboards {
             let rel_x = b.x - self.player_x;
             let rel_y = b.y - self.player_y;
@@ -350,49 +324,141 @@ impl Raycaster {
             let col = (((camera_x + 1.0) / 2.0) * num_rays as f32) as usize;
             let col = col.min(num_rays.saturating_sub(1));
             if col_depth.get(col).is_some_and(|&d| depth >= d) {
-                continue; // 벽에 가려짐(폭이 넓은 물체도 중심 컬럼 하나만으로 판정하는 근사치)
+                continue; // 가려짐(폭이 있는 물체도 중심 컬럼 하나만으로 판정하는 근사치)
             }
 
             let wall_h = (area.h / depth).min(area.h * 4.0);
             // 벽 렌더링 쪽 top/bottom 은 r.rect 에 그대로 넘길 y/height 라서 화면
             // 안으로 clamp 가 필요하지만, 여기 floor_y 는 기준점일 뿐이다 — 이것까지
-            // clamp 하면 아주 가까이 다가갔을 때 화면 끝에 고정된 채 크기만 커져서
+            // clamp 하면 아주 가까이 다가갔을 때 화면 끝에 고정된 채 반지름만 커져서
             // 물체가 위로 떠오르는 것처럼 보인다.
             let floor_y = area.y + (area.h + wall_h) / 2.0;
             let screen_x = area.x + (camera_x + 1.0) / 2.0 * area.w;
-            let scale = area.h / depth; // 벽/바닥과 같은 척도 — 이 값을 곱하면 월드 유닛이 화면 픽셀이 된다
-            let screen_w = (b.world_width * scale).clamp(1.0, area.h * 4.0);
-            let screen_h = (b.world_height * scale).clamp(1.0, area.h * 4.0);
-            let bottom_y = floor_y - b.world_base * scale; // world_base 만큼 바닥에서 띄운 밑면 위치
+            let radius = (b.world_diameter / 2.0 * area.h / depth).clamp(1.0, area.h * 4.0);
             let fog = (1.0 - (depth / self.fog_dist).clamp(0.0, 1.0) * 0.75).max(0.18);
             let color = [b.color[0] * fog, b.color[1] * fog, b.color[2] * fog, 1.0];
-            visible.push(VisibleBillboard { depth, screen_x, bottom_y, screen_w, screen_h, color, shape: &b.shape });
+            visible.push((depth, screen_x, floor_y, radius, color));
         }
         // 먼 것부터(depth 내림차순) 그려서 가까운 물체가 항상 위에 온다.
-        visible.sort_by(|a, b| b.depth.total_cmp(&a.depth));
-        for v in visible {
-            match v.shape {
-                BillboardShape::Circle => {
-                    let radius = v.screen_w / 2.0;
-                    fill_circle(r, v.screen_x, v.bottom_y - radius, radius, v.color);
+        visible.sort_by(|a, b| b.0.total_cmp(&a.0));
+        for (_, screen_x, floor_y, radius, color) in visible {
+            fill_circle(r, screen_x, floor_y - radius, radius, color);
+        }
+    }
+
+    // 어디선가 광선이 이 평면(plane_coord)에 부딪히는지 본다 — is_x_plane 이면
+    // x=plane_coord 인 수직 평면(허용 범위는 y ∈ [span_min,span_max]), 아니면
+    // y=plane_coord 인 평면(범위는 x ∈ [span_min,span_max]). Prop3D 의 한 "면"을
+    // cast_ray 의 격자 DDA 대신 단일 평면 교차로 다루는 render_props() 전용
+    // 헬퍼 — 돌려주는 t 는 cast_ray 와 마찬가지로 단위벡터 기준 유클리드 거리다.
+    fn intersect_plane(&self, ray_angle: f32, is_x_plane: bool, plane_coord: f32, span_min: f32, span_max: f32) -> Option<f32> {
+        let (dir_primary, dir_secondary, pos_primary, pos_secondary) = if is_x_plane {
+            (ray_angle.cos(), ray_angle.sin(), self.player_x, self.player_y)
+        } else {
+            (ray_angle.sin(), ray_angle.cos(), self.player_y, self.player_x)
+        };
+        if dir_primary.abs() < 1e-6 {
+            return None;
+        }
+        let t = (plane_coord - pos_primary) / dir_primary;
+        if t <= 0.0 {
+            return None;
+        }
+        let hit_secondary = pos_secondary + dir_secondary * t;
+        if hit_secondary < span_min || hit_secondary > span_max {
+            return None;
+        }
+        Some(t)
+    }
+
+    // props(책상/의자 등 각진 상자)를 진짜 입체로 그린다 — 빌보드처럼 항상
+    // 카메라를 향하는 평면이 아니라, 플레이어 위치를 기준으로 실제로 보이는
+    // 면(동/서/남/북 중 플레이어가 바깥쪽에 있는 면들)만 골라서 벽과 똑같은
+    // 컬럼별 레이 교차 방식으로 그린다 — 그래서 옆으로 돌아가면 실제로 옆면이
+    // 보인다. col_depth 를 직접 갱신해서(그려진 컬럼만) 벽/다른 물체가 그
+    // 컬럼에서 이 물체보다 가까우면 안 그려지고, 이 물체가 그려진 자리는 그
+    // 뒤(render_billboards 등)에서도 올바르게 가려지게 한다 — 그래서 render_walls
+    // 직후, render_billboards 이전에 호출해야 한다.
+    pub fn render_props(&self, r: &mut Renderer, area: Rect, fov: f32, col_depth: &mut [f32], props: &[Prop3D]) {
+        let num_rays = col_depth.len();
+        let col_w = area.w / num_rays as f32;
+        let half_fov = fov / 2.0;
+
+        for p in props {
+            let (min_x, max_x) = (p.center_x - p.width / 2.0, p.center_x + p.width / 2.0);
+            let (min_y, max_y) = (p.center_y - p.depth / 2.0, p.center_y + p.depth / 2.0);
+            let (z0, z1) = (p.base, p.base + p.height);
+
+            // 플레이어가 상자 바깥쪽에 있는 면만 실제로 보인다 — 안에 있으면(그
+            // 축 범위 안이면) 그 방향 두 면 다 안 보인다.
+            let mut faces: Vec<(bool, f32, f32, f32, f32)> = Vec::new(); // (x축 평면?, 평면 좌표, span_min, span_max, 음영)
+            if self.player_x < min_x {
+                faces.push((true, min_x, min_y, max_y, 0.75));
+            }
+            if self.player_x > max_x {
+                faces.push((true, max_x, min_y, max_y, 0.75));
+            }
+            if self.player_y < min_y {
+                faces.push((false, min_y, min_x, max_x, 1.0));
+            }
+            if self.player_y > max_y {
+                faces.push((false, max_y, min_x, max_x, 1.0));
+            }
+            if faces.is_empty() {
+                continue; // 플레이어가 상자 안에 들어와 있다(충돌 처리를 안 했다면) — 그릴 면이 없다
+            }
+
+            for (col, depth_slot) in col_depth.iter_mut().enumerate() {
+                let camera_x = 2.0 * (col as f32 + 0.5) / num_rays as f32 - 1.0;
+                let rel_angle = camera_x * half_fov;
+                let ray_angle = self.player_dir + rel_angle;
+
+                // 이 컬럼에서 여러 면에 동시에 맞을 수도 있다(모서리 근처) — 그중
+                // 가장 가까운 것만 쓴다.
+                let mut nearest: Option<(f32, f32)> = None; // (depth, 음영)
+                for &(is_x_plane, coord, span_min, span_max, shade) in &faces {
+                    if let Some(t) = self.intersect_plane(ray_angle, is_x_plane, coord, span_min, span_max) {
+                        let depth = (t * rel_angle.cos()).max(0.0001);
+                        if nearest.is_none_or(|(d, _)| depth < d) {
+                            nearest = Some((depth, shade));
+                        }
+                    }
                 }
-                BillboardShape::Rect => {
-                    r.rect(v.screen_x - v.screen_w / 2.0, v.bottom_y - v.screen_h, v.screen_w, v.screen_h, v.color);
+                let Some((depth, side_shade)) = nearest else { continue };
+                if depth >= *depth_slot {
+                    continue; // 벽이든 앞서 그려진 다른 물체든 이미 이보다 가까운 게 있다
                 }
+
+                // render_walls() 의 top/bottom 계산과 정확히 같은 식 — z=0.5(눈
+                // 높이) 가 화면 정중앙, z=0(바닥)/z=1(천장) 이 벽 렌더링과 똑같은
+                // 위치에 오도록 z0/z1 을 그대로 대입한다.
+                let y_for_z = |z: f32| area.y + area.h / 2.0 - (z - 0.5) * (area.h / depth);
+                let top = y_for_z(z1).clamp(0.0, area.h);
+                let bottom = y_for_z(z0).clamp(0.0, area.h);
+
+                let fog = (1.0 - (depth / self.fog_dist).clamp(0.0, 1.0) * 0.75).max(0.18);
+                let shade = fog * side_shade;
+                let color = [p.color[0] * shade, p.color[1] * shade, p.color[2] * shade, p.color[3]];
+
+                let x = area.x + col as f32 * col_w;
+                r.rect(x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), color);
+                *depth_slot = depth;
             }
         }
     }
 }
 
-// render_billboards() 내부에서만 쓰는, 화면에 투영까지 끝난 빌보드 하나 — bottom_y
-// 는 "이 물체 밑면"이 화면에서 어디 보이는지(Circle 이면 원 밑점, Rect 면 사각형
-// 아랫변)다.
-struct VisibleBillboard<'a> {
-    depth: f32,
-    screen_x: f32,
-    bottom_y: f32,
-    screen_w: f32,
-    screen_h: f32,
-    color: [f32; 4],
-    shape: &'a BillboardShape,
+// 진짜 입체(축 정렬 상자)로 그리는 물체 — 책상/의자처럼 각져서 옆에서 봤을 때도
+// 실제로 옆면이 보여야 하는 것에 쓴다(둥근 물체는 Billboard 로 충분하다).
+// center_x/center_y 는 바닥 위 발밑 중심, width(x축)/depth(y축)/height 는 전부
+// 칸 크기(=1.0)를 기준으로 한 실제 치수, base 는 바닥에서 밑면까지 띄운 높이
+// (의자 등받이처럼 좌판 위에 얹힌 부분에 쓴다, 그 외엔 보통 0.0).
+pub struct Prop3D {
+    pub center_x: f32,
+    pub center_y: f32,
+    pub width: f32,
+    pub depth: f32,
+    pub height: f32,
+    pub base: f32,
+    pub color: [f32; 4],
 }
