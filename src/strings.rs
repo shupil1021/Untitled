@@ -88,12 +88,6 @@ pub mod video_player {
 }
 
 // apps/pacman.rs — 메일로 받은 게임 다운로드 파일을 열면 뜨는 창(아직 자리표시자).
-pub mod pacman {
-    use super::S;
-    pub const TITLE: S = S { en: "PAC-MAN", ko: "팩맨", ja: "パックマン" };
-    pub const COMING_SOON: S = S { en: "Coming soon...", ko: "준비 중...", ja: "近日公開..." };
-}
-
 // apps/game_installer.rs — 메일 첨부(Game.exe)를 처음 열면 뜨는 설치 마법사.
 // fs.game_installed 가 false 인 동안만 뜨고, 설치가 끝나면 다음부턴 곧장
 // PacmanApp(pacman 모듈)이 열린다.

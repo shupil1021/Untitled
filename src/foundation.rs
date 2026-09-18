@@ -57,6 +57,12 @@ impl GameKind {
     pub fn setup_file_name(self) -> String {
         format!("{} Setup.exe", self.display_name())
     }
+
+    // 설치 마법사가 끝나고 바탕화면에 생기는 아이콘의 실제 파일 이름 — 실행 파일이니
+    // Setup.exe 와 마찬가지로 ".exe" 를 붙인다.
+    pub fn installed_file_name(self) -> String {
+        format!("{}.exe", self.display_name())
+    }
 }
 
 // 일부 fs 노드는 이름 자체가 "이건 특수 노드다"라는 표식으로 쓰인다(전용

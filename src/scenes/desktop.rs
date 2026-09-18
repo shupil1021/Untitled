@@ -1259,16 +1259,10 @@ impl Scene for DesktopScene {
                     // 보이던 문제).
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
-                    // 게임 설치 파일이면 굳이 나중에 더블클릭하지 않아도 다운로드한
-                    // 그 즉시 설치 마법사 창이 뜬다("다운로드 후에 팩맨 라이크 게임을 띄울거야").
-                    if matches!(self.fs.get(id).kind, FileKind::GameSetup(_)) {
-                        let op = open(&self.fs, id, &f.settings);
-                        if self.wm.open(op, Some(id), work) {
-                            self.apply_saved_geometry(id, work);
-                        }
-                    }
                     // 다운로드 직후 그 즉시 저장 — 5초 자동저장을 기다리는 사이 창이
                     // 닫히면 방금 다운로드한 기록이 통째로 사라지는 문제가 있었다.
+                    // (예전엔 게임 설치 파일이면 다운로드 즉시 마법사가 자동으로 열렸는데,
+                    // 다른 파일들처럼 직접 더블클릭해서 열게 바꿨다.)
                     self.write_save(&f.settings);
                 }
                 DeskAction::DeletePermanently(id) => {
@@ -1333,7 +1327,7 @@ impl Scene for DesktopScene {
                 // 만든다(HexTool 때와 같은 요령) — 그 아이콘을 열면 실제 게임이 뜬다.
                 DeskAction::InstallComplete(kind) => {
                     self.fs.mark_game_installed(kind);
-                    self.add_desktop_icon(kind.display_name(), FileKind::GameInstalled(kind));
+                    self.add_desktop_icon(&kind.installed_file_name(), FileKind::GameInstalled(kind));
                     self.write_save(&f.settings);
                 }
                 DeskAction::MarkMailRead(i) => {

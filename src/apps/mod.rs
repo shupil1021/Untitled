@@ -287,7 +287,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
         // 레이아웃이 흐트러지는 걸 막는 편이 화면 하나짜리 아케이드 게임엔 더 자연스럽다.
         &FileKind::GameInstalled(kind) => {
             let app: Box<dyn App> = match kind {
-                GameKind::Pacman => Box::new(PacmanApp::new(settings.clone())),
+                GameKind::Pacman => Box::new(PacmanApp::new()),
             };
             Opened { app, title: name, size: (420.0, 360.0), maximized: false, resizable: false, maximizable: false, movable: true, min_size: (420.0, 360.0) }
         }
