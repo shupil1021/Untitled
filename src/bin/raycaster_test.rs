@@ -5,45 +5,102 @@
 //! 쓸 재사용 엔진)만 따로 띄워서 확인하는 가장 작은 테스트 창이다.
 //!
 //! 실제 게임(crackhead.exe)이나 팩맨의 라운드/코인 규칙과는 전혀 무관하다 —
-//! 미로 하나를 생성하고, 바닥 칸 몇 군데에 책상/의자처럼 각진 물체(Prop3D, 진짜
-//! 입체로 그려서 옆에서 보면 실제로 옆면이 보인다)를 놓아본 뒤(의자는 좌판+
-//! 등받이 두 상자), 나머지 바닥 칸에는 원형 마커(Billboard, 항상 카메라를 향하는
-//! 평면)를 깔아 WASD 로 걸어 다니며 벽 충돌/레이캐스팅/입체 물체/빌보드가 서로
-//! 잘 가려지는지 확인한다. `cargo run --bin raycaster_test` 로 띄운다.
+//! 미로가 아니라 사방이 벽으로만 둘러싸인 뻥 뚫린 방 하나를 만들고, 그 바닥에
+//! 책상/의자/상자/책장처럼 서로 다른 크기·모양의 물체(Prop3D, 진짜 입체라 옆에서
+//! 보면 실제로 옆면이 보인다)를 몇 개씩 무작위로 흩어놓은 뒤 WASD 로 걸어 다니며
+//! 벽/물체가 서로 잘 가려지는지 확인한다. `cargo run --bin raycaster_test` 로 띄운다.
 //!
-//! R 키를 누르면 새 미로로 다시 만든다(매번 다른 시드) — 여러 판을 빠르게
-//! 훑어보면서 미로 생성 결과가 괜찮은지 확인할 때 쓴다.
+//! R 키를 누르면 같은 방 안에 물체 배치만 다시 무작위로 뽑는다 — 여러 배치를
+//! 빠르게 훑어보면서 가려짐/충돌이 괜찮은지 확인할 때 쓴다.
 
 use miniquad::*;
 
 use crackhead::gfx::{Rect, Renderer};
-use crackhead::raycaster::{generate_maze, Billboard, Prop3D, Raycaster, Rng};
+use crackhead::raycaster::{Prop3D, Raycaster, Rng};
 use crackhead::scenes::Input;
 
 const WIN_W: f32 = 640.0;
 const WIN_H: f32 = 480.0;
-const MAP_SIZE: usize = 6; // 방 격자 한 변의 방 개수 — pacman.rs 의 3라운드 근처 규모
+// 방 크기(테두리 벽 포함) — 미로가 아니라 안쪽이 전부 뚫린 사각형 하나다.
+const ROOM_W: usize = 16;
+const ROOM_H: usize = 12;
+const ITEM_COUNT: usize = 8; // 방 안에 흩어놓을 물체 개수(의자는 좌판+등받이 2조각이라 실제 Prop3D 수는 더 많다)
+
 const FOV: f32 = std::f32::consts::PI / 3.0;
 const MOVE_SPEED: f32 = 2.4;
 const ROT_SPEED: f32 = 2.6;
 const PLAYER_RADIUS: f32 = 0.2;
-const MARKER_WORLD_DIAMETER: f32 = 0.25;
 
 const CEILING_COLOR: [f32; 4] = [0.10, 0.10, 0.16, 1.0];
 const FLOOR_COLOR: [f32; 4] = [0.16, 0.13, 0.09, 1.0];
 const WALL_BASE_COLOR: [f32; 4] = [0.55, 0.55, 0.62, 1.0];
-const MARKER_COLOR: [f32; 4] = [0.4, 0.85, 0.95, 1.0]; // 코인과 구분되는 하늘색 — 여기선 "먹는" 개념이 없다
 const DESK_COLOR: [f32; 4] = [0.42, 0.27, 0.14, 1.0]; // 짙은 나무색
 const CHAIR_COLOR: [f32; 4] = [0.55, 0.38, 0.2, 1.0]; // 책상보다 살짝 밝은 나무색
+const CRATE_COLOR: [f32; 4] = [0.5, 0.42, 0.3, 1.0]; // 나무 상자
+const SHELF_COLOR: [f32; 4] = [0.28, 0.18, 0.1, 1.0]; // 어두운 원목 책장
 
-// 책상(넓고 낮은 상자) 하나 + 의자(좁고 낮은 좌판 + 그 위에 얹힌 등받이) 하나를
-// 진짜 입체(Prop3D)로 만든다 — base 로 등받이를 좌판 높이만큼 띄운다.
-fn furniture_props(desk: (f32, f32), chair: (f32, f32)) -> Vec<Prop3D> {
-    vec![
-        Prop3D { center_x: desk.0, center_y: desk.1, width: 0.9, depth: 0.6, height: 0.4, base: 0.0, color: DESK_COLOR },
-        Prop3D { center_x: chair.0, center_y: chair.1, width: 0.45, depth: 0.45, height: 0.18, base: 0.0, color: CHAIR_COLOR }, // 좌판
-        Prop3D { center_x: chair.0, center_y: chair.1, width: 0.45, depth: 0.08, height: 0.4, base: 0.18, color: CHAIR_COLOR }, // 등받이(좌판 뒤쪽 위에 얹힘)
-    ]
+// 사방이 벽인 한 칸짜리 테두리 + 안쪽은 전부 뚫린 방. generate_maze 처럼 방을
+// 여러 개로 쪼개는 미로가 아니라 "가구를 놓고 걸어 다닐 빈 바닥"이 목적이라
+// 훨씬 단순하다.
+fn generate_open_room(w: usize, h: usize) -> Vec<Vec<bool>> {
+    let mut walls = vec![vec![false; w]; h];
+    walls[0].iter_mut().for_each(|c| *c = true);
+    walls[h - 1].iter_mut().for_each(|c| *c = true);
+    for row in walls.iter_mut() {
+        row[0] = true;
+        row[w - 1] = true;
+    }
+    walls
+}
+
+// 이 테스트에서 굴려볼 가구 종류 — 크기/색이 서로 달라야 "여러 사물"을 놓아본
+// 것답게 눈으로 구분된다. 의자만 좌판+등받이 두 조각이라 Prop3D 를 두 개 낸다.
+enum ItemKind {
+    Desk,
+    Chair,
+    Crate,
+    Shelf,
+}
+
+fn item_props(kind: &ItemKind, x: f32, y: f32) -> Vec<Prop3D> {
+    match kind {
+        ItemKind::Desk => vec![Prop3D { center_x: x, center_y: y, width: 0.9, depth: 0.6, height: 0.4, base: 0.0, color: DESK_COLOR }],
+        ItemKind::Chair => vec![
+            Prop3D { center_x: x, center_y: y, width: 0.45, depth: 0.45, height: 0.18, base: 0.0, color: CHAIR_COLOR }, // 좌판
+            Prop3D { center_x: x, center_y: y, width: 0.45, depth: 0.08, height: 0.4, base: 0.18, color: CHAIR_COLOR }, // 등받이
+        ],
+        ItemKind::Crate => vec![Prop3D { center_x: x, center_y: y, width: 0.5, depth: 0.5, height: 0.5, base: 0.0, color: CRATE_COLOR }],
+        ItemKind::Shelf => vec![Prop3D { center_x: x, center_y: y, width: 0.9, depth: 0.25, height: 0.9, base: 0.0, color: SHELF_COLOR }],
+    }
+}
+
+// 테두리에서 한 칸 띄운 안쪽 바닥 칸들을 섞어서 ITEM_COUNT 곳을 고르고, 매번
+// 무작위 가구 종류를 하나씩 놓는다 — 벽에 바짝 붙어서 절반이 파묻혀 보이지
+// 않게 테두리는 아예 후보에서 뺀다.
+fn scatter_items(rng: &mut Rng) -> Vec<Prop3D> {
+    let mut cells: Vec<(f32, f32)> = Vec::new();
+    for y in 2..ROOM_H - 2 {
+        for x in 2..ROOM_W - 2 {
+            cells.push((x as f32 + 0.5, y as f32 + 0.5));
+        }
+    }
+    // Fisher-Yates
+    for i in (1..cells.len()).rev() {
+        let j = rng.gen_range(i + 1);
+        cells.swap(i, j);
+    }
+
+    let mut props = Vec::new();
+    for &(x, y) in cells.iter().take(ITEM_COUNT) {
+        let kind = match rng.gen_range(4) {
+            0 => ItemKind::Desk,
+            1 => ItemKind::Chair,
+            2 => ItemKind::Crate,
+            _ => ItemKind::Shelf,
+        };
+        props.extend(item_props(&kind, x, y));
+    }
+    props
 }
 
 struct Stage {
@@ -51,8 +108,7 @@ struct Stage {
     renderer: Renderer,
     rng: Rng,
     rc: Raycaster,
-    furniture: Vec<Prop3D>,  // 책상/의자 — 진짜 입체(render_props)
-    markers: Vec<Billboard>, // 나머지 바닥 칸의 원형 마커 — 평면 빌보드(render_billboards)
+    props: Vec<Prop3D>,
     input: Input,
     last_time: f64,
 }
@@ -62,40 +118,12 @@ impl Stage {
         let mut ctx: Box<dyn RenderingBackend> = window::new_rendering_backend();
         let renderer = Renderer::new(ctx.as_mut());
         let mut rng = Rng::new((date::now() * 1e6) as u64);
-        let (rc, furniture, markers) = new_maze(&mut rng);
-        Stage { ctx, renderer, rng, rc, furniture, markers, input: Input::default(), last_time: date::now() }
+        let walls = generate_open_room(ROOM_W, ROOM_H);
+        let mut rc = Raycaster::new(walls, ROOM_W as f32 / 2.0, ROOM_H as f32 - 1.5);
+        rc.player_dir = -std::f32::consts::PI / 2.0; // 방 남쪽 벽 앞에서 시작해서 북쪽(방 안쪽)을 보게
+        let props = scatter_items(&mut rng);
+        Stage { ctx, renderer, rng, rc, props, input: Input::default(), last_time: date::now() }
     }
-}
-
-// 새 미로를 만들고 시작 칸에서 뚫려있는 방향을 보게 한다(pacman.rs::start_round
-// 와 같은 요령) — 그리고 시작 칸을 뺀 바닥 칸 중 처음 둘은 책상/의자 자리로,
-// 나머지는 전부 원형 마커 자리로 쓴다(마커 자체는 pacman.rs 의 코인과 달리
-// "먹으면 사라지는" 로직이 없다, 그냥 빌보드가 잘 그려지는지만 본다).
-fn new_maze(rng: &mut Rng) -> (Raycaster, Vec<Prop3D>, Vec<Billboard>) {
-    let start = (1usize, 1usize);
-    let walls = generate_maze(MAP_SIZE, rng);
-
-    let mut floor_cells: Vec<(f32, f32)> = Vec::new();
-    for (y, row) in walls.iter().enumerate() {
-        for (x, &is_wall) in row.iter().enumerate() {
-            if !is_wall && (x, y) != start {
-                floor_cells.push((x as f32 + 0.5, y as f32 + 0.5));
-            }
-        }
-    }
-    let furniture = match (floor_cells.first(), floor_cells.get(1)) {
-        (Some(&desk), Some(&chair)) => furniture_props(desk, chair),
-        _ => Vec::new(), // 맵이 너무 작아 바닥 칸이 둘도 안 되면(map_size 1 등) 그냥 생략
-    };
-    let markers: Vec<Billboard> = floor_cells
-        .iter()
-        .skip(2)
-        .map(|&(x, y)| Billboard { x, y, world_diameter: MARKER_WORLD_DIAMETER, color: MARKER_COLOR })
-        .collect();
-
-    let mut rc = Raycaster::new(walls, start.0 as f32 + 0.5, start.1 as f32 + 0.5);
-    rc.player_dir = rc.face_open_direction(start);
-    (rc, furniture, markers)
 }
 
 impl EventHandler for Stage {
@@ -107,10 +135,7 @@ impl EventHandler for Stage {
         self.last_time = now;
 
         if self.input.pressed(KeyCode::R) {
-            let (rc, furniture, markers) = new_maze(&mut self.rng);
-            self.rc = rc;
-            self.furniture = furniture;
-            self.markers = markers;
+            self.props = scatter_items(&mut self.rng);
         }
         self.rc.apply_wasd(
             self.input.is_down(KeyCode::W),
@@ -126,14 +151,10 @@ impl EventHandler for Stage {
         self.renderer.begin(WIN_W, WIN_H);
         let area = Rect::new(0.0, 0.0, WIN_W, WIN_H);
         let mut col_depth = self.rc.render_walls(&mut self.renderer, area, FOV, CEILING_COLOR, FLOOR_COLOR, WALL_BASE_COLOR);
-        // render_props() 가 그린 컬럼만큼 col_depth 를 직접 갱신하므로, 그 뒤에
-        // 부르는 render_billboards() 는 벽이든 책상/의자든 구분 없이 "이 컬럼에서
-        // 가장 가까운 것"을 기준으로 가려짐을 판정한다.
-        self.rc.render_props(&mut self.renderer, area, FOV, &mut col_depth, &self.furniture);
-        self.rc.render_billboards(&mut self.renderer, area, FOV, &col_depth, &self.markers);
+        self.rc.render_props(&mut self.renderer, area, FOV, &mut col_depth, &self.props);
 
         self.renderer.rect(0.0, 0.0, WIN_W, 18.0, [0.0, 0.0, 0.0, 0.55]);
-        self.renderer.text(6.0, 3.0, "raycaster.rs test - WASD move, R = new maze, Esc = quit", 0.7, [1.0, 1.0, 1.0, 1.0]);
+        self.renderer.text(6.0, 3.0, "raycaster.rs test - WASD move, R = reshuffle items, Esc = quit", 0.7, [1.0, 1.0, 1.0, 1.0]);
 
         self.ctx.begin_default_pass(PassAction::clear_color(0.0, 0.0, 0.0, 1.0));
         self.renderer.flush(self.ctx.as_mut());
