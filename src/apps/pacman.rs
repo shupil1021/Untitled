@@ -229,7 +229,26 @@ impl PacmanApp {
         self.fog_dist = self.walls.len() as f32 * 1.5;
         self.player_x = 1.5;
         self.player_y = 1.5;
-        self.player_dir = 0.0;
+        self.player_dir = self.start_facing_dir(start);
+    }
+
+    // 시작 칸에서 실제로 뚫려있는(벽이 아닌) 방향을 찾아 그쪽을 보도록 각도를
+    // 정한다 — 예전엔 무조건 동쪽(0.0)을 보고 시작했는데, 미로 생성 결과 시작
+    // 칸의 동쪽이 벽인 경우도 흔해서(특히 랜덤 Prim 으로 바꾼 뒤로 방 (0,0) 은
+    // 동쪽/남쪽 둘 중 하나만 뚫려 있을 수도 있다) 그럴 때마다 벽을 마주보고
+    // 시작하는 문제가 있었다. 동/남/서/북 순서로 뚫린 방향을 찾아 그쪽을 보게
+    // 한다(전부 막혀있으면 — map_size 1처럼 방이 하나뿐인 극단적인 경우 —
+    // 그냥 동쪽을 기본값으로 쓴다, 어차피 움직일 데가 없다).
+    fn start_facing_dir(&self, start: (usize, usize)) -> f32 {
+        let (sx, sy) = (start.0 as f32, start.1 as f32);
+        const CANDIDATES: [f32; 4] = [0.0, PI / 2.0, PI, -PI / 2.0]; // 동, 남, 서, 북
+        for &dir in &CANDIDATES {
+            let (dx, dy) = (dir.cos().round(), dir.sin().round());
+            if !self.is_wall(sx + dx, sy + dy) {
+                return dir;
+            }
+        }
+        0.0
     }
 
     // 맵 밖이거나 벽이면 true(레이캐스팅/충돌 판정 둘 다 이 하나로 처리 — 밖은
