@@ -293,7 +293,15 @@ impl App for PacmanApp {
                 }
 
                 let wall_h = (area.h / depth).min(area.h * 4.0);
-                let floor_y = area.y + ((area.h + wall_h) / 2.0).clamp(0.0, area.h);
+                // 벽 렌더링 쪽 top/bottom 은 r.rect 에 그대로 넘길 y/height 라서 화면
+                // 안으로 clamp 가 필요하지만, 여기 floor_y 는 원 중심을 잡는 기준점일
+                // 뿐이다 — 이것까지 화면 아래 끝으로 clamp 해버리면, 아주 가까이
+                // 다가가서 실제 바닥 투영 위치가 화면보다 한참 아래여야 할 때도 억지로
+                // 화면 끝에 고정된 채 반지름만 커져서(원의 아래쪽은 그대로, 위쪽만
+                // 계속 자라며) 코인이 위로 떠오르는 것처럼 보였다. clamp 없이 그대로
+                // 두면 바닥 투영점이 화면 아래로 자연스럽게 내려가고, 원도 같이
+                // 내려가면서 아래쪽이 창 클립에 잘려 나가 훨씬 자연스럽다.
+                let floor_y = area.y + (area.h + wall_h) / 2.0;
                 let screen_x = area.x + (camera_x + 1.0) / 2.0 * area.w;
                 // 벽 높이(wall_h = 1 월드유닛 / depth * area.h)와 같은 식으로 코인도
                 // "지름 COIN_WORLD_DIAMETER 월드유닛짜리 공"이라고 보고 투영한다.
