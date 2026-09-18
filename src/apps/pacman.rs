@@ -11,8 +11,7 @@
 //! 미로는 1~4라운드는 매번 재귀 백트래커(randomized DFS)로 새로 생성하고(ROOMS×
 //! ROOMS 개의 방을 완전미로 — 루프 없이 전부 연결된 트리 — 로 파서 (2×ROOMS+1)
 //! 크기 격자에 옮겨 담는다), 5라운드만 고정 시드로 생성해 항상 같은 미로가
-//! 나오게 한다. 코인은 바닥 칸(시작 칸 제외) 중 절반쯤을 무작위로 섞어서
-//! (Fisher–Yates) 2칸에 1개꼴로 골라 놓는다 — 바닥 칸 전부에 코인이 있는 건 아니다.
+//! 나오게 한다. 코인은 시작 칸을 뺀 바닥 칸 전부에 놓는다.
 //!
 //! 렌더링은 컬럼(화면 x 좌표)마다 광선 하나씩 DDA(Digital Differential Analysis)로
 //! 쏴서 가장 가까운 벽까지 거리를 구하고, 그 거리에 반비례하는 높이의 세로띠를
@@ -30,9 +29,10 @@ use super::{App, AppAction, WinInput};
 // 라운드별 맵 크기 — 재귀 백트래커가 만들 "방" 격자의 한 변 길이(방 개수)다.
 // 실제 미로 격자 크기는 (2*map_size+1) — 방 사이사이에 벽을 끼워 넣는 표준적인
 // 미로-생성 표현이라, 방이 N개면 격자는 2N+1칸이 된다. map_size 는 1~14 사이로
-// 쓴다(요청받은 범위). 코인 개수는 더 이상 라운드별로 따로 정하지 않고, 그
-// 라운드 맵의 바닥 칸 수에서 2칸당 1개꼴로 자동으로 정해진다(place_coins 참고).
-const ROUND_MAP_SIZES: [usize; 5] = [2, 4, 5, 6, 14];
+// 쓴다(요청받은 범위). 코인은 라운드별 목표 개수를 따로 정하지 않고 그 라운드
+// 맵의 바닥 칸 전부에 놓는다(place_coins 참고) — 그래서 실제 coins_total 은
+// 맵 크기에 따라 자연히 정해진다.
+const ROUND_MAP_SIZES: [usize; 5] = [4, 5, 7, 9, 14];
 // 5라운드(마지막, 인덱스 4)만 매번 같은 미로가 나오도록 고정 시드를 쓴다 —
 // 나머지 1~4라운드는 PacmanApp 이 들고 있는 rng(시간 기반 시드)를 그대로 써서
 // 플레이할 때마다 다르게 나온다.
@@ -72,13 +72,6 @@ impl Rng {
         } else {
             self.next_u32() as usize % n
         }
-    }
-}
-
-fn shuffle<T>(items: &mut [T], rng: &mut Rng) {
-    for i in (1..items.len()).rev() {
-        let j = rng.gen_range(i + 1);
-        items.swap(i, j);
     }
 }
 
@@ -127,9 +120,9 @@ fn generate_maze(rooms: usize, rng: &mut Rng) -> Vec<Vec<bool>> {
     walls
 }
 
-// 시작 칸을 뺀 바닥 칸 중 절반(2칸에 1개꼴)을 무작위로 골라 코인을 놓는다.
-// 실제로 놓인 개수(=이 라운드의 coins_total)도 같이 돌려준다.
-fn place_coins(walls: &[Vec<bool>], start: (usize, usize), rng: &mut Rng) -> (Vec<Vec<bool>>, usize) {
+// 시작 칸을 뺀 바닥 칸 전부에 코인을 놓는다. 실제로 놓인 개수(=이 라운드의
+// coins_total)도 같이 돌려준다.
+fn place_coins(walls: &[Vec<bool>], start: (usize, usize)) -> (Vec<Vec<bool>>, usize) {
     let mut floor_cells: Vec<(usize, usize)> = Vec::new();
     for (y, row) in walls.iter().enumerate() {
         for (x, &is_wall) in row.iter().enumerate() {
@@ -138,8 +131,6 @@ fn place_coins(walls: &[Vec<bool>], start: (usize, usize), rng: &mut Rng) -> (Ve
             }
         }
     }
-    shuffle(&mut floor_cells, rng);
-    floor_cells.truncate(floor_cells.len() / 2);
 
     let mut coins = vec![vec![false; walls[0].len()]; walls.len()];
     for &(x, y) in &floor_cells {
@@ -199,17 +190,16 @@ impl PacmanApp {
     fn start_round(&mut self, round_idx: usize) {
         let map_size = ROUND_MAP_SIZES[round_idx];
         let start = (1usize, 1usize); // generate_maze 는 항상 방 (0,0) → 격자 (1,1) 에서 시작한다
-        // 마지막 라운드(5라운드)만 매번 같은 미로/코인 배치가 나오도록 고정
-        // 시드를 쓴다 — 그 외 라운드는 self.rng(시간 기반, 이어 쓰는 상태)를 써서
-        // 플레이할 때마다 다르게 나온다.
-        let (coins, placed) = if round_idx == ROUND_MAP_SIZES.len() - 1 {
-            let mut fixed_rng = Rng::new(ROUND5_SEED);
-            self.walls = generate_maze(map_size, &mut fixed_rng);
-            place_coins(&self.walls, start, &mut fixed_rng)
+        // 마지막 라운드(5라운드)만 매번 같은 미로가 나오도록 고정 시드를 쓴다 —
+        // 그 외 라운드는 self.rng(시간 기반, 이어 쓰는 상태)를 써서 플레이할
+        // 때마다 다르게 나온다. 코인은 바닥 칸 전부에 놓으므로(place_coins) 랜덤
+        // 요소가 없다 — 미로 생성에만 rng 가 필요하다.
+        self.walls = if round_idx == ROUND_MAP_SIZES.len() - 1 {
+            generate_maze(map_size, &mut Rng::new(ROUND5_SEED))
         } else {
-            self.walls = generate_maze(map_size, &mut self.rng);
-            place_coins(&self.walls, start, &mut self.rng)
+            generate_maze(map_size, &mut self.rng)
         };
+        let (coins, placed) = place_coins(&self.walls, start);
         self.coins = coins;
         self.coins_total = placed;
         self.coins_collected = 0;
