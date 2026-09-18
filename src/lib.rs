@@ -14,6 +14,7 @@ pub mod director_ipc;
 pub mod foundation;
 pub mod gfx;
 pub mod ime;
+pub mod raycaster;
 pub mod scenes;
 pub mod secrets;
 pub mod strings;

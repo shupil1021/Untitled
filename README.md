@@ -20,6 +20,9 @@ cargo run
   기본 `opt-level=0`이면 영상 프레임 변환 같은 픽셀 루프가 매우 느려서다. 최고 성능이
   필요하면 `cargo run --release`.
 - `assets/movie.mp4`를 교체하면 재빌드 없이 반영된다(어떤 H.264 프로파일이든 재생 가능).
+- `cargo run --bin raycaster_test`로 재사용 1인칭 3D 레이캐스팅 엔진(`raycaster.rs`)만
+  따로 띄워볼 수 있다 — 실제 게임과 무관한 독립 창(자세한 건 "1인칭 3D 레이캐스팅
+  엔진" 절 참고).
 
 ## 기능
 
@@ -97,22 +100,40 @@ cargo run
 - **Credits**, **Official Site**(WebView2를 오프스크린 렌더 + 주기적 캡처로 텍스처화해서
   CRT 파이프라인을 그대로 통과시킨다 — 실제 클릭/스크롤/타이핑 가능), **비밀번호 대화상자**
   (`.lock` 파일용).
-- **팩맨**(`apps/pacman.rs::PacmanApp`, 설치된 `(게임 이름).exe`를 열면 뜬다): 레이캐스팅
-  (Wolfenstein 3D 식 2.5D, DDA)으로 미로를 그리는 1인칭 버전 — 텍스처/유령은 아직 없다.
-  W/S 로 바라보는 방향 기준 앞/뒤 이동, A/D 로 좌우 회전(스트레이프 없음). 창이
-  포커스를 잃으면 키 입력을 아예 안 읽는다.
+- **팩맨**(`apps/pacman.rs::PacmanApp`, 설치된 `(게임 이름).exe`를 열면 뜬다): `raycaster.rs`
+  (아래 참고)로 미로를 그리는 1인칭 버전 — 텍스처/유령은 아직 없다. W/S 로 바라보는
+  방향 기준 앞/뒤 이동, A/D 로 좌우 회전(스트레이프 없음). 창이 포커스를 잃으면 키
+  입력을 아예 안 읽는다.
   - **라운드 5개**(`ROUND_MAP_SIZES` 상수, 맵 크기 4/5/7/9/14): 1~4라운드는 매번
-    랜덤 Prim 알고리즘으로 미로를 새로 생성해서 플레이할 때마다 다르게 나오고,
-    5라운드만 고정 시드(`ROUND5_SEED`)로 생성해 항상 같은 미로가 나온다. 처음엔
-    재귀 백트래커(랜덤 DFS)를 썼는데 길게 뻗은 복도가 되기 쉬워 미로가 다 비슷해
-    보이는 문제가 있었다 — 랜덤 Prim 은 "지금 미로 전체의 어느 가장자리에서든"
-    다음 칸을 파나가서 짧은 막다른 길/급한 방향 전환이 훨씬 많이 나온다
-    (`generate_maze` 주석 참고). `map_size`는 방 격자 한 변의 방 개수(1~14) — 실제
-    격자는 (2×map_size+1) 칸이다. 코인은 시작 칸을 뺀 바닥 칸 전부에 놓는다
-    (`place_coins`) — 그 라운드의 coins_total 은 맵 크기에 따라 자연히 정해진다.
-    시작 방향은 무조건 동쪽이 아니라, 시작 칸에서 실제로 뚫려있는 방향(동→남→서→북
-    순서로 검사)을 찾아 그쪽을 보게 한다(`start_facing_dir`) — 미로 생성 결과
-    시작 칸 동쪽이 벽인 경우도 흔해서, 안 그러면 벽을 마주보고 시작하는 경우가 있었다.
+    `raycaster::generate_maze`(랜덤 Prim)로 미로를 새로 생성해서 플레이할 때마다
+    다르게 나오고, 5라운드만 고정 시드(`ROUND5_SEED`)로 생성해 항상 같은 미로가
+    나온다. `map_size`는 방 격자 한 변의 방 개수(1~14) — 실제 격자는 (2×map_size+1)
+    칸이다. 코인은 시작 칸을 뺀 바닥 칸 전부에 놓는다(`place_coins`) — 그 라운드의
+    coins_total 은 맵 크기에 따라 자연히 정해진다. 시작 방향은 시작 칸에서 실제로
+    뚫려있는 방향(동→남→서→북 순서로 검사, `Raycaster::face_open_direction`)을
+    찾아 그쪽을 보게 한다 — 미로 생성 결과 시작 칸 동쪽이 벽인 경우도 흔해서,
+    안 그러면 벽을 마주보고 시작하는 경우가 있었다.
+
+### 1인칭 3D 레이캐스팅 엔진 (`raycaster.rs`)
+
+팩맨을 만들면서 생긴 "벽 DDA 레이캐스팅 + 충돌 이동 + 미로 생성 + 빌보드(작은
+물체) 렌더링"을 게임 고유 규칙(라운드/코인/HUD)과 분리해 재사용 모듈로 뽑아뒀다 —
+앞으로 미로/복도 구조의 1인칭 3D 미니게임을 더 추가할 때 이 모듈 하나로 엔진
+부분을 공유한다.
+
+- `Raycaster`: 그리드 미로(`walls: Vec<Vec<bool>>`) + 플레이어 위치/각도를 들고,
+  `is_wall`/`try_move`/`apply_wasd`(W/S/A/D 네 방향 bool 을 받아 이동/회전에 그대로
+  반영)/`face_open_direction`/`render_walls`(천장·바닥·벽 세로띠, 컬럼별 깊이를
+  반환)/`render_billboards`(작은 물체를 원근감 있게, 화가 알고리즘으로 서로 가리며
+  그린다) 메서드를 제공한다. 입력을 어디서 읽어오는지(윈도우 매니저 안 앱이든,
+  독립 실행 창이든)는 신경 쓰지 않고 bool 네 개만 받으므로 두 상황 모두에 그대로 쓴다.
+- `generate_maze` (랜덤 Prim 알고리즘): 재귀 백트래커(한 번 뚫은 방향으로 갈 수
+  있는 데까지 쭉 파고들어서 길게 뻗은 복도가 되기 쉽다)보다 짧은 막다른 길/급한
+  방향 전환이 훨씬 많이 나와서 미로가 매판 더 꼬여 보인다.
+- `src/bin/raycaster_test.rs`: 이 엔진만 따로 띄워서 확인하는 가장 작은 테스트
+  창(`cargo run --bin raycaster_test`) — 팩맨의 라운드/코인 규칙 없이 미로 하나를
+  생성하고 바닥 칸마다 마커를 하나씩 놓은 뒤 WASD 로 걸어 다니며 벽 충돌/레이캐스팅
+  /빌보드 가려짐이 제대로 동작하는지만 확인한다. R 키로 새 미로를 다시 생성한다.
   - 코인 칸을 밟으면 즉시 먹고, 그 라운드에 놓인 코인을 전부 먹으면 화면이 검은
     배경 + "Round Clear"로 2초간 바뀌었다가(`ROUND_CLEAR_HOLD`) 다음 라운드로
     넘어간다(5라운드를 깨면 1라운드로 되돌아간다 — "올 클리어" 화면은 아직 없다).
@@ -173,17 +194,20 @@ src/
 ├── ime.rs              # 한/일 IME 조합 타이밍/팝업 위치 우회(Win32 IMM32)
 ├── window_manager.rs   # 창 관리자 (z순서, 드래그, 크기조절, 타이틀바 버튼)
 ├── director_ipc.rs     # director/director_panel 간 JSON IPC (게임은 안 씀)
+├── raycaster.rs        # 재사용 1인칭 3D 레이캐스팅 엔진(DDA/이동/미로 생성/빌보드) — 팩맨이 씀
 ├── apps/               # 파일별 앱 — 새 앱은 파일 하나 + mod.rs 한 줄
 │   ├── mod.rs             # App 트레잇 / AppAction / Opened + open() 파일→앱 매칭
 │   ├── widgets.rs         # 여러 앱이 같이 쓰는 위젯(아이콘 격자/슬라이더/스크롤바)
 │   ├── notepad.rs, video_player.rs, image_viewer.rs, mail.rs, explorer.rs,
-│   │   recycle_bin.rs, password.rs, credits.rs, settings.rs, official_site.rs
+│   │   recycle_bin.rs, password.rs, credits.rs, settings.rs, official_site.rs,
+│   │   game_installer.rs, pacman.rs
 └── scenes/              # 화면 전체를 차지하는 씬 — 새 씬은 파일 하나 + mod.rs 한 줄
     ├── mod.rs              # Scene 트레잇 / Transition / SceneManager / Frame / Input
     ├── lobby.rs, boot.rs, desktop.rs, shutdown.rs, erase.rs, bluescreen.rs
 src/bin/
 ├── director.rs          # 녹화용 게임 화면 창(별도 실행 파일)
-└── director_panel.rs    # 그 옆의 조작 창(별도 실행 파일)
+├── director_panel.rs    # 그 옆의 조작 창(별도 실행 파일)
+└── raycaster_test.rs    # raycaster.rs 만 따로 확인하는 최소 테스트 창(별도 실행 파일)
 ```
 
 의존 방향: `gfx`/`crt`/`foundation`/`video`/`strings`/`secrets`는 서로 독립적인 기반
