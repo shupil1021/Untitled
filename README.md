@@ -64,14 +64,19 @@ cargo run
   하단 상태 표시줄("N Item(s), N Unread").
 - **Inbox**: 새 게임을 시작하면 처음엔 비어있다가, 5초(`MAIL_ARRIVAL_DELAY`, `scenes/
   desktop.rs`) 뒤에 메일이 한 통 자동으로 도착한다. 제목/본문은 지금 일부러 비워뒀고
-  (`Game.exe` 첨부만 걸려있다) — 지금은 "메일 → 다운로드 → 설치 마법사 → 창 띄우기"
-  파이프라인만 만드는 단계라 내용은 다음 기획 확정 때 채운다. 첨부(`Game.exe`)를
-  다운로드하면 그 즉시 창이 뜨는데, 처음 열 때는(`fs.game_installed`가 아직 false)
-  옛 HexTool Setup.exe와 같은 요령의 설치 마법사(`apps/game_installer.rs::
-  GameInstallerApp` — Welcome → Installing(들쭉날쭉한 가짜 진행바) → Finish, 약관
-  페이지는 뺐다)가 뜨고, 진행바가 다 차는 순간 설치 완료로 표시된다. 그 뒤로 같은
-  파일을 다시 열면 마법사 없이 곧장 팩맨류 게임 창(`apps/pacman.rs::PacmanApp`)이
-  뜨는데, 지금은 자리만 표시하는 준비 중 화면이고 실제 게임 로직은 아직 없다.
+  (`(게임 이름) Setup.exe` 첨부만 걸려있다, 예: `Pacman Setup.exe`) — 지금은 "메일 →
+  다운로드 → 설치 마법사 → 바탕화면에 설치" 파이프라인만 만드는 단계라 내용은 다음
+  기획 확정 때 채운다. 첨부를 다운로드하면 그 즉시 창이 뜨는데, 처음 열 때는(그
+  게임이 아직 `fs.installed_games`에 없으면) 옛 HexTool Setup.exe와 같은 요령의
+  설치 마법사(`apps/game_installer.rs::GameInstallerApp` — Welcome →
+  Installing(들쭉날쭉한 가짜 진행바) → Finish, 약관 페이지는 뺐다)가 뜨고, 진행바가
+  다 차는 순간 그 게임을 설치된 것으로 기록하면서 바탕화면에 새 아이콘(예:
+  "Pacman")을 만든다. 그 아이콘을 열면 곧장 실제 게임 창(`apps/pacman.rs::
+  PacmanApp`)이 뜨는데, 지금은 자리만 표시하는 준비 중 화면이고 실제 게임 로직은
+  아직 없다. Setup.exe 자체를 나중에 또 열면(예: Downloads 에 남아있던 첨부를
+  다시 눌러본 경우) 마법사를 다시 태우지 않고 "이미 설치됨" 페이지로 곧장 연다.
+  새 게임을 추가할 땐 `GameKind`에 variant 하나, `apps/mod.rs::open()`의
+  `GameInstalled` 분기에 그 게임 앱을 고르는 한 줄만 더하면 되도록 설계해뒀다.
 - **Write Mail**: To/Subject/Body 실제 텍스트 입력(커서 클릭 이동 포함), Desktop/Downloads
   파일 첨부(다중), Send는 To·Body가 채워져야 활성화. 한글/일본어 IME 조합을 지원(백스페이스로
   조합 중 자모 하나만 지우기 등, `ime.rs` 참고).

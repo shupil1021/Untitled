@@ -1,17 +1,21 @@
-//! 메일로 받은 Game.exe(FileKind::Game)를 처음 열면 뜨는 설치 마법사 — 진짜
-//! 설치할 건 없지만(가짜 설치) 옛날 HexTool Setup.exe 마법사와 같은 느낌으로
-//! Welcome → Installing(들쭉날쭉한 진행바) → Finish 세 페이지만 넘어간다(약관
-//! 페이지는 게임이라 굳이 필요 없어서 뺐다 — HexTool 때보다 단순한 버전).
-//! 진행바가 다 차는 순간 AppAction::InstallComplete(id)를 한 번 돌려주는데,
-//! desktop.rs 가 받아서 fs.game_installed 를 true 로 바꾼다 — 그 뒤로 같은
-//! 파일을 다시 열면 이 마법사 대신 곧장 PacmanApp 이 뜬다(apps/mod.rs::open()).
+//! 메일로 받은 "(게임 이름) Setup.exe"(FileKind::GameSetup)를 열면 뜨는 설치
+//! 마법사 — 진짜 설치할 건 없지만(가짜 설치) 옛날 HexTool Setup.exe 마법사와
+//! 같은 느낌으로 Welcome → Installing(들쭉날쭉한 진행바) → Finish 세 페이지만
+//! 넘어간다(약관 페이지는 게임이라 굳이 필요 없어서 뺐다 — HexTool 때보다 단순한
+//! 버전). 진행바가 다 차는 순간 AppAction::InstallComplete(kind)를 한 번
+//! 돌려주는데, desktop.rs 가 받아서 fs.installed_games 에 추가하고 바탕화면에
+//! 새 아이콘(FileKind::GameInstalled)을 만든다 — 그 아이콘을 열면 실제 게임 앱이
+//! 뜬다(apps/mod.rs::open()). 이미 설치된 게임의 Setup.exe 를 다시 열면(예:
+//! Downloads 에 남아있던 첨부를 또 눌러본 경우) Welcome 부터 다시 태우지 않고
+//! 곧장 AlreadyInstalled 페이지로 연다 — 중복으로 InstallComplete 를 보내
+//! 바탕화면에 아이콘이 두 개 생기는 걸 막는다.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use miniquad::RenderingBackend;
 
-use crate::foundation::{FileId, Language, Settings};
+use crate::foundation::{GameKind, Language, Settings};
 use crate::gfx::{Assets, Color, Rect, Renderer};
 use crate::strings::{common, game_installer as s, t};
 use crate::ui::*;
@@ -86,13 +90,14 @@ fn status_steps(lang: Language) -> [&'static str; 5] {
 }
 
 enum Page {
+    AlreadyInstalled,
     Welcome,
     Installing,
     Finish,
 }
 
 pub struct GameInstallerApp {
-    id: FileId, // 설치가 끝났을 때 AppAction::InstallComplete(id) 로 돌려줄 대상
+    kind: GameKind, // 설치가 끝났을 때 AppAction::InstallComplete(kind) 로 돌려줄 대상
     page: Page,
     elapsed: f32,
     progress: f32,
@@ -103,11 +108,13 @@ pub struct GameInstallerApp {
 }
 
 impl GameInstallerApp {
-    pub(super) fn new(id: FileId, settings: Rc<RefCell<Settings>>) -> GameInstallerApp {
+    // already_installed 면(fs.is_game_installed(kind) 가 이미 true) Welcome 부터
+    // 다시 태우지 않고 바로 AlreadyInstalled 페이지로 연다.
+    pub(super) fn new(kind: GameKind, already_installed: bool, settings: Rc<RefCell<Settings>>) -> GameInstallerApp {
         let mut rng = Rng::new((miniquad::date::now() * 1e6) as u64);
         GameInstallerApp {
-            id,
-            page: Page::Welcome,
+            kind,
+            page: if already_installed { Page::AlreadyInstalled } else { Page::Welcome },
             elapsed: 0.0,
             progress: 0.0,
             finish_hold: 0.0,
@@ -167,6 +174,7 @@ impl App for GameInstallerApp {
         let lang = self.settings.borrow().language;
 
         let page_title = match self.page {
+            Page::AlreadyInstalled => t(lang, s::PAGE_ALREADY_INSTALLED),
             Page::Welcome => t(lang, s::PAGE_WELCOME),
             Page::Installing => t(lang, s::PAGE_INSTALLING),
             Page::Finish => t(lang, s::PAGE_FINISH),
@@ -184,6 +192,16 @@ impl App for GameInstallerApp {
         let mut result = AppAction::None;
 
         match self.page {
+            Page::AlreadyInstalled => {
+                let y = self.draw_paragraph(r, content.x, content.y, content.w, t(lang, s::ALREADY_INSTALLED_MSG), BLACK);
+                self.draw_paragraph(r, content.x, y + 8.0, content.w, t(lang, s::CLICK_FINISH_TO_CLOSE), GRAY);
+
+                // 이미 설치돼 있으므로 InstallComplete 를 또 보내지 않는다(보내면
+                // 바탕화면에 아이콘이 하나 더 생긴다) — 그냥 창만 닫는다.
+                if let NavClick::Next = self.draw_nav_row(r, card, win, t(lang, s::FINISH), false, lang) {
+                    return AppAction::Close;
+                }
+            }
             Page::Welcome => {
                 let y = self.draw_paragraph(r, content.x, content.y, content.w, t(lang, s::WELCOME_MSG), BLACK);
                 self.draw_paragraph(r, content.x, y + 8.0, content.w, t(lang, s::CLICK_INSTALL_OR_CANCEL), GRAY);
@@ -217,7 +235,7 @@ impl App for GameInstallerApp {
                         // 계속 열려있다가(window_manager.rs 가 닫지 않는다) Finish
                         // 버튼을 눌러야 닫힌다.
                         self.sent_complete = true;
-                        result = AppAction::InstallComplete(self.id);
+                        result = AppAction::InstallComplete(self.kind);
                     }
                     self.finish_hold += win.dt;
                     if self.finish_hold >= FINISH_HOLD {

@@ -36,7 +36,7 @@ use std::rc::Rc;
 
 use miniquad::RenderingBackend;
 
-use crate::foundation::{display_name, FileId, FileKind, FileSystem, Settings};
+use crate::foundation::{display_name, FileId, FileKind, FileSystem, GameKind, Settings};
 use crate::gfx::{Assets, Rect, Renderer};
 use crate::scenes::Input;
 use crate::ui::{icon_of, IconType};
@@ -67,7 +67,7 @@ pub enum AppAction {
     EmptyTrash(Vec<FileId>),   // 휴지통의 "Empty Recycle Bin" — 안의 항목들을 전부 영구히 지운다
     MarkMailRead(usize),       // Mail 에서 메시지(인덱스)를 읽었다 — fs.mail_read 에 기록해야 재시작 후에도 유지된다
     Restore(Vec<FileId>),      // 휴지통의 "Restore" — fs.trash_origin 에 기록된 원래 위치로 되돌린다
-    InstallComplete(FileId),   // GameInstallerApp 의 진행바가 다 참 — fs.game_installed 를 true 로
+    InstallComplete(GameKind),   // GameInstallerApp 의 진행바가 다 참 — 이 게임을 fs.installed_games 에 추가하고 바탕화면에 아이콘을 만들어달라는 요청
     // Mail 의 "Write Mail" 탭에서 새 메일을 작성해 보냄 — fs.sent_mail 에 내용째 쌓는다.
     // 첨부는 여러 개를 붙일 수 있어서 Vec(순서대로 붙인 순서).
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
@@ -237,8 +237,9 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
                     SentMailView { to: m.to.clone(), subject: m.subject.clone(), body: m.body.clone(), attachments }
                 })
                 .collect();
+            let game_name = fs.get(fs.mail_game_attachment).name.clone();
             Opened {
-                app: Box::new(MailApp::new(fs.mail_arrived, &fs.mail_read, attachable, sent, fs.mail_game_attachment, settings.clone())),
+                app: Box::new(MailApp::new(fs.mail_arrived, &fs.mail_read, attachable, sent, fs.mail_game_attachment, game_name, settings.clone())),
                 title: name,
                 // Outlook Express/Exchange 참고 레이아웃 — 메뉴바 + 폴더 트리(150) +
                 // 상태바(20)까지 들어가야 해서 기존보다 좌우/위아래로 넉넉해야 한다.
@@ -266,14 +267,14 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (340.0, 260.0),
         },
-        // fs.game_installed 가 false 면(아직 설치 전) 항상 설치 마법사부터 — 마법사
-        // 진행바가 다 차면 desktop.rs 가 AppAction::InstallComplete 를 받아 true 로
-        // 바꾸고, 그 뒤로 같은 파일을 다시 열면 곧장 PacmanApp 이 뜬다. 게임 창은
-        // (다른 말이 없는 한) 크기를 고정한다 — 리사이즈/최대화로 레이아웃이
-        // 흐트러지는 걸 막는 편이 화면 하나짜리 아케이드 게임엔 더 자연스럽다.
-        FileKind::Game if !fs.game_installed => Opened {
-            app: Box::new(GameInstallerApp::new(id, settings.clone())),
-            title: crate::strings::t(lang, crate::strings::game_installer::WINDOW_TITLE).to_string(),
+        // "(게임 이름) Setup.exe" — 열면 항상 설치 마법사가 뜨는데, 이미 설치된
+        // 게임이면(GameInstallerApp 내부에서 곧장 "이미 설치됨" 페이지로) 마법사를
+        // 다시 완주할 필요 없이 바로 그 페이지가 열린다. 진행바가 다 차는 순간
+        // desktop.rs 가 AppAction::InstallComplete 를 받아 fs.installed_games 에
+        // 추가하고 바탕화면에 새 아이콘(FileKind::GameInstalled)을 만든다.
+        &FileKind::GameSetup(kind) => Opened {
+            app: Box::new(GameInstallerApp::new(kind, fs.is_game_installed(kind), settings.clone())),
+            title: name,
             size: (360.0, 220.0),
             maximized: false,
             resizable: false,
@@ -281,16 +282,15 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (360.0, 220.0),
         },
-        FileKind::Game => Opened {
-            app: Box::new(PacmanApp::new(settings.clone())),
-            title: crate::strings::t(lang, crate::strings::pacman::TITLE).to_string(),
-            size: (420.0, 360.0),
-            maximized: false,
-            resizable: false,
-            maximizable: false,
-            movable: true,
-            min_size: (420.0, 360.0),
-        },
+        // 설치 마법사가 끝나고 바탕화면에 새로 생긴 아이콘 — 실제 게임 앱을 연다.
+        // 게임 창은 (다른 말이 없는 한) 크기를 고정한다 — 리사이즈/최대화로
+        // 레이아웃이 흐트러지는 걸 막는 편이 화면 하나짜리 아케이드 게임엔 더 자연스럽다.
+        &FileKind::GameInstalled(kind) => {
+            let app: Box<dyn App> = match kind {
+                GameKind::Pacman => Box::new(PacmanApp::new(settings.clone())),
+            };
+            Opened { app, title: name, size: (420.0, 360.0), maximized: false, resizable: false, maximizable: false, movable: true, min_size: (420.0, 360.0) }
+        }
         FileKind::Deleted => unreachable!("삭제된 파일은 그 무엇에서도 더는 참조되지 않아 열릴 일이 없다"),
     }
 }

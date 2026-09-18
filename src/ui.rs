@@ -440,7 +440,7 @@ pub enum IconType {
     Mail,
     Computer,
     Img,
-    Game, // 메일로 받는 게임 다운로드 파일(FileKind::Game)
+    Game, // 게임 설치 파일/설치된 게임 아이콘(FileKind::GameSetup, FileKind::GameInstalled) — 지금은 종류 구분 없이 같은 아이콘
     Envelope, // Mail 폴더 트리의 Inbox 아이콘
     RecycleEmpty,
     RecycleFull,
@@ -471,7 +471,7 @@ pub fn icon_of(node: &FileNode) -> IconType {
         FileKind::Mail { .. } => IconType::Mail,
         FileKind::Explorer => IconType::Computer,
         FileKind::Img(_) => IconType::Img,
-        FileKind::Game => IconType::Game,
+        FileKind::GameSetup(_) | FileKind::GameInstalled(_) => IconType::Game,
         FileKind::Deleted => IconType::Folder, // 그 무엇에서도 더는 참조 안 되니 실제로 그려질 일이 없다
     }
 }

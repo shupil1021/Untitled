@@ -103,6 +103,10 @@ pub mod game_installer {
     pub const INSTALL: S = S { en: "Install", ko: "설치", ja: "インストール" };
     pub const FINISH: S = S { en: "Finish", ko: "마침", ja: "完了" };
 
+    pub const PAGE_ALREADY_INSTALLED: S = S { en: "Already Installed", ko: "이미 설치됨", ja: "インストール済み" };
+    pub const ALREADY_INSTALLED_MSG: S =
+        S { en: "Game is already installed on this computer.", ko: "이 컴퓨터에는 Game이(가) 이미 설치되어 있습니다.", ja: "このコンピューターにはGameが既にインストールされています。" };
+
     pub const PAGE_WELCOME: S = S { en: "Welcome", ko: "환영합니다", ja: "ようこそ" };
     pub const WELCOME_MSG: S = S {
         en: "This wizard will install Game on your computer.",

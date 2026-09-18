@@ -453,11 +453,16 @@ impl DesktopScene {
         (0, 0) // 격자가 완전히 꽉 찼으면 어쩔 수 없이 겹쳐서라도 첫 칸에 둔다.
     }
 
-    // 새 파일을 바탕화면에 아이콘으로 추가한다 — 지금까지는 바탕화면 아이콘이 전부
-    // 시작할 때 한 번만 고정으로 깔렸는데(fs.desktop 이 이후로 안 바뀜), 나중에
-    // "설치된 프로그램" 처럼 실행 중에 새 아이콘이 생기는 흐름이 생기면 여기에
-    // add_desktop_icon(name, kind) 형태로(fs.add → fs.desktop.push → icon_pos.push,
-    // 아래 add_existing_to_desktop 과 같은 자리 배치 요령) 다시 만들면 된다.
+    // fs 에 새 파일을 만들어 바탕화면에 아이콘으로 추가한다 — 바탕화면 아이콘은
+    // 대부분 시작할 때 한 번만 고정으로 깔리는데(fs.desktop 이 그 뒤로 안 바뀜),
+    // 설치 마법사를 끝내면 "설치된 프로그램" 아이콘이 실행 중에 새로 생겨야 해서
+    // 런타임에 fs.desktop/icon_pos 를 늘리는 경로가 하나 필요하다.
+    fn add_desktop_icon(&mut self, name: &str, kind: FileKind) {
+        let id = self.fs.add(name, kind);
+        self.fs.desktop.push(id);
+        let (fc, fr) = self.first_free_tile();
+        self.icon_pos.push(Self::tile_to_pos(fc, fr));
+    }
 
     // File Explorer 에서 드래그해온 기존 파일(id)을 바탕화면에 놓는다 — Downloads/폴더에서
     // 옮겨오는 경우. drop_at 은 실제로 마우스를 놓은 화면 좌표 — 그 위치에서 가장
@@ -1216,9 +1221,9 @@ impl Scene for DesktopScene {
                     // 보이던 문제).
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
-                    // 게임 다운로드 파일이면 굳이 나중에 더블클릭하지 않아도 다운로드한
-                    // 그 즉시 팩맨 창이 뜬다("다운로드 후에 팩맨 라이크 게임을 띄울거야").
-                    if matches!(self.fs.get(id).kind, FileKind::Game) {
+                    // 게임 설치 파일이면 굳이 나중에 더블클릭하지 않아도 다운로드한
+                    // 그 즉시 설치 마법사 창이 뜬다("다운로드 후에 팩맨 라이크 게임을 띄울거야").
+                    if matches!(self.fs.get(id).kind, FileKind::GameSetup(_)) {
                         let op = open(&self.fs, id, &f.settings);
                         if self.wm.open(op, Some(id), work) {
                             self.apply_saved_geometry(id, work);
@@ -1285,11 +1290,12 @@ impl Scene for DesktopScene {
                     self.write_save(&f.settings);
                 }
                 // 설치 마법사 진행바가 다 찬 순간 한 번 온다 — 지금 열려있는 마법사
-                // 창 자체는 그대로 두고(Finish 버튼으로 사용자가 직접 닫는다) 다음에
-                // 이 파일을 다시 열 때부터 곧장 PacmanApp 이 뜨도록 플래그만 켠다.
-                // (지금은 설치 가능한 파일이 Game 하나뿐이라 어떤 id 인지는 안 따진다.)
-                DeskAction::InstallComplete(_id) => {
-                    self.fs.game_installed = true;
+                // 창 자체는 그대로 두고(Finish 버튼으로 사용자가 직접 닫는다) fs 에
+                // 설치 완료를 기록하고 바탕화면에 "설치된 프로그램" 아이콘을 새로
+                // 만든다(HexTool 때와 같은 요령) — 그 아이콘을 열면 실제 게임이 뜬다.
+                DeskAction::InstallComplete(kind) => {
+                    self.fs.mark_game_installed(kind);
+                    self.add_desktop_icon(kind.display_name(), FileKind::GameInstalled(kind));
                     self.write_save(&f.settings);
                 }
                 DeskAction::MarkMailRead(i) => {

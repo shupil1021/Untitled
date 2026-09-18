@@ -37,13 +37,15 @@ pub struct SentMailView {
 }
 
 // 새 게임을 시작하면 MAIL_ARRIVAL_DELAY 초 뒤에 도착하는 첫(그리고 지금은 유일한)
-// 메일 — 게임 다운로드 파일(FileKind::Game)만 첨부로 걸고 제목/본문은 아직 일부러
-// 비워뒀다("메일 → 다운로드 → 창 띄우기" 파이프라인부터 먼저 만드는 단계라, 실제
-// 안내 문구는 나중에 채운다). arrived 가 false 면(아직 도착 전) 받은편지함이
-// 비어있다 — DesktopScene 이 타이머로 도착시킨다. from/to 는 이메일 주소라
-// 언어와 무관하게 그대로 두고, subject/body 는 지금은 그냥 빈 문자열이라 번역할
-// 것도 없다.
-fn seed_messages(arrived: bool, game_id: FileId) -> Vec<MailMsg> {
+// 메일 — 게임 설치 파일(FileKind::GameSetup)만 첨부로 걸고 제목/본문은 아직
+// 일부러 비워뒀다("메일 → 다운로드 → 설치 마법사" 파이프라인부터 먼저 만드는
+// 단계라, 실제 안내 문구는 나중에 채운다). arrived 가 false 면(아직 도착 전)
+// 받은편지함이 비어있다 — DesktopScene 이 타이머로 도착시킨다. from/to 는
+// 이메일 주소라 언어와 무관하게 그대로 두고, subject/body 는 지금은 그냥 빈
+// 문자열이라 번역할 것도 없다. game_name 은 apps/mod.rs::open() 이 fs 에서
+// 실제 노드 이름("Pacman Setup.exe")을 그대로 읽어와 넘겨준다 — 여기(mail.rs)는
+// fs 를 직접 들고 있지 않아서 GameKind 로부터 스스로 이름을 다시 만들지 않는다.
+fn seed_messages(arrived: bool, game_id: FileId, game_name: String) -> Vec<MailMsg> {
     if !arrived {
         return Vec::new();
     }
@@ -53,7 +55,7 @@ fn seed_messages(arrived: bool, game_id: FileId) -> Vec<MailMsg> {
         cc: "",
         subject: "",
         body: "",
-        attachment: Some((game_id, crate::foundation::GAME_FILE_NAME.to_string())),
+        attachment: Some((game_id, game_name)),
     }]
 }
 
@@ -225,9 +227,9 @@ pub struct MailApp {
 impl MailApp {
     pub(super) fn new(
         arrived: bool, read_indices: &[usize], attachable: Vec<(FileId, String, IconType)>, sent: Vec<SentMailView>, game_id: FileId,
-        settings: Rc<RefCell<Settings>>,
+        game_name: String, settings: Rc<RefCell<Settings>>,
     ) -> MailApp {
-        let messages = seed_messages(arrived, game_id);
+        let messages = seed_messages(arrived, game_id, game_name);
         let read = (0..messages.len()).map(|i| read_indices.contains(&i)).collect();
         let downloaded = vec![false; messages.len()];
         let downloading = vec![None; messages.len()];
