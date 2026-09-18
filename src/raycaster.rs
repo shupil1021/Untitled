@@ -373,39 +373,58 @@ impl Raycaster {
 
     // props(책상/의자 등 각진 상자)를 진짜 입체로 그린다 — 빌보드처럼 항상
     // 카메라를 향하는 평면이 아니라, 플레이어 위치를 기준으로 실제로 보이는
-    // 면(동/서/남/북 중 플레이어가 바깥쪽에 있는 면들)만 골라서 벽과 똑같은
-    // 컬럼별 레이 교차 방식으로 그린다 — 그래서 옆으로 돌아가면 실제로 옆면이
-    // 보인다. col_depth 를 직접 갱신해서(그려진 컬럼만) 벽/다른 물체가 그
-    // 컬럼에서 이 물체보다 가까우면 안 그려지고, 이 물체가 그려진 자리는 그
-    // 뒤(render_billboards 등)에서도 올바르게 가려지게 한다 — 그래서 render_walls
+    // 면(옆면은 동/서/남/북 중 플레이어가 바깥쪽에 있는 면들, 위/아래 면은
+    // 항상 시도)만 골라서 그린다. 옆면은 벽과 똑같은 컬럼별 레이-평면 교차라
+    // 정확하고, 위/아래 면은 우리 광선(z 없이 xy 평면 위에서만 움직인다)으로는
+    // 절대 못 만나는 수평 평면이라 대신 꼭짓점 4개를 화면에 투영해서 컬럼별로
+    // 채우는 스캔라인(render_horizontal_face)을 쓴다 — 그래서 옆으로 돌아가면
+    // 실제로 옆면이, 눈높이(0.5)보다 낮은 물체는 내려다본 윗면이 보인다(둘 다
+    // 그리기 전엔 그 자리가 그냥 비어 보여서 뒤가 훤히 비쳐 보였다).
+    //
+    // props 는 먼 것부터(화가 알고리즘) 그린다 — 안 그러면 가까운(짧은) 물체를
+    // 먼저 그렸을 때, 그 뒤에 더 큰(키가 큰) 물체가 있어도 "이 컬럼엔 이미
+    // 뭔가 있다"는 col_depth 검사 하나에 걸려 위로 삐져나와 보여야 할 부분까지
+    // 통째로 안 그려지는 문제가 있었다 — 컬럼 하나에 깊이 값이 하나뿐이라
+    // "세로로 일부만 가려진" 상황 자체를 표현 못 해서, 그리는 순서로 바로잡는다.
+    //
+    // col_depth 를 직접 갱신해서(그려진 컬럼만) 벽/다른 물체가 그 컬럼에서 이
+    // 물체보다 가까우면 안 그려지고, 이 물체가 그려진 자리는 그 뒤
+    // (render_billboards 등)에서도 올바르게 가려지게 한다 — 그래서 render_walls
     // 직후, render_billboards 이전에 호출해야 한다.
     pub fn render_props(&self, r: &mut Renderer, area: Rect, fov: f32, col_depth: &mut [f32], props: &[Prop3D]) {
         let num_rays = col_depth.len();
         let col_w = area.w / num_rays as f32;
         let half_fov = fov / 2.0;
 
-        for p in props {
+        let mut order: Vec<&Prop3D> = props.iter().collect();
+        order.sort_by(|a, b| {
+            let da = (a.center_x - self.player_x).hypot(a.center_y - self.player_y);
+            let db = (b.center_x - self.player_x).hypot(b.center_y - self.player_y);
+            db.total_cmp(&da)
+        });
+
+        for p in order {
             let (min_x, max_x) = (p.center_x - p.width / 2.0, p.center_x + p.width / 2.0);
             let (min_y, max_y) = (p.center_y - p.depth / 2.0, p.center_y + p.depth / 2.0);
             let (z0, z1) = (p.base, p.base + p.height);
 
             // 플레이어가 상자 바깥쪽에 있는 면만 실제로 보인다 — 안에 있으면(그
             // 축 범위 안이면) 그 방향 두 면 다 안 보인다.
-            let mut faces: Vec<(bool, f32, f32, f32, f32)> = Vec::new(); // (x축 평면?, 평면 좌표, span_min, span_max, 음영)
+            let mut side_faces: Vec<(bool, f32, f32, f32, f32)> = Vec::new(); // (x축 평면?, 평면 좌표, span_min, span_max, 음영)
             if self.player_x < min_x {
-                faces.push((true, min_x, min_y, max_y, 0.75));
+                side_faces.push((true, min_x, min_y, max_y, 0.75));
             }
             if self.player_x > max_x {
-                faces.push((true, max_x, min_y, max_y, 0.75));
+                side_faces.push((true, max_x, min_y, max_y, 0.75));
             }
             if self.player_y < min_y {
-                faces.push((false, min_y, min_x, max_x, 1.0));
+                side_faces.push((false, min_y, min_x, max_x, 1.0));
             }
             if self.player_y > max_y {
-                faces.push((false, max_y, min_x, max_x, 1.0));
+                side_faces.push((false, max_y, min_x, max_x, 1.0));
             }
-            if faces.is_empty() {
-                continue; // 플레이어가 상자 안에 들어와 있다(충돌 처리를 안 했다면) — 그릴 면이 없다
+            if side_faces.is_empty() {
+                continue; // 플레이어가 상자 안에 들어와 있다(충돌 처리를 안 했다면) — 안팎이 뒤집혀 보일 수 있으니 그냥 생략
             }
 
             for (col, depth_slot) in col_depth.iter_mut().enumerate() {
@@ -416,7 +435,7 @@ impl Raycaster {
                 // 이 컬럼에서 여러 면에 동시에 맞을 수도 있다(모서리 근처) — 그중
                 // 가장 가까운 것만 쓴다.
                 let mut nearest: Option<(f32, f32)> = None; // (depth, 음영)
-                for &(is_x_plane, coord, span_min, span_max, shade) in &faces {
+                for &(is_x_plane, coord, span_min, span_max, shade) in &side_faces {
                     if let Some(t) = self.intersect_plane(ray_angle, is_x_plane, coord, span_min, span_max) {
                         let depth = (t * rel_angle.cos()).max(0.0001);
                         if nearest.is_none_or(|(d, _)| depth < d) {
@@ -429,10 +448,11 @@ impl Raycaster {
                     continue; // 벽이든 앞서 그려진 다른 물체든 이미 이보다 가까운 게 있다
                 }
 
-                // render_walls() 의 top/bottom 계산과 정확히 같은 식 — z=0.5(눈
-                // 높이) 가 화면 정중앙, z=0(바닥)/z=1(천장) 이 벽 렌더링과 똑같은
-                // 위치에 오도록 z0/z1 을 그대로 대입한다.
-                let y_for_z = |z: f32| area.y + area.h / 2.0 - (z - 0.5) * (area.h / depth);
+                // render_walls() 의 top/bottom 계산과 정확히 같은 식(상대좌표로
+                // 구한 뒤 area.y 를 한 번만 더한다) — z=0.5(눈높이)가 화면
+                // 정중앙, z=0(바닥)/z=1(천장)이 벽 렌더링과 똑같은 위치에 오도록
+                // z0/z1 을 그대로 대입한다.
+                let y_for_z = |z: f32| area.h / 2.0 - (z - 0.5) * (area.h / depth);
                 let top = y_for_z(z1).clamp(0.0, area.h);
                 let bottom = y_for_z(z0).clamp(0.0, area.h);
 
@@ -444,6 +464,115 @@ impl Raycaster {
                 r.rect(x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), color);
                 *depth_slot = depth;
             }
+
+            // 위/아래 면 — 광선-평면 교차로는 못 구해서(우리 광선엔 z 가 없다)
+            // 꼭짓점 투영 스캔라인으로 채운다. 둘 다 항상 시도한다 — 눈높이
+            // (0.5)보다 낮은 물체는 위에서 내려다본 윗면이, 눈높이보다 높이 떠
+            // 있는 물체(바닥에서 띄운 등받이 등)는 밑면이 이 방식 하나로 자연히
+            // 나온다(둘 다 보이지 않는 각도에선 그냥 화면 밖으로 투영되거나
+            // 다른 것에 가려져서 그려지지 않는다).
+            let top_color = [p.color[0] * 0.9, p.color[1] * 0.9, p.color[2] * 0.9, p.color[3]];
+            let bottom_color = [p.color[0] * 0.6, p.color[1] * 0.6, p.color[2] * 0.6, p.color[3]];
+            self.render_horizontal_face(r, area, fov, col_w, col_depth, min_x, max_x, min_y, max_y, z1, top_color);
+            self.render_horizontal_face(r, area, fov, col_w, col_depth, min_x, max_x, min_y, max_y, z0, bottom_color);
+        }
+    }
+
+    // 플레이어 기준 각도/거리로 world 좌표 한 점을 화면 좌표로 투영한다 —
+    // render_billboards 가 쓰는 것과 같은 공식이지만, 여기서는 임의의 z(높이)
+    // 까지 받아서 위/아래 면의 꼭짓점 투영에 쓴다. 카메라 뒤에 있으면 None.
+    fn project_point(&self, area: Rect, fov: f32, wx: f32, wy: f32, wz: f32) -> Option<(f32, f32, f32)> {
+        let rel_x = wx - self.player_x;
+        let rel_y = wy - self.player_y;
+        let dist = rel_x.hypot(rel_y);
+        if dist < 1e-4 {
+            return None;
+        }
+        let mut rel_angle = rel_y.atan2(rel_x) - self.player_dir;
+        while rel_angle > PI {
+            rel_angle -= 2.0 * PI;
+        }
+        while rel_angle < -PI {
+            rel_angle += 2.0 * PI;
+        }
+        let depth = dist * rel_angle.cos();
+        if depth <= 0.0001 {
+            return None; // 카메라 뒤
+        }
+        let camera_x = rel_angle / (fov / 2.0);
+        let screen_x = area.x + (camera_x + 1.0) / 2.0 * area.w;
+        let screen_y = area.y + area.h / 2.0 - (wz - 0.5) * (area.h / depth);
+        Some((screen_x, screen_y, depth))
+    }
+
+    // 한 변(p0→p1, 둘 다 (화면x, 화면y, 깊이))이 화면 x=x_at 를 지나는 지점의
+    // (화면y, 깊이)를 선형보간으로 구한다 — render_horizontal_face 의 스캔라인
+    // 채우기에 쓰는 보조 함수.
+    fn edge_at_x(p0: (f32, f32, f32), p1: (f32, f32, f32), x_at: f32) -> Option<(f32, f32)> {
+        let (x0, y0, d0) = p0;
+        let (x1, y1, d1) = p1;
+        if !((x0 <= x_at && x_at <= x1) || (x1 <= x_at && x_at <= x0)) {
+            return None;
+        }
+        let t = if (x1 - x0).abs() < 1e-6 { 0.0 } else { (x_at - x0) / (x1 - x0) };
+        Some((y0 + (y1 - y0) * t, d0 + (d1 - d0) * t))
+    }
+
+    // 수평 평면(z=const) 하나 — 상자의 윗면/아랫면 — 을 화면에 채운다. 네
+    // 꼭짓점을 각각 투영한 뒤(project_point), 그 투영이 걸치는 컬럼마다
+    // 사각형의 위/아래 변을 선형보간(edge_at_x)으로 구해 세로띠를 그리는 아주
+    // 단순한 스캔라인 채우기다 — 꼭짓점 하나라도 카메라 바로 뒤로 넘어가면
+    // (아주 가까이 붙어서 보는 드문 경우) 이번 프레임엔 그냥 생략한다.
+    #[allow(clippy::too_many_arguments)]
+    fn render_horizontal_face(
+        &self, r: &mut Renderer, area: Rect, fov: f32, col_w: f32, col_depth: &mut [f32], min_x: f32, max_x: f32, min_y: f32, max_y: f32,
+        z: f32, color: [f32; 4],
+    ) {
+        let corners_world = [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)];
+        let mut proj = [(0.0f32, 0.0f32, 0.0f32); 4];
+        for (i, &(wx, wy)) in corners_world.iter().enumerate() {
+            match self.project_point(area, fov, wx, wy, z) {
+                Some(p) => proj[i] = p,
+                None => return,
+            }
+        }
+
+        let num_rays = col_depth.len();
+        let min_screen_x = proj.iter().map(|p| p.0).fold(f32::INFINITY, f32::min);
+        let max_screen_x = proj.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max);
+        let min_col = (((min_screen_x - area.x) / col_w).floor().max(0.0)) as usize;
+        let max_col = (((max_screen_x - area.x) / col_w).ceil().max(0.0)) as usize;
+        let max_col = max_col.min(num_rays.saturating_sub(1));
+        if min_col > max_col {
+            return;
+        }
+
+        for (col, depth_slot) in col_depth.iter_mut().enumerate().take(max_col + 1).skip(min_col) {
+            let cx = area.x + (col as f32 + 0.5) * col_w;
+            let mut hits: Vec<(f32, f32)> = Vec::new(); // (화면y, 깊이)
+            for i in 0..4 {
+                if let Some(hit) = Self::edge_at_x(proj[i], proj[(i + 1) % 4], cx) {
+                    hits.push(hit);
+                }
+            }
+            if hits.len() < 2 {
+                continue;
+            }
+            hits.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let (y_top, d_top) = hits[0];
+            let (y_bottom, d_bottom) = hits[hits.len() - 1];
+            let depth = ((d_top + d_bottom) / 2.0).max(0.0001);
+            if depth >= *depth_slot {
+                continue;
+            }
+
+            let fog = (1.0 - (depth / self.fog_dist).clamp(0.0, 1.0) * 0.75).max(0.18);
+            let c = [color[0] * fog, color[1] * fog, color[2] * fog, color[3]];
+            let top = y_top.clamp(area.y, area.y + area.h);
+            let bottom = y_bottom.clamp(area.y, area.y + area.h);
+            let x = area.x + col as f32 * col_w;
+            r.rect(x, top, col_w + 0.6, (bottom - top).max(0.0), c);
+            *depth_slot = depth;
         }
     }
 }
