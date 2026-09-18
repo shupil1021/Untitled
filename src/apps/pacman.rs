@@ -189,7 +189,7 @@ impl App for PacmanApp {
         for (y, row) in self.coins.iter().enumerate() {
             for (x, &has_coin) in row.iter().enumerate() {
                 if has_coin {
-                    billboards.push(Billboard { x: x as f32 + 0.5, y: y as f32 + 0.5, world_diameter: COIN_WORLD_DIAMETER, color: COIN_COLOR });
+                    billboards.push(Billboard::coin(x as f32 + 0.5, y as f32 + 0.5, COIN_WORLD_DIAMETER, COIN_COLOR));
                 }
             }
         }

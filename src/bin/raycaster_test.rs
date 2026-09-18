@@ -5,9 +5,16 @@
 //! 쓸 재사용 엔진)만 따로 띄워서 확인하는 가장 작은 테스트 창이다.
 //!
 //! 실제 게임(crackhead.exe)이나 팩맨의 라운드/코인 규칙과는 전혀 무관하다 —
-//! 미로 하나를 생성하고, 바닥 칸마다 작은 회색 구슬(빌보드 렌더링 확인용)을
-//! 하나씩 놓은 뒤, WASD 로 걸어 다니며 벽 충돌/레이캐스팅/빌보드가 제대로
-//! 동작하는지만 본다. `cargo run --bin raycaster_test` 로 띄운다.
+//! 미로 하나를 생성하고, 바닥 칸 몇 군데에 책상/의자처럼 각진 물체(BillboardShape::Rect)
+//! 를 놓아본 뒤(의자는 좌판+등받이 두 조각), 나머지 바닥 칸에는 작은 원형 마커를
+//! 깔아 WASD 로 걸어 다니며 벽 충돌/레이캐스팅/빌보드 가려짐이 제대로 동작하는지
+//! 본다. `cargo run --bin raycaster_test` 로 띄운다.
+//!
+//! ⚠ 책상/의자는 어디까지나 "각진 실루엣의 평면 빌보드"다 — 이 엔진은 벽만
+//! 진짜 입체(DDA)로 그리고 나머지 물체는 전부 카메라를 향하는 평면이라, 정면
+//! 에서는 그럴듯해도 옆으로 돌아가면 그대로 납작하게 보인다. 실제로 옆면이
+//! 따로 보이는 가구가 필요해지면 벽처럼 격자에 부분 높이로 박아 넣는 훨씬 큰
+//! 확장이 있어야 한다(raycaster.rs::BillboardShape 주석 참고).
 //!
 //! R 키를 누르면 새 미로로 다시 만든다(매번 다른 시드) — 여러 판을 빠르게
 //! 훑어보면서 미로 생성 결과가 괜찮은지 확인할 때 쓴다.
@@ -31,12 +38,28 @@ const CEILING_COLOR: [f32; 4] = [0.10, 0.10, 0.16, 1.0];
 const FLOOR_COLOR: [f32; 4] = [0.16, 0.13, 0.09, 1.0];
 const WALL_BASE_COLOR: [f32; 4] = [0.55, 0.55, 0.62, 1.0];
 const MARKER_COLOR: [f32; 4] = [0.4, 0.85, 0.95, 1.0]; // 코인과 구분되는 하늘색 — 여기선 "먹는" 개념이 없다
+const DESK_COLOR: [f32; 4] = [0.42, 0.27, 0.14, 1.0]; // 짙은 나무색
+const CHAIR_COLOR: [f32; 4] = [0.55, 0.38, 0.2, 1.0]; // 책상보다 살짝 밝은 나무색
+
+// 책상(넓고 낮은 상자) 하나 + 의자(좁고 낮은 좌판 + 그 위에 얹힌 등받이) 하나를
+// 만들어 낼 빌보드들 — world_base 로 등받이를 좌판 높이만큼 띄운다.
+fn furniture_billboards(desk: (f32, f32), chair: (f32, f32)) -> Vec<Billboard> {
+    vec![
+        Billboard::prop(desk.0, desk.1, 0.9, 0.4, 0.0, DESK_COLOR),
+        Billboard::prop(chair.0, chair.1, 0.45, 0.18, 0.0, CHAIR_COLOR), // 좌판
+        Billboard::prop(chair.0, chair.1, 0.45, 0.4, 0.18, CHAIR_COLOR), // 등받이(좌판 위에 얹힘)
+    ]
+}
 
 struct Stage {
     ctx: Box<dyn RenderingBackend>,
     renderer: Renderer,
     rng: Rng,
     rc: Raycaster,
+    // 책상/의자(BillboardShape::Rect) + 나머지 바닥 칸의 원형 마커(Circle) 를
+    // 한 목록에 같이 담아둔다 — render_billboards() 한 번 호출로 거리순 가려짐
+    // (가구가 마커를 가리는 경우 포함)까지 전부 처리되게 하려는 것.
+    props: Vec<Billboard>,
     input: Input,
     last_time: f64,
 }
@@ -46,19 +69,36 @@ impl Stage {
         let mut ctx: Box<dyn RenderingBackend> = window::new_rendering_backend();
         let renderer = Renderer::new(ctx.as_mut());
         let mut rng = Rng::new((date::now() * 1e6) as u64);
-        let rc = new_maze(&mut rng);
-        Stage { ctx, renderer, rng, rc, input: Input::default(), last_time: date::now() }
+        let (rc, props) = new_maze(&mut rng);
+        Stage { ctx, renderer, rng, rc, props, input: Input::default(), last_time: date::now() }
     }
 }
 
-// 새 미로를 만들고 시작 칸에서 뚫려있는 방향을 보게 한다 — pacman.rs::start_round
-// 와 같은 요령.
-fn new_maze(rng: &mut Rng) -> Raycaster {
+// 새 미로를 만들고 시작 칸에서 뚫려있는 방향을 보게 한다(pacman.rs::start_round
+// 와 같은 요령) — 그리고 시작 칸을 뺀 바닥 칸 중 처음 둘은 책상/의자 자리로,
+// 나머지는 전부 원형 마커 자리로 쓴다(마커 자체는 pacman.rs 의 코인과 달리
+// "먹으면 사라지는" 로직이 없다, 그냥 빌보드가 잘 그려지는지만 본다).
+fn new_maze(rng: &mut Rng) -> (Raycaster, Vec<Billboard>) {
     let start = (1usize, 1usize);
     let walls = generate_maze(MAP_SIZE, rng);
+
+    let mut floor_cells: Vec<(f32, f32)> = Vec::new();
+    for (y, row) in walls.iter().enumerate() {
+        for (x, &is_wall) in row.iter().enumerate() {
+            if !is_wall && (x, y) != start {
+                floor_cells.push((x as f32 + 0.5, y as f32 + 0.5));
+            }
+        }
+    }
+    let mut props = match (floor_cells.first(), floor_cells.get(1)) {
+        (Some(&desk), Some(&chair)) => furniture_billboards(desk, chair),
+        _ => Vec::new(), // 맵이 너무 작아 바닥 칸이 둘도 안 되면(map_size 1 등) 그냥 생략
+    };
+    props.extend(floor_cells.iter().skip(2).map(|&(x, y)| Billboard::coin(x, y, MARKER_WORLD_DIAMETER, MARKER_COLOR)));
+
     let mut rc = Raycaster::new(walls, start.0 as f32 + 0.5, start.1 as f32 + 0.5);
     rc.player_dir = rc.face_open_direction(start);
-    rc
+    (rc, props)
 }
 
 impl EventHandler for Stage {
@@ -70,7 +110,9 @@ impl EventHandler for Stage {
         self.last_time = now;
 
         if self.input.pressed(KeyCode::R) {
-            self.rc = new_maze(&mut self.rng);
+            let (rc, props) = new_maze(&mut self.rng);
+            self.rc = rc;
+            self.props = props;
         }
         self.rc.apply_wasd(
             self.input.is_down(KeyCode::W),
@@ -87,18 +129,7 @@ impl EventHandler for Stage {
         let area = Rect::new(0.0, 0.0, WIN_W, WIN_H);
         let col_depth = self.rc.render_walls(&mut self.renderer, area, FOV, CEILING_COLOR, FLOOR_COLOR, WALL_BASE_COLOR);
 
-        // 바닥 칸마다 마커 하나 — render_billboards()가 여러 개를 거리순으로
-        // 잘 가리는지, 벽에 가려질 때 제대로 안 그려지는지 눈으로 바로 확인하려는
-        // 용도라 "먹으면 사라지는" 로직은 없다(팩맨의 코인과 달리 계속 남아있다).
-        let mut markers: Vec<Billboard> = Vec::new();
-        for (y, row) in self.rc.walls.iter().enumerate() {
-            for (x, &is_wall) in row.iter().enumerate() {
-                if !is_wall {
-                    markers.push(Billboard { x: x as f32 + 0.5, y: y as f32 + 0.5, world_diameter: MARKER_WORLD_DIAMETER, color: MARKER_COLOR });
-                }
-            }
-        }
-        self.rc.render_billboards(&mut self.renderer, area, FOV, &col_depth, &markers);
+        self.rc.render_billboards(&mut self.renderer, area, FOV, &col_depth, &self.props);
 
         self.renderer.rect(0.0, 0.0, WIN_W, 18.0, [0.0, 0.0, 0.0, 0.55]);
         self.renderer.text(6.0, 3.0, "raycaster.rs test - WASD move, R = new maze, Esc = quit", 0.7, [1.0, 1.0, 1.0, 1.0]);

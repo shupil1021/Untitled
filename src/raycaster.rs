@@ -104,14 +104,42 @@ pub fn generate_maze(rooms: usize, rng: &mut Rng) -> Vec<Vec<bool>> {
     walls
 }
 
-// 바닥에 놓인 작은 물체(코인 등) 하나 — world_diameter 는 칸 크기(=1.0)를
-// 기준으로 한 실제 지름이다. render_billboards() 가 벽과 같은 척도로 투영해서
-// 원근감 있게 그린다.
+// 빌보드(항상 카메라를 향하는 평면 하나)로 그릴 모양 — 진짜 입체는 아니고
+// "정면에서 본 실루엣"만 원근감 있게 투영한다. 옆에서 보면 납작해 보이는 건
+// 이 엔진(벽 DDA + 평면 스프라이트)의 근본적인 한계다 — 각도에 따라 진짜
+// 다른 면이 보이는 물체(책상/의자를 옆에서 봤을 때 등)가 필요해지면 벽처럼
+// 격자에 다시 박아 넣는(부분 높이 벽 등) 훨씬 큰 확장이 필요하다.
+pub enum BillboardShape {
+    Circle, // 코인처럼 완전히 둥근 물체 — world_width 를 지름으로 쓴다(world_height 무시)
+    Rect,   // 책상/의자처럼 각진 물체 — world_width × world_height 사각형을 그대로 그린다
+}
+
+// 바닥 위(또는 바닥에서 world_base 만큼 띄운 자리)에 놓인 작은 물체 하나.
+// world_width/world_height/world_base 는 전부 칸 크기(=1.0)를 기준으로 한 실제
+// 치수다. render_billboards() 가 벽과 같은 척도로 투영해서 원근감 있게 그린다 —
+// 의자의 등받이처럼 바닥에서 살짝 뜬 부분을 표현하고 싶으면 world_base 를 쓴다.
 pub struct Billboard {
     pub x: f32,
     pub y: f32,
-    pub world_diameter: f32,
+    pub world_width: f32,
+    pub world_height: f32,
+    pub world_base: f32, // 바닥 ~ 이 물체의 밑면까지 띄운 높이 — 0 이면 바닥에 붙어있다
     pub color: [f32; 4],
+    pub shape: BillboardShape,
+}
+
+impl Billboard {
+    // 코인처럼 바닥에 붙은 원형 물체 — 지금까지 쓰던 3-필드짜리 생성 코드를
+    // 그대로 대체한다.
+    pub fn coin(x: f32, y: f32, world_diameter: f32, color: [f32; 4]) -> Billboard {
+        Billboard { x, y, world_width: world_diameter, world_height: world_diameter, world_base: 0.0, color, shape: BillboardShape::Circle }
+    }
+
+    // 책상/의자 등받이처럼 각진 물체 — base 는 바닥에서 밑면까지 띄운 높이(의자
+    // 등받이면 좌판 높이만큼, 그 외엔 보통 0.0).
+    pub fn prop(x: f32, y: f32, world_width: f32, world_height: f32, base: f32, color: [f32; 4]) -> Billboard {
+        Billboard { x, y, world_width, world_height, world_base: base, color, shape: BillboardShape::Rect }
+    }
 }
 
 // 그리드 미로 하나 + 그 안을 돌아다니는 플레이어(위치/바라보는 각도) — 벽
@@ -299,7 +327,7 @@ impl Raycaster {
     pub fn render_billboards(&self, r: &mut Renderer, area: Rect, fov: f32, col_depth: &[f32], billboards: &[Billboard]) {
         let num_rays = col_depth.len();
         let half_fov = fov / 2.0;
-        let mut visible: Vec<(f32, f32, f32, f32, [f32; 4])> = Vec::new(); // (depth, screen_x, floor_y, radius, color)
+        let mut visible: Vec<VisibleBillboard> = Vec::new();
         for b in billboards {
             let rel_x = b.x - self.player_x;
             let rel_y = b.y - self.player_y;
@@ -322,25 +350,49 @@ impl Raycaster {
             let col = (((camera_x + 1.0) / 2.0) * num_rays as f32) as usize;
             let col = col.min(num_rays.saturating_sub(1));
             if col_depth.get(col).is_some_and(|&d| depth >= d) {
-                continue; // 벽에 가려짐
+                continue; // 벽에 가려짐(폭이 넓은 물체도 중심 컬럼 하나만으로 판정하는 근사치)
             }
 
             let wall_h = (area.h / depth).min(area.h * 4.0);
             // 벽 렌더링 쪽 top/bottom 은 r.rect 에 그대로 넘길 y/height 라서 화면
-            // 안으로 clamp 가 필요하지만, 여기 floor_y 는 원 중심을 잡는 기준점일
-            // 뿐이다 — 이것까지 clamp 하면 아주 가까이 다가갔을 때 화면 끝에
-            // 고정된 채 반지름만 커져서 물체가 위로 떠오르는 것처럼 보인다.
+            // 안으로 clamp 가 필요하지만, 여기 floor_y 는 기준점일 뿐이다 — 이것까지
+            // clamp 하면 아주 가까이 다가갔을 때 화면 끝에 고정된 채 크기만 커져서
+            // 물체가 위로 떠오르는 것처럼 보인다.
             let floor_y = area.y + (area.h + wall_h) / 2.0;
             let screen_x = area.x + (camera_x + 1.0) / 2.0 * area.w;
-            let radius = (b.world_diameter / 2.0 * area.h / depth).clamp(1.0, area.h * 4.0);
+            let scale = area.h / depth; // 벽/바닥과 같은 척도 — 이 값을 곱하면 월드 유닛이 화면 픽셀이 된다
+            let screen_w = (b.world_width * scale).clamp(1.0, area.h * 4.0);
+            let screen_h = (b.world_height * scale).clamp(1.0, area.h * 4.0);
+            let bottom_y = floor_y - b.world_base * scale; // world_base 만큼 바닥에서 띄운 밑면 위치
             let fog = (1.0 - (depth / self.fog_dist).clamp(0.0, 1.0) * 0.75).max(0.18);
             let color = [b.color[0] * fog, b.color[1] * fog, b.color[2] * fog, 1.0];
-            visible.push((depth, screen_x, floor_y, radius, color));
+            visible.push(VisibleBillboard { depth, screen_x, bottom_y, screen_w, screen_h, color, shape: &b.shape });
         }
         // 먼 것부터(depth 내림차순) 그려서 가까운 물체가 항상 위에 온다.
-        visible.sort_by(|a, b| b.0.total_cmp(&a.0));
-        for (_, screen_x, floor_y, radius, color) in visible {
-            fill_circle(r, screen_x, floor_y - radius, radius, color);
+        visible.sort_by(|a, b| b.depth.total_cmp(&a.depth));
+        for v in visible {
+            match v.shape {
+                BillboardShape::Circle => {
+                    let radius = v.screen_w / 2.0;
+                    fill_circle(r, v.screen_x, v.bottom_y - radius, radius, v.color);
+                }
+                BillboardShape::Rect => {
+                    r.rect(v.screen_x - v.screen_w / 2.0, v.bottom_y - v.screen_h, v.screen_w, v.screen_h, v.color);
+                }
+            }
         }
     }
+}
+
+// render_billboards() 내부에서만 쓰는, 화면에 투영까지 끝난 빌보드 하나 — bottom_y
+// 는 "이 물체 밑면"이 화면에서 어디 보이는지(Circle 이면 원 밑점, Rect 면 사각형
+// 아랫변)다.
+struct VisibleBillboard<'a> {
+    depth: f32,
+    screen_x: f32,
+    bottom_y: f32,
+    screen_w: f32,
+    screen_h: f32,
+    color: [f32; 4],
+    shape: &'a BillboardShape,
 }
