@@ -18,6 +18,7 @@ use std::f32::consts::PI;
 use miniquad::{KeyCode, RenderingBackend};
 
 use crate::gfx::{Assets, Rect, Renderer};
+use crate::ui::fill_circle;
 
 use super::{App, AppAction, WinInput};
 
@@ -132,9 +133,14 @@ impl PacmanApp {
         }
     }
 
-    // 한 컬럼(광선 하나)이 맞는 벽까지의 수직(fisheye 보정된) 거리와, 그 벽이
-    // 동서(수직 격자선)쪽 면인지 남북(수평 격자선)쪽 면인지를 DDA 로 구한다.
-    // side 는 세로띠 음영에 쓴다(같은 벽이라도 면 방향에 따라 살짝 다르게 보이도록).
+    // 한 컬럼(광선 하나)이 맞는 벽까지의 "유클리드" 거리(플레이어 ~ 충돌점 직선
+    // 거리)와, 그 벽이 동서(수직 격자선)쪽 면인지 남북(수평 격자선)쪽 면인지를
+    // DDA 로 구한다. ray_dir 을 (cos, sin) 단위벡터로 만들었기 때문에(정규화된
+    // 벡터) side_dist - delta_dist 는 Lodev 식 카메라-평면 레이캐스터에서처럼
+    // 자동으로 fisheye 가 보정된 "수직 거리"가 아니라 진짜 유클리드 거리로 나온다
+    // — 그래서 호출부(update())가 이 값에 cos(광선각 - 플레이어각)를 곱해 직접
+    // 수직 거리로 보정한다. side 는 세로띠 음영에 쓴다(같은 벽이라도 면 방향에
+    // 따라 살짝 다르게 보이도록).
     fn cast_ray(&self, angle: f32) -> (f32, bool) {
         let ray_dir_x = angle.cos();
         let ray_dir_y = angle.sin();
@@ -167,8 +173,8 @@ impl PacmanApp {
                 side_is_ns = true;
             }
             if self.is_wall(map_x as f32, map_y as f32) {
-                let perp = if side_is_ns { side_dist_y - delta_dist_y } else { side_dist_x - delta_dist_x };
-                return (perp.max(0.0001), side_is_ns);
+                let dist = if side_is_ns { side_dist_y - delta_dist_y } else { side_dist_x - delta_dist_x };
+                return (dist.max(0.0001), side_is_ns);
             }
         }
         (MAX_DIST, side_is_ns) // 벽에 안 부딪히면(맵이 뚫려있을 리는 없지만) 안개 끝까지
@@ -211,31 +217,83 @@ impl App for PacmanApp {
         r.rect(area.x, area.y, area.w, half, CEILING_COLOR);
         r.rect(area.x, area.y + half, area.w, area.h - half, FLOOR_COLOR);
 
-        // 컬럼(화면 가로 1px)마다 광선 하나 — DDA 로 벽까지 거리를 구해 세로띠로 그린다.
+        // 컬럼(화면 가로 1px)마다 광선 하나 — DDA 로 벽까지 거리를 구해 세로띠로
+        // 그린다. 나중에 코인(빌보드)을 그릴 때 "이 컬럼에서 벽보다 코인이 더
+        // 가까운지" 가려짐 판정을 해야 해서, 컬럼별 깊이를 따로 기억해둔다.
         let num_rays = area.w.round().max(1.0) as usize;
         let col_w = area.w / num_rays as f32;
-        for col in 0..num_rays {
+        let half_fov = FOV / 2.0;
+        let mut col_depth = vec![MAX_DIST; num_rays];
+        for (col, depth_slot) in col_depth.iter_mut().enumerate() {
             // -1.0(왼쪽 끝) .. 1.0(오른쪽 끝) — 화면 가운데가 플레이어가 보는 방향.
             let camera_x = 2.0 * (col as f32 + 0.5) / num_rays as f32 - 1.0;
-            let ray_angle = self.player_dir + camera_x * (FOV / 2.0);
-            // cast_ray 가 돌려주는 거리는 DDA 과정에서 이미 카메라 평면에 대한
-            // 수직 거리(perpendicular distance)로 나온다 — side_dist 에서
-            // delta_dist 를 뺀 값 자체가 fisheye 보정까지 겸하는 Lodev 레이캐스터의
-            // 표준 트릭이라, 여기서 각도로 또 한 번 cos 보정을 하면 오히려 가장자리
-            // 벽이 과하게 휘어 보이는 이중보정 버그가 된다.
-            let (perp_dist, side_is_ns) = self.cast_ray(ray_angle);
+            let rel_angle = camera_x * half_fov;
+            let (ray_dist, side_is_ns) = self.cast_ray(self.player_dir + rel_angle);
+            // cast_ray 는 단위벡터 방향으로 쏜 광선의 "진짜" 유클리드 거리를
+            // 돌려준다 — 화면 중앙에서 먼 컬럼일수록 광선이 더 비스듬해서 벽까지
+            // 실제 거리가 더 길게 나오는데, 그 값을 그대로 벽 높이 계산에 쓰면
+            // (화면 중앙 기준으로 봤을 때) 평평한 벽도 가운데가 볼록 튀어나온
+            // 것처럼 휘어 보인다(어안 렌즈 효과). rel_angle 의 코사인을 곱해
+            // 플레이어가 보는 방향 축에 투영한 "수직 거리(depth)"로 바꿔야
+            // 벽이 실제로 평평하게 보인다.
+            let depth = (ray_dist * rel_angle.cos()).max(0.0001);
+            *depth_slot = depth;
 
-            let wall_h = (area.h / perp_dist).min(area.h * 4.0);
+            let wall_h = (area.h / depth).min(area.h * 4.0);
             let top = ((area.h - wall_h) / 2.0).clamp(0.0, area.h);
             let bottom = ((area.h + wall_h) / 2.0).clamp(0.0, area.h);
 
-            let fog = (1.0 - (perp_dist / MAX_DIST).clamp(0.0, 1.0) * 0.75).max(0.18);
+            let fog = (1.0 - (depth / MAX_DIST).clamp(0.0, 1.0) * 0.75).max(0.18);
             let side_shade = if side_is_ns { 0.7 } else { 1.0 };
             let shade = fog * side_shade;
             let color = [0.55 * shade, 0.55 * shade, 0.62 * shade, 1.0];
 
             let x = area.x + col as f32 * col_w;
             r.rect(x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), color);
+        }
+
+        // 코인 — 바닥에 놓인 작은 원(빌보드)으로 그린다. 플레이어 기준 상대각이
+        // 시야각 안에 들고, 그 각도가 가리키는 컬럼에서 벽보다 코인이 더 가까울
+        // 때만(안 가려졌을 때만) 그린다. 세로 위치는 "그 깊이에서 바닥이 화면의
+        // 어디에 보이는지"(위 벽 렌더링의 bottom 과 같은 식)를 그대로 재사용해서
+        // 벽과 어긋나 붕 떠 보이지 않게 한다.
+        for (y, row) in self.coins.iter().enumerate() {
+            for (x, &has_coin) in row.iter().enumerate() {
+                if !has_coin {
+                    continue;
+                }
+                let rel_x = x as f32 + 0.5 - self.player_x;
+                let rel_y = y as f32 + 0.5 - self.player_y;
+                let dist = rel_x.hypot(rel_y);
+                if dist < 0.1 {
+                    continue; // 바로 발밑 — collect_coin_here() 가 이미 처리했어야 함
+                }
+                let mut rel_angle = rel_y.atan2(rel_x) - self.player_dir;
+                while rel_angle > PI {
+                    rel_angle -= 2.0 * PI;
+                }
+                while rel_angle < -PI {
+                    rel_angle += 2.0 * PI;
+                }
+                if rel_angle.abs() >= half_fov {
+                    continue; // 시야 밖
+                }
+                let depth = (dist * rel_angle.cos()).max(0.0001);
+                let camera_x = rel_angle / half_fov;
+                let col = (((camera_x + 1.0) / 2.0) * num_rays as f32) as usize;
+                let col = col.min(num_rays - 1);
+                if depth >= col_depth[col] {
+                    continue; // 벽에 가려짐
+                }
+
+                let wall_h = (area.h / depth).min(area.h * 4.0);
+                let floor_y = area.y + ((area.h + wall_h) / 2.0).clamp(0.0, area.h);
+                let screen_x = area.x + (camera_x + 1.0) / 2.0 * area.w;
+                let radius = (area.h / depth * 0.09).clamp(1.5, 14.0);
+                let fog = (1.0 - (depth / MAX_DIST).clamp(0.0, 1.0) * 0.75).max(0.18);
+                let color = [COIN_COLOR[0] * fog, COIN_COLOR[1] * fog, COIN_COLOR[2] * fog, 1.0];
+                fill_circle(r, screen_x, floor_y - radius, radius, color);
+            }
         }
 
         // 상단 HUD — 지금 먹은 코인 / 맵의 전체 코인.

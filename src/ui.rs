@@ -616,8 +616,9 @@ pub fn draw_spinner(r: &mut Renderer, cx: f32, cy: f32, radius: f32, time: f32) 
     }
 }
 
-// 꽉 찬 원을 가로줄(1px 높이)들로 라스터화해서 그린다.
-fn fill_circle(r: &mut Renderer, cx: f32, cy: f32, radius: f32, color: Color) {
+// 꽉 찬 원을 가로줄(1px 높이)들로 라스터화해서 그린다. pacman.rs 가 코인 빌보드를
+// 그리는 데도 그대로 재사용해서 pub(crate) 로 열어뒀다.
+pub(crate) fn fill_circle(r: &mut Renderer, cx: f32, cy: f32, radius: f32, color: Color) {
     let mut dy = -radius;
     while dy <= radius {
         let hw = (radius * radius - dy * dy).max(0.0).sqrt();
