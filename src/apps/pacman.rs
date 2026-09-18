@@ -8,11 +8,11 @@
 //! false) 키 입력을 아예 안 읽는다 — 다른 창을 조작하다가 실수로 팩맨이 움직이는
 //! 것을 막는다.
 //!
-//! 미로는 라운드마다 재귀 백트래커(randomized DFS)로 새로 생성한다(ROOMS×ROOMS
-//! 개의 방을 완전미로 — 루프 없이 전부 연결된 트리 — 로 파서 (2×ROOMS+1) 크기
-//! 격자에 옮겨 담는다). 그 위에서 바닥 칸 중 시작 칸을 뺀 나머지를 무작위로
-//! 섞어(Fisher–Yates) 라운드별 목표 코인 개수만큼만 골라 코인을 놓는다 — 큰
-//! 맵이라고 바닥 칸 전부에 코인이 있는 건 아니다.
+//! 미로는 1~4라운드는 매번 재귀 백트래커(randomized DFS)로 새로 생성하고(ROOMS×
+//! ROOMS 개의 방을 완전미로 — 루프 없이 전부 연결된 트리 — 로 파서 (2×ROOMS+1)
+//! 크기 격자에 옮겨 담는다), 5라운드만 고정 시드로 생성해 항상 같은 미로가
+//! 나오게 한다. 코인은 바닥 칸(시작 칸 제외) 중 절반쯤을 무작위로 섞어서
+//! (Fisher–Yates) 2칸에 1개꼴로 골라 놓는다 — 바닥 칸 전부에 코인이 있는 건 아니다.
 //!
 //! 렌더링은 컬럼(화면 x 좌표)마다 광선 하나씩 DDA(Digital Differential Analysis)로
 //! 쏴서 가장 가까운 벽까지 거리를 구하고, 그 거리에 반비례하는 높이의 세로띠를
@@ -23,31 +23,20 @@ use std::f32::consts::PI;
 use miniquad::{KeyCode, RenderingBackend};
 
 use crate::gfx::{Assets, Rect, Renderer};
-use crate::ui::fill_circle;
+use crate::ui::{fill_circle, WHITE};
 
 use super::{App, AppAction, WinInput};
 
-// 라운드 하나를 정의하는 값 — map_size 는 재귀 백트래커가 만들 "방" 격자의 한
-// 변 길이(방 개수)다. 실제 미로 격자 크기는 (2*map_size+1) — 방 사이사이에 벽을
-// 끼워 넣는 표준적인 미로-생성 표현이라, 방이 N개면 격자는 2N+1칸이 된다.
-// map_size 는 1~14 사이로 쓴다(요청받은 범위). target_coins 는 그 라운드에
-// 놓을 코인 개수 — 맵이 아무리 커도 바닥 칸 전부를 채우지 않고 이 개수만큼만
-// 무작위로 고른다(바닥 칸이 이보다 적으면 있는 만큼만).
-struct RoundConfig {
-    target_coins: usize,
-    map_size: usize,
-}
-
-// 평균 플레이 타임(1과1/2분~6분)은 지금 코드로 강제하는 값은 아니고, 라운드별
-// 코인 개수/맵 크기를 이 정도 감으로 잡았다는 설계 참고용 숫자라 여기 반영하지
-// 않는다 — 실제로 얼마나 걸리는지는 플레이어 손에 달려있다.
-const ROUNDS: [RoundConfig; 5] = [
-    RoundConfig { target_coins: 15, map_size: 2 },
-    RoundConfig { target_coins: 30, map_size: 4 },
-    RoundConfig { target_coins: 45, map_size: 5 },
-    RoundConfig { target_coins: 60, map_size: 6 },
-    RoundConfig { target_coins: 75, map_size: 14 },
-];
+// 라운드별 맵 크기 — 재귀 백트래커가 만들 "방" 격자의 한 변 길이(방 개수)다.
+// 실제 미로 격자 크기는 (2*map_size+1) — 방 사이사이에 벽을 끼워 넣는 표준적인
+// 미로-생성 표현이라, 방이 N개면 격자는 2N+1칸이 된다. map_size 는 1~14 사이로
+// 쓴다(요청받은 범위). 코인 개수는 더 이상 라운드별로 따로 정하지 않고, 그
+// 라운드 맵의 바닥 칸 수에서 2칸당 1개꼴로 자동으로 정해진다(place_coins 참고).
+const ROUND_MAP_SIZES: [usize; 5] = [2, 4, 5, 6, 14];
+// 5라운드(마지막, 인덱스 4)만 매번 같은 미로가 나오도록 고정 시드를 쓴다 —
+// 나머지 1~4라운드는 PacmanApp 이 들고 있는 rng(시간 기반 시드)를 그대로 써서
+// 플레이할 때마다 다르게 나온다.
+const ROUND5_SEED: u64 = 0x50AC_11A5_FE1D_5EED;
 
 const MOVE_SPEED: f32 = 2.4; // 초당 이동 칸 수
 const ROT_SPEED: f32 = 2.6;  // 초당 회전 라디안
@@ -138,9 +127,9 @@ fn generate_maze(rooms: usize, rng: &mut Rng) -> Vec<Vec<bool>> {
     walls
 }
 
-// 시작 칸을 뺀 바닥 칸 중 target 개(맵이 그보다 작으면 있는 만큼)를 무작위로
-// 골라 코인을 놓는다. 실제로 놓인 개수(=이 라운드의 coins_total)도 같이 돌려준다.
-fn place_coins(walls: &[Vec<bool>], start: (usize, usize), target: usize, rng: &mut Rng) -> (Vec<Vec<bool>>, usize) {
+// 시작 칸을 뺀 바닥 칸 중 절반(2칸에 1개꼴)을 무작위로 골라 코인을 놓는다.
+// 실제로 놓인 개수(=이 라운드의 coins_total)도 같이 돌려준다.
+fn place_coins(walls: &[Vec<bool>], start: (usize, usize), rng: &mut Rng) -> (Vec<Vec<bool>>, usize) {
     let mut floor_cells: Vec<(usize, usize)> = Vec::new();
     for (y, row) in walls.iter().enumerate() {
         for (x, &is_wall) in row.iter().enumerate() {
@@ -150,7 +139,7 @@ fn place_coins(walls: &[Vec<bool>], start: (usize, usize), target: usize, rng: &
         }
     }
     shuffle(&mut floor_cells, rng);
-    floor_cells.truncate(target);
+    floor_cells.truncate(floor_cells.len() / 2);
 
     let mut coins = vec![vec![false; walls[0].len()]; walls.len()];
     for &(x, y) in &floor_cells {
@@ -168,7 +157,7 @@ enum RoundPhase {
 
 pub struct PacmanApp {
     rng: Rng,
-    round: usize, // ROUNDS 인덱스(0부터) — HUD 에는 +1 해서 보여준다
+    round: usize, // ROUND_MAP_SIZES 인덱스(0부터) — HUD 에는 +1 해서 보여준다
     phase: RoundPhase,
     walls: Vec<Vec<bool>>, // walls[y][x] — true 면 벽
     coins: Vec<Vec<bool>>, // coins[y][x] — true 면 아직 안 먹은 코인이 있음
@@ -208,10 +197,19 @@ impl PacmanApp {
     // round_idx 의 미로/코인을 새로 만들고 플레이어를 시작 칸으로 되돌린다 —
     // 게임을 처음 시작할 때도, 라운드를 클리어하고 다음으로 넘어갈 때도 이걸 쓴다.
     fn start_round(&mut self, round_idx: usize) {
-        let cfg = &ROUNDS[round_idx];
-        self.walls = generate_maze(cfg.map_size, &mut self.rng);
+        let map_size = ROUND_MAP_SIZES[round_idx];
         let start = (1usize, 1usize); // generate_maze 는 항상 방 (0,0) → 격자 (1,1) 에서 시작한다
-        let (coins, placed) = place_coins(&self.walls, start, cfg.target_coins, &mut self.rng);
+        // 마지막 라운드(5라운드)만 매번 같은 미로/코인 배치가 나오도록 고정
+        // 시드를 쓴다 — 그 외 라운드는 self.rng(시간 기반, 이어 쓰는 상태)를 써서
+        // 플레이할 때마다 다르게 나온다.
+        let (coins, placed) = if round_idx == ROUND_MAP_SIZES.len() - 1 {
+            let mut fixed_rng = Rng::new(ROUND5_SEED);
+            self.walls = generate_maze(map_size, &mut fixed_rng);
+            place_coins(&self.walls, start, &mut fixed_rng)
+        } else {
+            self.walls = generate_maze(map_size, &mut self.rng);
+            place_coins(&self.walls, start, &mut self.rng)
+        };
         self.coins = coins;
         self.coins_total = placed;
         self.coins_collected = 0;
@@ -313,7 +311,7 @@ impl PacmanApp {
         let title = "Round Clear";
         let scale = 1.6;
         let tw = r.text_width(title, scale);
-        r.text(area.x + (area.w - tw) / 2.0, area.y + area.h / 2.0 - 12.0, title, scale, COIN_COLOR);
+        r.text(area.x + (area.w - tw) / 2.0, area.y + area.h / 2.0 - 12.0, title, scale, WHITE);
     }
 }
 
@@ -330,7 +328,7 @@ impl App for PacmanApp {
             if elapsed >= ROUND_CLEAR_HOLD {
                 // 마지막 라운드를 깼으면 일단 처음 라운드로 되돌아간다 — "올 클리어"
                 // 화면은 아직 없다(다음에 채울 자리).
-                let next = (self.round + 1) % ROUNDS.len();
+                let next = (self.round + 1) % ROUND_MAP_SIZES.len();
                 self.start_round(next);
                 self.phase = RoundPhase::Playing;
             }
@@ -462,7 +460,7 @@ impl App for PacmanApp {
         // 상단 HUD — (라운드)Round (지금 먹은 코인)/(이 라운드 전체 코인).
         let hud = format!("{}Round {}/{}", self.round + 1, self.coins_collected, self.coins_total);
         r.rect(area.x, area.y, area.w, 20.0, [0.0, 0.0, 0.0, 0.55]);
-        r.text(area.x + 8.0, area.y + 4.0, &hud, 0.9, COIN_COLOR);
+        r.text(area.x + 8.0, area.y + 4.0, &hud, 0.9, WHITE);
 
         // 이 라운드의 코인을 다 먹었으면(그리고 애초에 코인이 하나라도 있었으면)
         // 다음 프레임부터 "Round Clear" 화면으로 넘어간다.
