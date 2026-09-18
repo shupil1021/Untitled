@@ -50,6 +50,7 @@ const PLAYER_RADIUS: f32 = 0.2; // 벽에서 이만큼은 떨어져 있도록(�
 const FOV: f32 = PI / 3.0; // 시야각 60도
 const MAX_DIST: f32 = 16.0; // 이보다 먼 벽은 완전히 어둡게(안개) — 13x13 미로 대각선보다 조금 크게
 
+const COIN_WORLD_DIAMETER: f32 = 0.28; // 코인의 실제 월드 크기(칸 크기=1.0 기준) — 벽 투영과 같은 척도로 원근감을 준다
 const COIN_COLOR: [f32; 4] = [0.95, 0.82, 0.15, 1.0]; // 게임 아이콘과 같은 노란색
 const CEILING_COLOR: [f32; 4] = [0.10, 0.10, 0.16, 1.0];
 const FLOOR_COLOR: [f32; 4] = [0.16, 0.13, 0.09, 1.0];
@@ -289,7 +290,12 @@ impl App for PacmanApp {
                 let wall_h = (area.h / depth).min(area.h * 4.0);
                 let floor_y = area.y + ((area.h + wall_h) / 2.0).clamp(0.0, area.h);
                 let screen_x = area.x + (camera_x + 1.0) / 2.0 * area.w;
-                let radius = (area.h / depth * 0.09).clamp(1.5, 14.0);
+                // 벽 높이(wall_h = 1 월드유닛 / depth * area.h)와 같은 식으로 코인도
+                // "지름 COIN_WORLD_DIAMETER 월드유닛짜리 공"이라고 보고 투영한다 —
+                // 예전엔 반지름을 1.5..14px 로 너무 좁게 clamp 해놔서 가까이 다가가도
+                // 거의 안 커 보였다(원근감이 없어 보이는 원인). 이제 실제로 다가갈수록
+                // 화면을 꽉 채울 만큼 커지고, 멀어질수록 벽처럼 점점 작아진다.
+                let radius = (COIN_WORLD_DIAMETER / 2.0 * area.h / depth).clamp(1.0, area.h * 0.5);
                 let fog = (1.0 - (depth / MAX_DIST).clamp(0.0, 1.0) * 0.75).max(0.18);
                 let color = [COIN_COLOR[0] * fog, COIN_COLOR[1] * fog, COIN_COLOR[2] * fog, 1.0];
                 fill_circle(r, screen_x, floor_y - radius, radius, color);
