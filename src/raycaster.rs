@@ -429,7 +429,21 @@ impl Raycaster {
                 continue; // 플레이어가 상자 안에 들어와 있다(충돌 처리를 안 했다면) — 안팎이 뒤집혀 보일 수 있으니 그냥 생략
             }
 
-            for (col, depth_slot) in col_depth.iter_mut().enumerate() {
+            // 이 prop 을 그리기 시작하기 "직전"의 깊이(벽 + 이미 그려진 더 먼
+            // 다른 prop들) 스냅샷 — 옆면/윗면/아랫면 세 패스 모두 가려짐 판정은
+            // 이 스냅샷 하나만 기준으로 한다. 옆면(예: z 0~0.4 인 낮은 앞벽)과
+            // 윗면(그 앞벽 "너머"의, z=0.4 그대로 인 채 더 먼 곳으로 이어지는
+            // 지붕)은 같은 컬럼이라도 화면상 서로 다른(겹치지 않는) 세로 구간을
+            // 차지하는데, 옆면을 먼저 그리며 col_depth 를 갱신해버리면 뒤이어
+            // 계산하는 윗면이 "그 컬럼엔 이미 이 상자 자신이 있다"는 이유로
+            // 통째로 안 그려졌다 — 그래서 위가 뻥 뚫려 보이고, 그 틈으로 원래
+            // col_depth 에 있던 것(벽 등)이 계속 비쳐 보였다. 세 패스 다 이
+            // 스냅샷을 기준으로 독립적으로 판정하고, 실제 col_depth 갱신은 그
+            // 컬럼에서 이 prop 이 그린 것 중 가장 가까운 값으로만 한다 — 그래야
+            // 나중에(더 가까이 정렬된) 다른 prop 들에게는 정확히 가려진다.
+            let base_depth: Vec<f32> = col_depth.to_vec();
+
+            for col in 0..num_rays {
                 let camera_x = 2.0 * (col as f32 + 0.5) / num_rays as f32 - 1.0;
                 let rel_angle = camera_x * half_fov;
                 let ray_angle = self.player_dir + rel_angle;
@@ -446,8 +460,8 @@ impl Raycaster {
                     }
                 }
                 let Some((depth, side_shade)) = nearest else { continue };
-                if depth >= *depth_slot {
-                    continue; // 벽이든 앞서 그려진 다른 물체든 이미 이보다 가까운 게 있다
+                if depth >= base_depth[col] {
+                    continue; // 벽이든 앞서 그려진 다른(더 먼) 물체든 이미 이보다 가까운 게 있다
                 }
 
                 // render_walls() 의 top/bottom 계산과 정확히 같은 식(상대좌표로
@@ -464,19 +478,22 @@ impl Raycaster {
 
                 let x = area.x + col as f32 * col_w;
                 r.rect(x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), color);
-                *depth_slot = depth;
+                if depth < col_depth[col] {
+                    col_depth[col] = depth;
+                }
             }
 
             // 위/아래 면 — 광선-평면 교차로는 못 구해서(우리 광선엔 z 가 없다)
-            // 꼭짓점 투영 스캔라인으로 채운다. 둘 다 항상 시도한다 — 눈높이
-            // (0.5)보다 낮은 물체는 위에서 내려다본 윗면이, 눈높이보다 높이 떠
-            // 있는 물체(바닥에서 띄운 등받이 등)는 밑면이 이 방식 하나로 자연히
-            // 나온다(둘 다 보이지 않는 각도에선 그냥 화면 밖으로 투영되거나
-            // 다른 것에 가려져서 그려지지 않는다).
-            let top_color = [p.color[0] * 0.9, p.color[1] * 0.9, p.color[2] * 0.9, p.color[3]];
-            let bottom_color = [p.color[0] * 0.6, p.color[1] * 0.6, p.color[2] * 0.6, p.color[3]];
-            self.render_horizontal_face(r, area, fov, col_w, col_depth, min_x, max_x, min_y, max_y, z1, top_color);
-            self.render_horizontal_face(r, area, fov, col_w, col_depth, min_x, max_x, min_y, max_y, z0, bottom_color);
+            // 광선이 상자 발자국을 지나는 깊이 구간으로 채운다
+            // (render_horizontal_face 참고). 둘 다 항상 시도한다 — 눈높이(0.5)
+            // 보다 낮은 물체는 위에서 내려다본 윗면이, 눈높이보다 높이 떠 있는
+            // 물체(바닥에서 띄운 등받이 등)는 밑면이 이 방식 하나로 자연히
+            // 나온다. 옆면과 마찬가지로 base_depth 스냅샷으로 판정해서, 방금
+            // 그린 이 prop 자신의 옆면이 위/아랫면을 가로막지 않게 한다.
+            let top_color = [p.color[0], p.color[1], p.color[2], p.color[3]]; // 옆면(최대 1.0)보다 밝게 — 위에서 빛을 더 받는 느낌
+            let bottom_color = [p.color[0] * 0.5, p.color[1] * 0.5, p.color[2] * 0.5, p.color[3]]; // 가장 어둡게
+            self.render_horizontal_face(r, area, fov, col_w, &base_depth, col_depth, min_x, max_x, min_y, max_y, z1, top_color);
+            self.render_horizontal_face(r, area, fov, col_w, &base_depth, col_depth, min_x, max_x, min_y, max_y, z0, bottom_color);
         }
     }
 
@@ -498,13 +515,13 @@ impl Raycaster {
     // 상자 발자국 위를 지나는 동안"이 곧 "그 z 평면이 보이는 동안"과 같다).
     #[allow(clippy::too_many_arguments)]
     fn render_horizontal_face(
-        &self, r: &mut Renderer, area: Rect, fov: f32, col_w: f32, col_depth: &mut [f32], min_x: f32, max_x: f32, min_y: f32, max_y: f32,
-        z: f32, color: [f32; 4],
+        &self, r: &mut Renderer, area: Rect, fov: f32, col_w: f32, base_depth: &[f32], col_depth: &mut [f32], min_x: f32, max_x: f32,
+        min_y: f32, max_y: f32, z: f32, color: [f32; 4],
     ) {
         let num_rays = col_depth.len();
         let half_fov = fov / 2.0;
 
-        for (col, depth_slot) in col_depth.iter_mut().enumerate() {
+        for col in 0..num_rays {
             let camera_x = 2.0 * (col as f32 + 0.5) / num_rays as f32 - 1.0;
             let rel_angle = camera_x * half_fov;
             let ray_angle = self.player_dir + rel_angle;
@@ -538,8 +555,8 @@ impl Raycaster {
             let cos_correction = rel_angle.cos(); // cast_ray 와 같은 fisheye 보정
             let depth_near = (t_near * cos_correction).max(0.0001);
             let depth_far = (t_far * cos_correction).max(0.0001);
-            if depth_near >= *depth_slot {
-                continue; // 가까운 끝부터 이미 벽/다른 물체에 가려짐
+            if depth_near >= base_depth[col] {
+                continue; // 벽이든 앞서 그려진 다른(더 먼) 물체든 이미 이보다 가까운 게 있다
             }
 
             let y_for_z = |depth: f32| area.h / 2.0 - (z - 0.5) * (area.h / depth);
@@ -552,7 +569,9 @@ impl Raycaster {
             let c = [color[0] * fog, color[1] * fog, color[2] * fog, color[3]];
             let x = area.x + col as f32 * col_w;
             r.rect(x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), c);
-            *depth_slot = depth_near;
+            if depth_near < col_depth[col] {
+                col_depth[col] = depth_near;
+            }
         }
     }
 }
