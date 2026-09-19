@@ -68,6 +68,7 @@ pub enum AppAction {
     MarkMailRead(usize),       // Mail 에서 메시지(인덱스)를 읽었다 — fs.mail_read 에 기록해야 재시작 후에도 유지된다
     Restore(Vec<FileId>),      // 휴지통의 "Restore" — fs.trash_origin 에 기록된 원래 위치로 되돌린다
     InstallComplete(GameKind),   // GameInstallerApp 의 진행바가 다 참 — 이 게임을 fs.installed_games 에 추가하고 바탕화면에 아이콘을 만들어달라는 요청
+    SavePacmanRound(usize),      // PacmanApp 이 새 라운드를 시작했다 — fs.pacman_round 에 기록해서 다음에 열 때 그 라운드부터 이어지게 해달라는 요청
     // Mail 의 "Write Mail" 탭에서 새 메일을 작성해 보냄 — fs.sent_mail 에 내용째 쌓는다.
     // 첨부는 여러 개를 붙일 수 있어서 Vec(순서대로 붙인 순서).
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
@@ -287,7 +288,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
         // 레이아웃이 흐트러지는 걸 막는 편이 화면 하나짜리 아케이드 게임엔 더 자연스럽다.
         &FileKind::GameInstalled(kind) => {
             let app: Box<dyn App> = match kind {
-                GameKind::Pacman => Box::new(PacmanApp::new()),
+                GameKind::Pacman => Box::new(PacmanApp::new(fs.pacman_round)),
             };
             Opened { app, title: name, size: (420.0, 360.0), maximized: false, resizable: false, maximizable: false, movable: true, min_size: (420.0, 360.0) }
         }

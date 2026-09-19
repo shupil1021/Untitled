@@ -110,6 +110,11 @@ pub struct FileSystem {
     // 있는 게임은 Setup.exe 를 다시 열어도 마법사 없이 "이미 설치됨" 페이지로 연다.
     #[serde(default)]
     pub installed_games: Vec<GameKind>,
+    // 팩맨(apps/pacman.rs)이 지금까지 도달한 라운드(0부터) — 라운드가 새로
+    // 시작될 때마다(처음 열 때 포함) 그 즉시 저장해서, 창을 닫았다 다시 열어도
+    // 처음(0라운드)부터가 아니라 마지막으로 도달했던 라운드부터 이어서 한다.
+    #[serde(default)]
+    pub pacman_round: usize,
     // 읽은 메일의 인덱스(MailApp::seed_messages 순번) — MailApp 자체는 창을 닫거나
     // 3초 주기 새로고침으로 새로 만들어질 때마다 통째로 새 인스턴스가 되므로, 읽음
     // 여부를 여기(저장 파일에 실리는 fs)에 둬야 새로고침은 물론 게임을 종료했다
@@ -198,6 +203,7 @@ impl FileSystem {
             mail_arrived: false,
             mail_game_attachment: 0, // 아래에서 실제 노드를 만들고 바로 채운다
             installed_games: Vec::new(),
+            pacman_round: 0,
             mail_read: Vec::new(),
             sent_mail: Vec::new(),
             trash_origin: Vec::new(),

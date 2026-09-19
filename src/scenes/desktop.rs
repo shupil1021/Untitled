@@ -1330,6 +1330,13 @@ impl Scene for DesktopScene {
                     self.add_desktop_icon(&kind.installed_file_name(), FileKind::GameInstalled(kind));
                     self.write_save(&f.settings);
                 }
+                // 팩맨이 새 라운드를 시작할 때마다(맨 처음 열 때 포함) 온다 — 그
+                // 즉시 저장해둬야, 플레이 중 창을 닫아도(자동저장 5초를 기다리지
+                // 않고) 마지막으로 도달했던 라운드부터 다시 이어진다.
+                DeskAction::SavePacmanRound(round) => {
+                    self.fs.pacman_round = round;
+                    self.write_save(&f.settings);
+                }
                 DeskAction::MarkMailRead(i) => {
                     // fs 에 기록해야 3초 주기 새로고침은 물론 게임 재시작 후에도 읽음
                     // 표시가 유지된다 — MailApp 자체의 read 는 창이 새로 만들어질

@@ -63,6 +63,7 @@ pub enum DeskAction {
     Restore(Vec<FileId>),
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
     InstallComplete(GameKind),
+    SavePacmanRound(usize),
 }
 
 // 창 관리자에 넘기는 입력 상태.
@@ -495,6 +496,7 @@ impl WindowManager {
                 // 설치 마법사 진행바가 다 찬 순간 — 창은 계속 열려있는다(Finish
                 // 버튼을 눌러야 닫힌다), fs 쪽 설치 플래그만 desktop.rs 에 갱신 요청한다.
                 AppAction::InstallComplete(kind) => actions.push(DeskAction::InstallComplete(kind)),
+                AppAction::SavePacmanRound(round) => actions.push(DeskAction::SavePacmanRound(round)),
             }
         }
 
