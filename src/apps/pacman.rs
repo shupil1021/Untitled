@@ -19,7 +19,7 @@
 use miniquad::{KeyCode, RenderingBackend};
 
 use crate::gfx::{Assets, Rect, Renderer};
-use crate::raycaster::{generate_maze, Billboard, Raycaster, Rng};
+use crate::raycaster::{braid_maze, generate_maze, Billboard, Raycaster, Rng};
 use crate::ui::WHITE;
 
 use super::{App, AppAction, WinInput};
@@ -36,6 +36,10 @@ const ROUND_MAP_SIZES: [usize; 5] = [4, 5, 7, 9, 14];
 // 플레이할 때마다 다르게 나온다.
 const ROUND5_SEED: u64 = 0x50AC_11A5_FE1D_5EED;
 const START_CELL: (usize, usize) = (1, 1); // generate_maze 는 항상 방 (0,0) → 격자 (1,1) 에서 시작한다
+// generate_maze 가 만든 완전미로(막다른 길 천지)에 braid_maze 로 루프를 더하는
+// 확률 — 1.0 이면 막다른 길을 최대한 다 없애서 "끊기는" 구조가 아니라 서로
+// 이어지는 구조가 되게 한다(braid_maze 주석 참고).
+const MAZE_BRAID_CHANCE: f32 = 1.0;
 
 const MOVE_SPEED: f32 = 2.4; // 초당 이동 칸 수
 const ROT_SPEED: f32 = 2.6;  // 초당 회전 라디안
@@ -113,12 +117,18 @@ impl PacmanApp {
         // 마지막 라운드(5라운드)만 매번 같은 미로가 나오도록 고정 시드를 쓴다 —
         // 그 외 라운드는 self.rng(시간 기반, 이어 쓰는 상태)를 써서 플레이할
         // 때마다 다르게 나온다. 코인은 바닥 칸 전부에 놓으므로(place_coins) 랜덤
-        // 요소가 없다 — 미로 생성에만 rng 가 필요하다.
-        let walls = if round_idx == ROUND_MAP_SIZES.len() - 1 {
-            generate_maze(map_size, &mut Rng::new(ROUND5_SEED))
-        } else {
-            generate_maze(map_size, &mut self.rng)
-        };
+        // 요소가 없다 — 미로 생성/브레이딩에만 rng 가 필요하다. 5라운드는 미로
+        // 생성과 브레이딩 둘 다 같은 고정 시드 Rng 하나를 이어 써야(따로따로 새
+        // Rng 를 만들면 각자 첫 값부터 다시 시작해 브레이딩 패턴이 흐트러진다)
+        // 매번 정확히 같은 결과가 나온다.
+        let mut round5_rng = Rng::new(ROUND5_SEED);
+        let rng: &mut Rng = if round_idx == ROUND_MAP_SIZES.len() - 1 { &mut round5_rng } else { &mut self.rng };
+        let mut walls = generate_maze(map_size, rng);
+        // generate_maze 는 완전미로(스패닝 트리)라 막다른 길이 아주 많다 — 그대로
+        // 두면 갈림길마다 결국 되돌아 나와야 하는 "끊기는" 구조로 느껴진다.
+        // braid_maze 로 막다른 방마다 벽을 하나씩 더 허물어서(MAZE_BRAID_CHANCE
+        // 확률) 루프를 만들고, 경로가 서로 이어지는(끊기지 않는) 구조로 바꾼다.
+        braid_maze(&mut walls, map_size, rng, MAZE_BRAID_CHANCE);
         let (coins, placed) = place_coins(&walls, START_CELL);
         self.rc = Raycaster::new(walls, START_CELL.0 as f32 + 0.5, START_CELL.1 as f32 + 0.5);
         self.rc.player_dir = self.rc.face_open_direction(START_CELL);

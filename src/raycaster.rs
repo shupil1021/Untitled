@@ -11,6 +11,8 @@
 
 use std::f32::consts::PI;
 
+use miniquad::TextureId;
+
 use crate::gfx::{Rect, Renderer};
 use crate::ui::fill_circle;
 
@@ -102,6 +104,67 @@ pub fn generate_maze(rooms: usize, rng: &mut Rng) -> Vec<Vec<bool>> {
         push_frontier(rooms, to, &visited, &mut frontier);
     }
     walls
+}
+
+// generate_maze 가 만드는 "완전미로"는 방 개수-1 개의 벽만 허물어 모든 방을
+// 정확히 하나의 경로로만 잇는 스패닝 트리라, 막다른 길(dead end)이 아주 많다
+// — 실제로 걸어보면 대부분의 갈림길이 결국 다시 막혀서 되돌아 나와야 하는
+// "끊기는" 구조로 느껴진다. 이 함수는 그런 막다른 방마다(이웃 방 중 뚫린 게
+// 정확히 하나인 방) 막혀있는 이웃 벽 하나를 chance 확률로 더 허물어서(braiding)
+// 루프를 만든다 — 그만큼 경로가 서로 이어지고 되돌아 나올 필요 없이 계속
+// "흐르는" 구조가 된다. chance=1.0 이면 막다른 길을 전부 없앤다(이론상
+// — 한 번 허문 벽이 다른 막다른 방의 이웃이기도 했다면 그 방도 이 한 번의
+// 통과 중에 자연히 같이 풀린다).
+//
+// generate_maze 가 이미 만든 walls 격자를 그 자리에서 고친다(추가 벽만 허물지,
+// 있던 통로를 다시 막지는 않는다) — 그래서 항상 generate_maze 직후에 이어서
+// 부른다.
+pub fn braid_maze(walls: &mut [Vec<bool>], rooms: usize, rng: &mut Rng, chance: f32) {
+    let rooms = rooms.max(1);
+    let chance = chance.clamp(0.0, 1.0);
+    for ry in 0..rooms {
+        for rx in 0..rooms {
+            let (gx, gy) = (rx * 2 + 1, ry * 2 + 1);
+            let mut open = 0usize;
+            let mut closed: Vec<(usize, usize)> = Vec::new(); // 아직 벽인 이웃 방향의 격자 좌표(허물 수 있는 후보)
+            if rx > 0 {
+                if walls[gy][gx - 1] {
+                    closed.push((gx - 1, gy));
+                } else {
+                    open += 1;
+                }
+            }
+            if rx + 1 < rooms {
+                if walls[gy][gx + 1] {
+                    closed.push((gx + 1, gy));
+                } else {
+                    open += 1;
+                }
+            }
+            if ry > 0 {
+                if walls[gy - 1][gx] {
+                    closed.push((gx, gy - 1));
+                } else {
+                    open += 1;
+                }
+            }
+            if ry + 1 < rooms {
+                if walls[gy + 1][gx] {
+                    closed.push((gx, gy + 1));
+                } else {
+                    open += 1;
+                }
+            }
+            // 뚫린 이웃이 정확히 하나(막다른 길)이고, 허물 수 있는 벽이 남아있을
+            // 때만 chance 확률로 하나를 고른다 — gen_range(1000) 을 써서 대략
+            // chance 만큼의 확률을 흉내낸다(진짜 균등분포는 아니지만 이 용도엔
+            // 충분하다, Rng::gen_range 주석 참고).
+            if open == 1 && !closed.is_empty() && rng.gen_range(1000) < (chance * 1000.0) as usize {
+                let &(wx, wy) = &closed[rng.gen_range(closed.len())];
+                walls[wy][wx] = false;
+            }
+        }
+    }
 }
 
 // 바닥에 놓인 완전히 둥근 물체(코인 등) 하나 — 항상 카메라를 향하는 평면
@@ -357,8 +420,11 @@ impl Raycaster {
     // x=plane_coord 인 수직 평면(허용 범위는 y ∈ [span_min,span_max]), 아니면
     // y=plane_coord 인 평면(범위는 x ∈ [span_min,span_max]). Prop3D 의 한 "면"을
     // cast_ray 의 격자 DDA 대신 단일 평면 교차로 다루는 render_props() 전용
-    // 헬퍼 — 돌려주는 t 는 cast_ray 와 마찬가지로 단위벡터 기준 유클리드 거리다.
-    fn intersect_plane(&self, ray_angle: f32, is_x_plane: bool, plane_coord: f32, span_min: f32, span_max: f32) -> Option<f32> {
+    // 헬퍼 — 돌려주는 (t, hit_secondary) 에서 t 는 cast_ray 와 마찬가지로
+    // 단위벡터 기준 유클리드 거리, hit_secondary 는 그 면을 따라 어디에
+    // 맞았는지(span_min~span_max 사이 실제 좌표) — 텍스처를 입힐 때 그 지점의
+    // U 좌표를 구하는 데 쓴다.
+    fn intersect_plane(&self, ray_angle: f32, is_x_plane: bool, plane_coord: f32, span_min: f32, span_max: f32) -> Option<(f32, f32)> {
         let (dir_primary, dir_secondary, pos_primary, pos_secondary) = if is_x_plane {
             (ray_angle.cos(), ray_angle.sin(), self.player_x, self.player_y)
         } else {
@@ -375,7 +441,7 @@ impl Raycaster {
         if hit_secondary < span_min || hit_secondary > span_max {
             return None;
         }
-        Some(t)
+        Some((t, hit_secondary))
     }
 
     // props(책상/의자 등 각진 상자)를 진짜 입체로 그린다 — 빌보드처럼 항상
@@ -419,18 +485,18 @@ impl Raycaster {
 
             // 플레이어가 상자 바깥쪽에 있는 면만 실제로 보인다 — 안에 있으면(그
             // 축 범위 안이면) 그 방향 두 면 다 안 보인다.
-            let mut side_faces: Vec<(bool, f32, f32, f32, f32)> = Vec::new(); // (x축 평면?, 평면 좌표, span_min, span_max, 음영)
+            let mut side_faces: Vec<(NetFace, bool, f32, f32, f32, f32)> = Vec::new(); // (면, x축 평면?, 평면 좌표, span_min, span_max, 음영)
             if self.player_x < min_x {
-                side_faces.push((true, min_x, min_y, max_y, 0.75));
+                side_faces.push((NetFace::West, true, min_x, min_y, max_y, 0.75));
             }
             if self.player_x > max_x {
-                side_faces.push((true, max_x, min_y, max_y, 0.75));
+                side_faces.push((NetFace::East, true, max_x, min_y, max_y, 0.75));
             }
             if self.player_y < min_y {
-                side_faces.push((false, min_y, min_x, max_x, 1.0));
+                side_faces.push((NetFace::North, false, min_y, min_x, max_x, 1.0));
             }
             if self.player_y > max_y {
-                side_faces.push((false, max_y, min_x, max_x, 1.0));
+                side_faces.push((NetFace::South, false, max_y, min_x, max_x, 1.0));
             }
             if side_faces.is_empty() {
                 continue; // 플레이어가 상자 안에 들어와 있다(충돌 처리를 안 했다면) — 안팎이 뒤집혀 보일 수 있으니 그냥 생략
@@ -456,17 +522,19 @@ impl Raycaster {
                 let ray_angle = self.player_dir + rel_angle;
 
                 // 이 컬럼에서 여러 면에 동시에 맞을 수도 있다(모서리 근처) — 그중
-                // 가장 가까운 것만 쓴다.
-                let mut nearest: Option<(f32, f32)> = None; // (depth, 음영)
-                for &(is_x_plane, coord, span_min, span_max, shade) in &side_faces {
-                    if let Some(t) = self.intersect_plane(ray_angle, is_x_plane, coord, span_min, span_max) {
+                // 가장 가까운 것만 쓴다. hfrac 은 그 면을 따라 어디에 맞았는지를
+                // 0..1 로 정규화한 것 — 텍스처가 있으면 U 좌표를 구하는 데 쓴다.
+                let mut nearest: Option<(f32, f32, NetFace, f32)> = None; // (depth, 음영, 면, hfrac)
+                for &(face, is_x_plane, coord, span_min, span_max, shade) in &side_faces {
+                    if let Some((t, hit_secondary)) = self.intersect_plane(ray_angle, is_x_plane, coord, span_min, span_max) {
                         let depth = (t * rel_angle.cos()).max(0.0001);
-                        if nearest.is_none_or(|(d, _)| depth < d) {
-                            nearest = Some((depth, shade));
+                        if nearest.is_none_or(|(d, ..)| depth < d) {
+                            let hfrac = (hit_secondary - span_min) / (span_max - span_min).max(1e-6);
+                            nearest = Some((depth, shade, face, hfrac));
                         }
                     }
                 }
-                let Some((depth, side_shade)) = nearest else { continue };
+                let Some((depth, side_shade, face, hfrac)) = nearest else { continue };
                 if depth >= base_depth[col] {
                     continue; // 벽이든 앞서 그려진 다른(더 먼) 물체든 이미 이보다 가까운 게 있다
                 }
@@ -480,11 +548,26 @@ impl Raycaster {
                 let bottom = y_for_z(z0).clamp(0.0, area.h);
 
                 let fog = (1.0 - (depth / self.fog_dist).clamp(0.0, 1.0) * 0.75).max(0.18);
-                let shade = fog * side_shade;
-                let color = [p.color[0] * shade, p.color[1] * shade, p.color[2] * shade, p.color[3]];
-
                 let x = area.x + col as f32 * col_w;
-                r.rect(x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), color);
+                match &p.texture {
+                    // 컬럼 하나는 폭이 1px 남짓이라 U 폭도 사실상 0에 가깝다 —
+                    // 이 컬럼이 실제로 맞은 hfrac 딱 한 지점만 샘플링한다(그
+                    // 지점 값을 u0/u1 둘 다에 써서 사실상 세로선 하나를 그대로
+                    // 오려온다). 컬럼마다 hfrac 이 정확히 다시 계산되므로, 옆으로
+                    // 훑으며 이어붙이면 결국 텍스처 전체가 정확히 펼쳐진다 —
+                    // 울펜슈타인 3D 식 텍스처 매핑의 표준 방식.
+                    Some(tex) => {
+                        let (u0, v0, u1, v1) = tex.uv_for(face);
+                        let u = u0 + hfrac.clamp(0.0, 1.0) * (u1 - u0);
+                        let tint = [fog * side_shade, fog * side_shade, fog * side_shade, 1.0];
+                        r.sprite_uv(tex.texture, x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), u, v0, u, v1, tint);
+                    }
+                    None => {
+                        let shade = fog * side_shade;
+                        let color = [p.color[0] * shade, p.color[1] * shade, p.color[2] * shade, p.color[3]];
+                        r.rect(x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), color);
+                    }
+                }
                 if depth < col_depth[col] {
                     col_depth[col] = depth;
                 }
@@ -507,10 +590,15 @@ impl Raycaster {
             let top_color = [p.color[0], p.color[1], p.color[2], p.color[3]]; // 옆면(최대 1.0)보다 밝게 — 위에서 빛을 더 받는 느낌
             let bottom_color = [p.color[0] * 0.5, p.color[1] * 0.5, p.color[2] * 0.5, p.color[3]]; // 가장 어둡게
             if EYE_HEIGHT > z1 {
-                self.render_horizontal_face(r, area, fov, col_w, &base_depth, col_depth, min_x, max_x, min_y, max_y, z1, top_color);
+                self.render_horizontal_face(
+                    r, area, fov, col_w, &base_depth, col_depth, min_x, max_x, min_y, max_y, z1, top_color, p.texture.as_ref().map(|t| (t, NetFace::Top)),
+                );
             }
             if EYE_HEIGHT < z0 {
-                self.render_horizontal_face(r, area, fov, col_w, &base_depth, col_depth, min_x, max_x, min_y, max_y, z0, bottom_color);
+                self.render_horizontal_face(
+                    r, area, fov, col_w, &base_depth, col_depth, min_x, max_x, min_y, max_y, z0, bottom_color,
+                    p.texture.as_ref().map(|t| (t, NetFace::Bottom)),
+                );
             }
         }
     }
@@ -531,10 +619,17 @@ impl Raycaster {
     // AABB-레이 슬래브 교차)을 구하면, 그 구간의 가까운/먼 끝이 곧 이 컬럼에서
     // z=z 평면이 보이는 깊이 범위다(z=z 자체와는 절대 안 만나지만, "이 컬럼이
     // 상자 발자국 위를 지나는 동안"이 곧 "그 z 평면이 보이는 동안"과 같다).
+    // texture 가 Some 이면(면 정보도 같이) color 대신 그 전개도 칸으로 채운다 —
+    // 다만 옆면과 달리 여기는 "컬럼 하나 = 한 지점"이 아니라 "컬럼 하나 = 상자
+    // 발자국을 지나는 구간 전체(t_near..t_far)"라 화면-공간 보간 없이 정확한
+    // 2차원(U,V) 그라데이션을 넣으려면 컬럼을 더 잘게 쪼개야 한다 — 지금은 그
+    // 구간의 중점 한 지점만 샘플링해서 컬럼당 단색 타일처럼 칠한다(옆면만큼
+    // 세밀하진 않지만, 전개도가 실제로 올바른 면·자리에 입혀지는지 확인하기엔
+    // 충분하다).
     #[allow(clippy::too_many_arguments)]
     fn render_horizontal_face(
         &self, r: &mut Renderer, area: Rect, fov: f32, col_w: f32, base_depth: &[f32], col_depth: &mut [f32], min_x: f32, max_x: f32,
-        min_y: f32, max_y: f32, z: f32, color: [f32; 4],
+        min_y: f32, max_y: f32, z: f32, color: [f32; 4], texture: Option<(&PropTexture, NetFace)>,
     ) {
         let num_rays = col_depth.len();
         let half_fov = fov / 2.0;
@@ -584,9 +679,23 @@ impl Raycaster {
             let bottom = y_near.max(y_far).clamp(0.0, area.h);
 
             let fog = (1.0 - (depth_near / self.fog_dist).clamp(0.0, 1.0) * 0.75).max(0.18);
-            let c = [color[0] * fog, color[1] * fog, color[2] * fog, color[3]];
             let x = area.x + col as f32 * col_w;
-            r.rect(x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), c);
+            match texture {
+                Some((tex, face)) => {
+                    let t_mid = (t_near + t_far) / 2.0;
+                    let hit_x = ((self.player_x + ray_angle.cos() * t_mid - min_x) / (max_x - min_x).max(1e-6)).clamp(0.0, 1.0);
+                    let hit_y = ((self.player_y + ray_angle.sin() * t_mid - min_y) / (max_y - min_y).max(1e-6)).clamp(0.0, 1.0);
+                    let (u0, v0, u1, v1) = tex.uv_for(face);
+                    let u = u0 + hit_x * (u1 - u0);
+                    let v = v0 + hit_y * (v1 - v0);
+                    let tint = [fog, fog, fog, 1.0];
+                    r.sprite_uv(tex.texture, x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), u, v, u, v, tint);
+                }
+                None => {
+                    let c = [color[0] * fog, color[1] * fog, color[2] * fog, color[3]];
+                    r.rect(x, area.y + top, col_w + 0.6, (bottom - top).max(0.0), c);
+                }
+            }
             if depth_near < col_depth[col] {
                 col_depth[col] = depth_near;
             }
@@ -594,11 +703,58 @@ impl Raycaster {
     }
 }
 
+// Prop3D 의 여섯 면 중 하나 — PropTexture::uv_for() 가 "전개도"(net) 이미지
+// 안에서 그 면에 해당하는 칸을 찾는 데 쓴다.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NetFace {
+    Top,
+    Bottom,
+    North, // y 가 작은 쪽 면(min_y)
+    South, // y 가 큰 쪽 면(max_y)
+    West,  // x 가 작은 쪽 면(min_x)
+    East,  // x 가 큰 쪽 면(max_x)
+}
+
+// Prop3D 의 여섯 면에 입힐 "전개도"(net) 텍스처 — 이미지 하나를 가로 4칸×세로
+// 3칸으로 나눈 표준 십자형 레이아웃을 쓴다(수학 교과서의 정육면체 전개도와
+// 같은 배치):
+//
+// ```
+//       [ 윗면 ]
+// [서][ 북 ][동][ 남 ]
+//       [아랫면]
+// ```
+//
+// (서=West/동=East 는 x, 북=North/남=South 는 y 기준 — 바로 위에서 내려다본
+// 평면도라고 생각하면 된다.) 안 쓰는 나머지 4칸(첫 줄·끝 줄의 좌우, 즉
+// (0,0)(2,0)(3,0)(0,2)(2,2)(3,2))은 그냥 비워둬도 상관없다.
+pub struct PropTexture {
+    pub texture: TextureId,
+}
+
+impl PropTexture {
+    fn uv_for(&self, face: NetFace) -> (f32, f32, f32, f32) {
+        let (col, row) = match face {
+            NetFace::Top => (1, 0),
+            NetFace::West => (0, 1),
+            NetFace::North => (1, 1),
+            NetFace::East => (2, 1),
+            NetFace::South => (3, 1),
+            NetFace::Bottom => (1, 2),
+        };
+        let (cw, ch) = (1.0 / 4.0, 1.0 / 3.0);
+        (col as f32 * cw, row as f32 * ch, (col + 1) as f32 * cw, (row + 1) as f32 * ch)
+    }
+}
+
 // 진짜 입체(축 정렬 상자)로 그리는 물체 — 책상/의자처럼 각져서 옆에서 봤을 때도
 // 실제로 옆면이 보여야 하는 것에 쓴다(둥근 물체는 Billboard 로 충분하다).
 // center_x/center_y 는 바닥 위 발밑 중심, width(x축)/depth(y축)/height 는 전부
 // 칸 크기(=1.0)를 기준으로 한 실제 치수, base 는 바닥에서 밑면까지 띄운 높이
-// (의자 등받이처럼 좌판 위에 얹힌 부분에 쓴다, 그 외엔 보통 0.0).
+// (의자 등받이처럼 좌판 위에 얹힌 부분에 쓴다, 그 외엔 보통 0.0). texture 가
+// None 이면 지금까지처럼 color 하나로 칠하고, Some 이면 색은 안 쓰고(단, 조명
+// 처리 — 거리 안개/면별 음영 — 는 그대로 텍스처에 곱해진다) 그 전개도
+// 텍스처로 각 면을 그린다.
 pub struct Prop3D {
     pub center_x: f32,
     pub center_y: f32,
@@ -607,4 +763,5 @@ pub struct Prop3D {
     pub height: f32,
     pub base: f32,
     pub color: [f32; 4],
+    pub texture: Option<PropTexture>,
 }

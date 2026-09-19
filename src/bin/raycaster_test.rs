@@ -16,7 +16,7 @@
 use miniquad::*;
 
 use crackhead::gfx::{Rect, Renderer};
-use crackhead::raycaster::{Prop3D, Raycaster, Rng};
+use crackhead::raycaster::{Prop3D, PropTexture, Raycaster, Rng};
 use crackhead::scenes::Input;
 
 const WIN_W: f32 = 640.0;
@@ -55,6 +55,8 @@ fn generate_open_room(w: usize, h: usize) -> Vec<Vec<bool>> {
 
 // 이 테스트에서 굴려볼 가구 종류 — 크기/색이 서로 달라야 "여러 사물"을 놓아본
 // 것답게 눈으로 구분된다. 의자만 좌판+등받이 두 조각이라 Prop3D 를 두 개 낸다.
+// 상자(Crate)만 net_tex(전개도 텍스처)를 입혀서 Prop3D::texture 가 실제로
+// 동작하는지 같이 보여준다 — 나머지는 지금까지처럼 단색.
 enum ItemKind {
     Desk,
     Chair,
@@ -62,22 +64,35 @@ enum ItemKind {
     Shelf,
 }
 
-fn item_props(kind: &ItemKind, x: f32, y: f32) -> Vec<Prop3D> {
+fn item_props(kind: &ItemKind, x: f32, y: f32, net_tex: TextureId) -> Vec<Prop3D> {
     match kind {
-        ItemKind::Desk => vec![Prop3D { center_x: x, center_y: y, width: 0.9, depth: 0.6, height: 0.4, base: 0.0, color: DESK_COLOR }],
+        ItemKind::Desk => {
+            vec![Prop3D { center_x: x, center_y: y, width: 0.9, depth: 0.6, height: 0.4, base: 0.0, color: DESK_COLOR, texture: None }]
+        }
         ItemKind::Chair => vec![
-            Prop3D { center_x: x, center_y: y, width: 0.45, depth: 0.45, height: 0.18, base: 0.0, color: CHAIR_COLOR }, // 좌판
-            Prop3D { center_x: x, center_y: y, width: 0.45, depth: 0.08, height: 0.4, base: 0.18, color: CHAIR_COLOR }, // 등받이
+            Prop3D { center_x: x, center_y: y, width: 0.45, depth: 0.45, height: 0.18, base: 0.0, color: CHAIR_COLOR, texture: None }, // 좌판
+            Prop3D { center_x: x, center_y: y, width: 0.45, depth: 0.08, height: 0.4, base: 0.18, color: CHAIR_COLOR, texture: None }, // 등받이
         ],
-        ItemKind::Crate => vec![Prop3D { center_x: x, center_y: y, width: 0.5, depth: 0.5, height: 0.5, base: 0.0, color: CRATE_COLOR }],
-        ItemKind::Shelf => vec![Prop3D { center_x: x, center_y: y, width: 0.9, depth: 0.25, height: 0.9, base: 0.0, color: SHELF_COLOR }],
+        ItemKind::Crate => vec![Prop3D {
+            center_x: x,
+            center_y: y,
+            width: 0.5,
+            depth: 0.5,
+            height: 0.5,
+            base: 0.0,
+            color: CRATE_COLOR,
+            texture: Some(PropTexture { texture: net_tex }),
+        }],
+        ItemKind::Shelf => {
+            vec![Prop3D { center_x: x, center_y: y, width: 0.9, depth: 0.25, height: 0.9, base: 0.0, color: SHELF_COLOR, texture: None }]
+        }
     }
 }
 
 // 테두리에서 한 칸 띄운 안쪽 바닥 칸들을 섞어서 ITEM_COUNT 곳을 고르고, 매번
 // 무작위 가구 종류를 하나씩 놓는다 — 벽에 바짝 붙어서 절반이 파묻혀 보이지
 // 않게 테두리는 아예 후보에서 뺀다.
-fn scatter_items(rng: &mut Rng) -> Vec<Prop3D> {
+fn scatter_items(rng: &mut Rng, net_tex: TextureId) -> Vec<Prop3D> {
     let mut cells: Vec<(f32, f32)> = Vec::new();
     for y in 2..ROOM_H - 2 {
         for x in 2..ROOM_W - 2 {
@@ -98,9 +113,42 @@ fn scatter_items(rng: &mut Rng) -> Vec<Prop3D> {
             2 => ItemKind::Crate,
             _ => ItemKind::Shelf,
         };
-        props.extend(item_props(&kind, x, y));
+        props.extend(item_props(&kind, x, y, net_tex));
     }
     props
+}
+
+// Prop3D::texture(전개도) 확인용 텍스처를 코드로 직접 만든다 — 가로 4칸×세로
+// 3칸 십자형 레이아웃(raycaster::PropTexture 문서 참고)에서 실제로 쓰는 6칸을
+// 서로 다른 색으로, 그리고 각 칸 왼쪽 위 모서리에 흰 점을 찍어서 방향(회전/
+// 대칭)이 틀어지지 않았는지도 한눈에 확인할 수 있게 한다.
+fn make_net_texture(ctx: &mut dyn RenderingBackend) -> TextureId {
+    const CELL: usize = 32;
+    const W: usize = CELL * 4;
+    const H: usize = CELL * 3;
+    let faces: [(usize, usize, [u8; 3]); 6] = [
+        (1, 0, [210, 70, 70]),   // 윗면 — 빨강
+        (0, 1, [70, 160, 70]),   // 서 — 초록
+        (1, 1, [70, 90, 210]),   // 북 — 파랑
+        (2, 1, [210, 200, 70]),  // 동 — 노랑
+        (3, 1, [190, 70, 190]),  // 남 — 자홍
+        (1, 2, [70, 190, 190]),  // 아랫면 — 청록
+    ];
+    let mut pixels = vec![0u8; W * H * 4];
+    for &(col, row, color) in &faces {
+        for py in 0..CELL {
+            for px in 0..CELL {
+                let (x, y) = (col * CELL + px, row * CELL + py);
+                let idx = (y * W + x) * 4;
+                let border = px < 2 || py < 2 || px >= CELL - 2 || py >= CELL - 2;
+                let corner_mark = px < 8 && py < 8;
+                let c = if corner_mark { [255, 255, 255] } else if border { [25, 25, 25] } else { color };
+                pixels[idx..idx + 3].copy_from_slice(&c);
+                pixels[idx + 3] = 255;
+            }
+        }
+    }
+    ctx.new_texture_from_rgba8(W as u16, H as u16, &pixels)
 }
 
 struct Stage {
@@ -108,6 +156,7 @@ struct Stage {
     renderer: Renderer,
     rng: Rng,
     rc: Raycaster,
+    net_tex: TextureId,
     props: Vec<Prop3D>,
     input: Input,
     last_time: f64,
@@ -117,12 +166,13 @@ impl Stage {
     fn new() -> Stage {
         let mut ctx: Box<dyn RenderingBackend> = window::new_rendering_backend();
         let renderer = Renderer::new(ctx.as_mut());
+        let net_tex = make_net_texture(ctx.as_mut());
         let mut rng = Rng::new((date::now() * 1e6) as u64);
         let walls = generate_open_room(ROOM_W, ROOM_H);
         let mut rc = Raycaster::new(walls, ROOM_W as f32 / 2.0, ROOM_H as f32 - 1.5);
         rc.player_dir = -std::f32::consts::PI / 2.0; // 방 남쪽 벽 앞에서 시작해서 북쪽(방 안쪽)을 보게
-        let props = scatter_items(&mut rng);
-        Stage { ctx, renderer, rng, rc, props, input: Input::default(), last_time: date::now() }
+        let props = scatter_items(&mut rng, net_tex);
+        Stage { ctx, renderer, rng, rc, net_tex, props, input: Input::default(), last_time: date::now() }
     }
 }
 
@@ -135,7 +185,7 @@ impl EventHandler for Stage {
         self.last_time = now;
 
         if self.input.pressed(KeyCode::R) {
-            self.props = scatter_items(&mut self.rng);
+            self.props = scatter_items(&mut self.rng, self.net_tex);
         }
         self.rc.apply_wasd(
             self.input.is_down(KeyCode::W),
