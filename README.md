@@ -123,10 +123,8 @@ cargo run
     전체 코인)"이 흰 글씨로 뜬다(코인 자체는 계속 노란 원). 게임 내 텍스트(HUD,
     "Round Clear")는 전부 흰색으로 통일했다.
   - **조작법 안내**: W/A/S/D 를 한 번도 안 눌러봤으면 화면 아래쪽에 "W/S to
-    move" / "A/D to turn camera"를 1초 주기로 깜빡이며 띄운다(password.rs 의
-    깜빡이는 커서와 같은 요령 — `win.time % 1.0` 로 앞 절반만 그린다). 네 키 중
-    아무거나 한 번 누르면 그 뒤로는 이 창이 열려있는 동안(라운드가 바뀌어도)
-    계속 숨긴다.
+    move" / "A/D to turn camera"를 띄운다. 네 키 중 아무거나 한 번 누르면 그
+    뒤로는 이 창이 열려있는 동안(라운드가 바뀌어도) 계속 숨긴다.
   - **진행 저장**: 라운드가 새로 시작될 때마다(맨 처음 열 때 포함) 그 즉시
     `fs.pacman_round`에 기록한다(`AppAction::SavePacmanRound` →
     `DeskAction::SavePacmanRound` → `write_save`) — 5초 자동저장을 기다리지

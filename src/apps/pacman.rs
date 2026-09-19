@@ -11,7 +11,7 @@
 //! 옛날 울펜슈타인처럼 몸 전체가 도는 방식). 창이 포커스를 잃으면(win.focused
 //! false) 키 입력을 아예 안 읽는다 — 다른 창을 조작하다가 실수로 팩맨이 움직이는
 //! 것을 막는다. W/A/S/D 를 한 번도 안 눌러봤으면 화면 아래쪽에 조작법을
-//! 깜빡이며 띄우고, 아무 키나 한 번 누르면 그 세션 동안 계속 숨긴다.
+//! 띄우고, 아무 키나 한 번 누르면 그 세션 동안 계속 숨긴다.
 //!
 //! 미로는 1~4라운드는 매번 랜덤 Prim 알고리즘(raycaster::generate_maze)으로 새로
 //! 생성해서 플레이할 때마다 다르게 나오고, 5라운드만 고정 시드로 생성해 항상
@@ -97,8 +97,8 @@ pub struct PacmanApp {
     // (start_round 자체는 App::update() 밖(생성자)에서도 불리므로 여기서
     // "보류"해뒀다가 update() 가 돌 때 실제로 액션을 내보낸다.)
     pending_save: Option<usize>,
-    // W/A/S/D 중 아무거나 한 번이라도 누르기 전까지 조작법 안내를 깜빡이며
-    // 보여준다 — 한 번 누르면(라운드가 바뀌어도) 이 세션 동안은 계속 숨긴다.
+    // W/A/S/D 중 아무거나 한 번이라도 누르기 전까지 조작법 안내를 보여준다 —
+    // 한 번 누르면(라운드가 바뀌어도) 이 세션 동안은 계속 숨긴다.
     controls_hint_dismissed: bool,
 }
 
@@ -170,13 +170,8 @@ impl PacmanApp {
         r.text(area.x + (area.w - tw) / 2.0, area.y + area.h / 2.0 - 12.0, title, scale, WHITE);
     }
 
-    // 아직 W/A/S/D 를 한 번도 안 눌러봤으면, 조작법을 화면 아래쪽에 깜빡이며
-    // 띄운다 — password.rs 의 깜빡이는 커서와 같은 요령(1초 주기, 앞 절반만
-    // 그린다)으로 win.time 을 그대로 쓴다.
-    fn draw_controls_hint(&self, r: &mut Renderer, area: Rect, win_time: f32) {
-        if win_time % 1.0 >= 0.5 {
-            return;
-        }
+    // 아직 W/A/S/D 를 한 번도 안 눌러봤으면, 조작법을 화면 아래쪽에 띄운다.
+    fn draw_controls_hint(&self, r: &mut Renderer, area: Rect) {
         const LINES: [&str; 2] = ["W/S to move", "A/D to turn camera"];
         const SCALE: f32 = 0.85;
         const LINE_H: f32 = 18.0;
@@ -245,7 +240,7 @@ impl App for PacmanApp {
         r.text(area.x + 8.0, area.y + 4.0, &hud, 0.9, WHITE);
 
         if !self.controls_hint_dismissed {
-            self.draw_controls_hint(r, area, win.time);
+            self.draw_controls_hint(r, area);
         }
 
         // 이 라운드의 코인을 다 먹었으면(그리고 애초에 코인이 하나라도 있었으면)
