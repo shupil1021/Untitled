@@ -116,6 +116,13 @@ pub struct Billboard {
     pub color: [f32; 4],
 }
 
+// 카메라(플레이어) 눈높이 — 칸 크기(=1.0 = 바닥~천장)를 기준으로 정중앙. 벽이
+// z=0(바닥)~1(천장) 전체를 항상 가득 채우는 것과 달리, Prop3D 의 위/아래 면은
+// 이 값보다 위/아래에 있어야만 실제로 보인다(render_props 의 백페이스 컬링
+// 판정 참고) — 그 외의 z-화면좌표 변환 공식(render_walls 등)에도 전부 이
+// 기준으로 눈높이가 화면 정중앙에 오도록 깔려있다.
+const EYE_HEIGHT: f32 = 0.5;
+
 // 그리드 미로 하나 + 그 안을 돌아다니는 플레이어(위치/바라보는 각도) — 벽
 // DDA 레이캐스팅, 충돌 포함 이동, 벽/빌보드 렌더링을 전부 여기서 담당한다.
 pub struct Raycaster {
@@ -485,15 +492,26 @@ impl Raycaster {
 
             // 위/아래 면 — 광선-평면 교차로는 못 구해서(우리 광선엔 z 가 없다)
             // 광선이 상자 발자국을 지나는 깊이 구간으로 채운다
-            // (render_horizontal_face 참고). 둘 다 항상 시도한다 — 눈높이(0.5)
-            // 보다 낮은 물체는 위에서 내려다본 윗면이, 눈높이보다 높이 떠 있는
-            // 물체(바닥에서 띄운 등받이 등)는 밑면이 이 방식 하나로 자연히
-            // 나온다. 옆면과 마찬가지로 base_depth 스냅샷으로 판정해서, 방금
-            // 그린 이 prop 자신의 옆면이 위/아랫면을 가로막지 않게 한다.
+            // (render_horizontal_face 참고). 옆면과 마찬가지로 base_depth 스냅샷
+            // 으로 판정해서, 방금 그린 이 prop 자신의 옆면이 위/아랫면을 가로막지
+            // 않게 한다.
+            //
+            // 눈높이(EYE_HEIGHT) 보다 위에 있는 면은 실제로 못 본다 — 이건
+            // 백페이스 컬링과 같은 이유다: 윗면(법선이 +z, 위쪽을 향함)은
+            // 카메라가 그 면보다 "위"(z1 < 눈높이)에 있을 때만 보이고, 아랫면
+            // (법선이 -z)은 카메라가 그 면보다 "아래"(z0 > 눈높이)에 있을 때만
+            // 보인다. 이 확인이 빠져있어서, 바닥(z0=0)에 딱 붙어있는 보통 물체도
+            // (눈높이가 항상 바닥보다 높으니 아랫면은 절대 안 보여야 하는데) 그
+            // 밑면이 마치 물체 앞에 붕 떠서 카메라를 향하고 있는 것처럼 그려지고
+            // 있었다.
             let top_color = [p.color[0], p.color[1], p.color[2], p.color[3]]; // 옆면(최대 1.0)보다 밝게 — 위에서 빛을 더 받는 느낌
             let bottom_color = [p.color[0] * 0.5, p.color[1] * 0.5, p.color[2] * 0.5, p.color[3]]; // 가장 어둡게
-            self.render_horizontal_face(r, area, fov, col_w, &base_depth, col_depth, min_x, max_x, min_y, max_y, z1, top_color);
-            self.render_horizontal_face(r, area, fov, col_w, &base_depth, col_depth, min_x, max_x, min_y, max_y, z0, bottom_color);
+            if EYE_HEIGHT > z1 {
+                self.render_horizontal_face(r, area, fov, col_w, &base_depth, col_depth, min_x, max_x, min_y, max_y, z1, top_color);
+            }
+            if EYE_HEIGHT < z0 {
+                self.render_horizontal_face(r, area, fov, col_w, &base_depth, col_depth, min_x, max_x, min_y, max_y, z0, bottom_color);
+            }
         }
     }
 
