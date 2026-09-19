@@ -14,7 +14,6 @@ use std::f32::consts::PI;
 use miniquad::TextureId;
 
 use crate::gfx::{Rect, Renderer};
-use crate::ui::fill_circle;
 
 // PacmanApp/game_installer.rs 등 여러 곳에서 각자 작게 복사해 쓰던 것과 같은
 // 아주 단순한 xorshift64 의사난수 — 여기서는 미로 생성(Raycaster::generate_maze
@@ -370,6 +369,7 @@ impl Raycaster {
     // 먼(작은) 것을 제대로 가린다.
     pub fn render_billboards(&self, r: &mut Renderer, area: Rect, fov: f32, col_depth: &[f32], billboards: &[Billboard]) {
         let num_rays = col_depth.len();
+        let col_w = area.w / num_rays as f32;
         let half_fov = fov / 2.0;
         let mut visible: Vec<(f32, f32, f32, f32, [f32; 4])> = Vec::new(); // (depth, screen_x, floor_y, radius, color)
         for b in billboards {
@@ -394,7 +394,9 @@ impl Raycaster {
             let col = (((camera_x + 1.0) / 2.0) * num_rays as f32) as usize;
             let col = col.min(num_rays.saturating_sub(1));
             if col_depth.get(col).is_some_and(|&d| depth >= d) {
-                continue; // 가려짐(폭이 있는 물체도 중심 컬럼 하나만으로 판정하는 근사치)
+                continue; // 중심 컬럼부터 이미 가려짐 — 폭 전체를 컬럼별로 자르는 아래
+                          // 그리기 단계에서 한 번 더 정확히 판정하니, 여기선 "아예 안
+                          // 보이는" 경우만 미리 걸러서 정렬 목록을 줄인다.
             }
 
             let wall_h = (area.h / depth).min(area.h * 4.0);
@@ -411,8 +413,33 @@ impl Raycaster {
         }
         // 먼 것부터(depth 내림차순) 그려서 가까운 물체가 항상 위에 온다.
         visible.sort_by(|a, b| b.0.total_cmp(&a.0));
-        for (_, screen_x, floor_y, radius, color) in visible {
-            fill_circle(r, screen_x, floor_y - radius, radius, color);
+        for (depth, screen_x, floor_y, radius, color) in visible {
+            // fill_circle 로 한 번에 그리면(가로줄 단위) "이 원이 벽보다 가까운지"를
+            // 중심 컬럼 하나로만 판정한 게 전부라, 원의 폭이 넓을 때(가까이 다가갔을
+            // 때) 중심 컬럼은 벽 뒤가 아니어도 양 옆 일부가 실제로는 벽/모서리 너머
+            // (다른 복도)에 있는 코인이 그 벽 앞으로 삐져나와 보이는 문제가 있었다.
+            // 벽/Prop3D 와 똑같이 컬럼별로 잘라 그리면서 컬럼마다 col_depth 와
+            // 비교해야, 코인의 어느 부분이 실제로 벽에 가려지는지 정확히 반영된다.
+            let center_y = floor_y - radius;
+            let min_col = (((screen_x - radius - area.x) / col_w).floor().max(0.0)) as usize;
+            let max_col = (((screen_x + radius - area.x) / col_w).ceil().max(0.0)) as usize;
+            let max_col = max_col.min(num_rays.saturating_sub(1));
+            if min_col > max_col {
+                continue;
+            }
+            for (col, &d) in col_depth.iter().enumerate().take(max_col + 1).skip(min_col) {
+                if depth >= d {
+                    continue; // 이 컬럼에서는 벽/다른 물체가 이 코인보다 가깝다
+                }
+                let col_center_x = area.x + (col as f32 + 0.5) * col_w;
+                let dx = col_center_x - screen_x;
+                if dx.abs() > radius {
+                    continue;
+                }
+                let half_h = (radius * radius - dx * dx).max(0.0).sqrt();
+                let x = area.x + col as f32 * col_w;
+                r.rect(x, center_y - half_h, col_w + 0.6, half_h * 2.0, color);
+            }
         }
     }
 
