@@ -132,11 +132,13 @@ impl Player {
     }
 
     fn update(&mut self, input: &Input, dt: f32, boxes: &[Box3D]) {
+        // forward_flat()=[-sin(yaw),0,-cos(yaw)] 기준으로, yaw 를 줄이는 쪽이
+        // 화면상 오른쪽으로 도는 것이다(D가 오른쪽으로 돌아야 하니 반대로 A는 +).
         if input.is_down(KeyCode::A) {
-            self.yaw -= TURN_SPEED * dt;
+            self.yaw += TURN_SPEED * dt;
         }
         if input.is_down(KeyCode::D) {
-            self.yaw += TURN_SPEED * dt;
+            self.yaw -= TURN_SPEED * dt;
         }
         if input.is_down(KeyCode::Up) {
             self.pitch = (self.pitch + LOOK_SPEED * dt).min(MAX_PITCH);

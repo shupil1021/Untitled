@@ -188,6 +188,13 @@ impl Camera {
         let (sy, cy) = self.yaw.sin_cos();
         [cy, 0.0, -sy]
     }
+    // 마우스 피킹(화면 좌표 → 월드 레이)에 쓰는 세 번째 축 — forward/right 와
+    // 반드시 같은 회전 정의(Ry(yaw)*Rx(pitch))로 로컬 +Y 를 옮긴 것이어야 한다.
+    pub fn up(&self) -> Vec3 {
+        let (sy, cy) = self.yaw.sin_cos();
+        let (sp, cp) = self.pitch.sin_cos();
+        [sy * sp, cp, cy * sp]
+    }
 
     // 걷기 이동에 쓰는 "바닥에 붙인" 전방/우측 — pitch 는 무시(위를 본다고 하늘로
     // 날아가진 않는다).
@@ -265,20 +272,47 @@ impl Box3D {
         mat_mul(&mat_rotate_z(self.roll), &mat_mul(&mat_rotate_x(self.pitch), &mat_rotate_y(self.yaw)))
     }
 
+    // 월드 방향 벡터 → 이 상자의 로컬 방향(회전만 풀고 이동은 안 건드림). 회전
+    // 행렬은 정규직교라 역행렬 = 전치.
+    fn world_dir_to_local(&self, d: Vec3) -> Vec3 {
+        let r = self.rotation_matrix();
+        [r[0][0] * d[0] + r[1][0] * d[1] + r[2][0] * d[2], r[0][1] * d[0] + r[1][1] * d[1] + r[2][1] * d[2], r[0][2] * d[0] + r[1][2] * d[1] + r[2][2] * d[2]]
+    }
+
     // 월드 좌표 → 이 상자의 로컬 좌표(중심이 원점, 회전이 풀린 축정렬 공간).
     fn world_to_local(&self, p: Vec3) -> Vec3 {
-        let rel = v_sub(p, self.center);
-        let r = self.rotation_matrix();
-        // 회전 행렬은 정규직교라 역행렬 = 전치.
-        [
-            r[0][0] * rel[0] + r[1][0] * rel[1] + r[2][0] * rel[2],
-            r[0][1] * rel[0] + r[1][1] * rel[1] + r[2][1] * rel[2],
-            r[0][2] * rel[0] + r[1][2] * rel[1] + r[2][2] * rel[2],
-        ]
+        self.world_dir_to_local(v_sub(p, self.center))
     }
 
     fn local_to_world(&self, p: Vec3) -> Vec3 {
         mat_transform_point(&self.model_matrix(), p)
+    }
+
+    // 마우스 피킹용 레이-상자 교차(로컬 공간 AABB 슬래브 테스트) — 맞으면 카메라
+    // 원점에서부터의 매개변수 t(>=0, 가까운 교차점) 를 돌려준다. 상자가 회전해
+    // 있어도 `world_to_local`/`world_dir_to_local`로 레이 자체를 로컬 공간으로
+    // 옮겨서 풀기 때문에 그대로 맞는다(경사로/기울어진 벽과 같은 원리).
+    pub fn ray_intersect(&self, origin: Vec3, dir: Vec3) -> Option<f32> {
+        let lo = self.world_to_local(origin);
+        let ld = self.world_dir_to_local(dir);
+        let mut t_min = f32::NEG_INFINITY;
+        let mut t_max = f32::INFINITY;
+        for ((&o, &d), &h) in lo.iter().zip(ld.iter()).zip(self.half.iter()) {
+            if d.abs() < 1e-8 {
+                if o < -h || o > h {
+                    return None;
+                }
+                continue;
+            }
+            let (t1, t2) = ((-h - o) / d, (h - o) / d);
+            let (t1, t2) = if t1 < t2 { (t1, t2) } else { (t2, t1) };
+            t_min = t_min.max(t1);
+            t_max = t_max.min(t2);
+            if t_min > t_max {
+                return None;
+            }
+        }
+        if t_max < 0.0 { None } else { Some(t_min.max(0.0)) }
     }
 
     // 월드 공간 삼각형(12개, 면마다 2개)으로 펼친다. 그리기용 — vertex(pos, uv, color).
