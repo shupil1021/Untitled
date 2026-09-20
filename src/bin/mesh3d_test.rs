@@ -11,9 +11,18 @@
 //!
 //! 조작: W/S 전진/후진, A/D 좌우 회전, ↑/↓ 로 위아래를 본다, Space 로 점프,
 //! Esc 로 종료.
+//!
+//! 실제 게임처럼 CRT 셰이더(곡률/스캔라인/새도마스크/비네팅) + 색수차를
+//! 씌운다 — `crt.rs`(`main.rs`가 쓰는 것과 완전히 같은 모듈)를 그대로
+//! 가져다 쓴다: `mesh3d.render()`로 3D 장면을 그 자신의 오프스크린 타깃에
+//! 그리고, 그 결과 텍스처 + HUD 를 2D 렌더러로 한 번 더 합성한 뒤, 그
+//! 합성본 전체를 `Crt`의 오프스크린 타깃에 흘려보내(`renderer.flush`의
+//! 대상을 `crt.begin()`이 그쪽으로 돌려놓는다) 마지막에 `crt.present()`가
+//! 곡면 왜곡 + 색수차를 입혀 진짜 화면에 그린다(main.rs::draw()와 같은 순서).
 
 use miniquad::*;
 
+use crackhead::crt::Crt;
 use crackhead::gfx::Renderer;
 use crackhead::mesh3d::{ground_height, resolve_horizontal, Box3D, Camera, Mesh3D};
 use crackhead::scenes::Input;
@@ -21,6 +30,9 @@ use crackhead::scenes::Input;
 const WIN_W: f32 = 640.0;
 const WIN_H: f32 = 480.0;
 const FOV_Y: f32 = std::f32::consts::PI / 3.2;
+// 실제 게임의 기본값(foundation.rs::Settings::default)과 맞춘다.
+const CHROMATIC_ABERRATION: f32 = 0.5;
+const CRT_INTENSITY: f32 = 1.0;
 
 const MOVE_SPEED: f32 = 3.2;
 const TURN_SPEED: f32 = 2.4;
@@ -192,9 +204,11 @@ struct Stage {
     ctx: Box<dyn RenderingBackend>,
     renderer: Renderer,
     mesh3d: Mesh3D,
+    crt: Crt,
     boxes: Vec<Box3D>,
     player: Player,
     input: Input,
+    start_time: f64,
     last_time: f64,
 }
 
@@ -203,9 +217,11 @@ impl Stage {
         let mut ctx: Box<dyn RenderingBackend> = window::new_rendering_backend();
         let renderer = Renderer::new(ctx.as_mut());
         let mesh3d = Mesh3D::new(ctx.as_mut(), WIN_W as u32, WIN_H as u32);
+        let crt = Crt::new(ctx.as_mut(), WIN_W as u32, WIN_H as u32);
         let boxes = build_scene();
         let player = Player { feet: [0.0, 0.0, -3.0], yaw: std::f32::consts::FRAC_PI_2, pitch: 0.0, vel_y: 0.0, grounded: true };
-        Stage { ctx, renderer, mesh3d, boxes, player, input: Input::default(), last_time: date::now() }
+        let now = date::now();
+        Stage { ctx, renderer, mesh3d, crt, boxes, player, input: Input::default(), start_time: now, last_time: now }
     }
 }
 
@@ -235,9 +251,16 @@ impl EventHandler for Stage {
         );
         self.renderer.text(6.0, WIN_H - 16.0, &status, 0.7, [1.0, 1.0, 0.6, 1.0]);
 
-        self.ctx.begin_default_pass(PassAction::clear_color(0.0, 0.0, 0.0, 1.0));
+        // main.rs::draw() 와 같은 순서: 2D 그리기 목록은 이미 위에서 renderer 에
+        // 쌓아뒀고, crt.begin() 이 그 flush 의 대상을 CRT용 오프스크린 타깃으로
+        // 돌려놓은 뒤에야 실제로 흘려보낸다 — 그래야 CRT 셰이더가 이 화면
+        // 전체(3D 뷰 + HUD)를 한 장의 텍스처로 받아 곡률/색수차를 입힐 수 있다.
+        self.crt.begin(self.ctx.as_mut());
         self.renderer.flush(self.ctx.as_mut());
         self.ctx.end_render_pass();
+
+        let elapsed = (now - self.start_time) as f32;
+        self.crt.present(self.ctx.as_mut(), elapsed, CHROMATIC_ABERRATION, CRT_INTENSITY);
         self.ctx.commit_frame();
 
         self.input.end_frame();
