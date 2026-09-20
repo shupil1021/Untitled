@@ -168,19 +168,34 @@ pub struct Camera {
 
 impl Camera {
     // 뷰 행렬 = (회전*이동)의 역행렬. 회전만 있는 행렬의 역은 전치라, 여기서는
-    // "반대 순서로 반대 회전/이동을 적용"하는 형태로 직접 구성한다.
+    // "반대 순서로 반대 회전/이동을 적용"하는 형태로 직접 구성한다. 이 카메라의
+    // "월드 회전"은 Ry(yaw)*Rx(pitch)(로컬 -Z 가 "정면")라고 정의하고, 이 함수는
+    // 정확히 그 역행렬이다 — forward()/right() 가 이 정의와 반드시 일치해야
+    // 화면에 보이는 방향과 WASD 이동/마우스 오빗이 어긋나지 않는다.
     pub fn view_matrix(&self) -> Mat4 {
         let rot = mat_mul(&mat_rotate_x(-self.pitch), &mat_rotate_y(-self.yaw));
         mat_mul(&rot, &mat_translate(v_scale(self.pos, -1.0)))
     }
 
+    // 카메라가 실제로 보고 있는 방향(로컬 -Z 를 Ry(yaw)*Rx(pitch)로 옮긴 것) —
+    // view_matrix() 와 반드시 같은 정의를 써야 한다.
+    pub fn forward(&self) -> Vec3 {
+        let (sy, cy) = self.yaw.sin_cos();
+        let (sp, cp) = self.pitch.sin_cos();
+        [-sy * cp, sp, -cy * cp]
+    }
+    pub fn right(&self) -> Vec3 {
+        let (sy, cy) = self.yaw.sin_cos();
+        [cy, 0.0, -sy]
+    }
+
     // 걷기 이동에 쓰는 "바닥에 붙인" 전방/우측 — pitch 는 무시(위를 본다고 하늘로
     // 날아가진 않는다).
     pub fn forward_flat(&self) -> Vec3 {
-        [self.yaw.cos(), 0.0, self.yaw.sin()]
+        [-self.yaw.sin(), 0.0, -self.yaw.cos()]
     }
     pub fn right_flat(&self) -> Vec3 {
-        [-self.yaw.sin(), 0.0, self.yaw.cos()]
+        [self.yaw.cos(), 0.0, -self.yaw.sin()]
     }
 }
 
