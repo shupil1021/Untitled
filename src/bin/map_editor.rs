@@ -9,23 +9,27 @@
 //! `cargo run --bin map_editor` 로 띄운다. 저장/불러오기 경로는 고정으로
 //! `maps/scene.json`(실행 파일 기준 상대 경로)을 쓴다.
 //!
-//! 왼쪽엔 씬(오브젝트 목록) + 그 아래 인스펙터(선택한 상자 정보 + 텍스처 선택)
-//! 패널이 있고, 오른쪽이 3D 뷰포트다. `maps/textures/*.png`에 이미지를 넣어두면
-//! 인스펙터의 텍스처 목록에 떠서 클릭 한 번으로 선택한 상자에 입힐 수 있다.
+//! 왼쪽엔 씬(오브젝트 목록) + 그 아래 인스펙터(선택한 상자의 위치/회전/크기를
+//! -/+ 버튼으로 조절 + walkable/solid 토글 + 색상 순환 + 텍스처 목록) 패널이
+//! 있고, 오른쪽이 3D 뷰포트다. 오브젝트를 다루는 키보드 단축키(예전엔 화살표/
+//! ,.[];'/UIOJKL 로 이동·회전·크기조절을 했었다)는 전부 없앴다 — 전부 이
+//! 인스펙터 UI 버튼이나, 유니티처럼 뷰포트에 뜨는 이동/회전/크기조절 기즈모를
+//! 직접 드래그해서 조절한다.
 //!
-//! 조작(유니티 씬 뷰와 비슷하게 맞췄다):
-//! - **뷰포트에서 마우스 왼쪽 클릭**(드래그 없이): 그 자리의 상자를 선택. **왼쪽
-//!   패널의 오브젝트/텍스처 목록 클릭**도 마찬가지로 선택/할당한다.
+//! 조작:
+//! - **뷰포트에서 마우스 왼쪽 클릭**(드래그 없이): 그 자리의 상자를 선택.
+//!   **왼쪽 패널의 오브젝트 목록 클릭**도 마찬가지.
+//! - **선택한 상자에 뜨는 기즈모**(빨강=X, 초록=Y, 파랑=Z 축 손잡이)를 왼쪽
+//!   버튼으로 잡고 드래그하면 그 축을 따라 이동/회전/크기조절한다. `W`=이동
+//!   모드, `E`=회전 모드, `R`=크기조절 모드(유니티와 같은 키) — 마우스
+//!   오른쪽 버튼을 누르고 있지 않을 때만 반응한다(그때는 W가 카메라 비행에
+//!   쓰인다).
 //! - **마우스 오른쪽 버튼을 누른 채** 드래그: 시점 회전(마우스룩), 그 상태에서
 //!   W/A/S/D 로 그 방향을 향해 날아다니고 Q/E 로 위/아래로 움직인다(Shift 로 빠르게).
-//! - **마우스 왼쪽 버튼을 누른 채(뷰포트에서)** 드래그: 카메라 앞의 한 점을
+//! - **마우스 왼쪽 버튼을 누른 채(뷰포트의 빈 곳)** 드래그: 카메라 앞의 한 점을
 //!   중심으로 궤도 회전.
 //! - 휠: 보고 있는 방향으로 카메라를 앞/뒤로 이동(줌, 아주 조금씩).
 //! - Tab / Shift+Tab: 다음/이전 상자 선택, N: 카메라 앞에 새 상자, Delete: 선택 삭제
-//! - 방향키 ←/→/↑/↓: 선택한 상자를 세계 X/Z 로 이동, PageUp/PageDown: Y(위/아래) 이동
-//! - ,/. : yaw 회전, [/] : pitch 회전, ;/' : roll 회전
-//! - U/J, I/K, O/L: 각각 가로/높이/세로 반너비 확대/축소
-//! - C: 색상 팔레트 순환, F: walkable 토글, G: solid 토글
 //! - P: 플레이어 시작 위치/방향을 지금 선택한 상자 자리로 설정
 //! - Ctrl+S: 저장, Ctrl+O: 불러오기, Esc: 종료
 
@@ -33,10 +37,12 @@ use std::collections::HashMap;
 
 use miniquad::*;
 
+use crackhead::apps::WinInput;
 use crackhead::gfx::Renderer;
 use crackhead::mapfile::{MapBoxData, MapScene};
-use crackhead::mesh3d::{v_add, v_scale, Box3D, BoxTexture, Camera, Mesh3D};
+use crackhead::mesh3d::{v_add, v_dot, v_scale, v_sub, Box3D, BoxTexture, Camera, Mesh3D};
 use crackhead::scenes::Input;
+use crackhead::ui::button;
 
 const WIN_W: f32 = 800.0;
 const WIN_H: f32 = 600.0;
@@ -45,7 +51,7 @@ const VIEWPORT_W: f32 = WIN_W - SIDEBAR_W;
 const FOV_Y: f32 = std::f32::consts::PI / 3.2;
 const SAVE_PATH: &str = "maps/scene.json";
 const TEXTURE_DIR: &str = "maps/textures";
-const ROW_H: f32 = 17.0;
+const ROW_H: f32 = 18.0;
 const CLICK_DRAG_THRESHOLD: f32 = 4.0; // 이 픽셀 이하로 움직였으면 드래그가 아니라 클릭으로 친다
 
 const SKY_COLOR: [f32; 4] = [0.12, 0.13, 0.17, 1.0];
@@ -58,10 +64,10 @@ const PALETTE: [[f32; 4]; 6] = [
     [0.8, 0.75, 0.35, 1.0],
 ];
 
-const MOVE_STEP_SPEED: f32 = 2.5; // 선택한 상자를 옮기는 속도
-const ROT_SPEED: f32 = 1.4;
-const SCALE_SPEED: f32 = 1.0;
 const MIN_HALF: f32 = 0.05;
+const POS_STEP: f32 = 0.25;
+const ROT_STEP: f32 = 5.0_f32.to_radians();
+const HALF_STEP: f32 = 0.1;
 
 const FLY_SPEED: f32 = 4.0;
 const FLY_SPEED_FAST: f32 = 12.0;
@@ -70,8 +76,72 @@ const MAX_PITCH: f32 = std::f32::consts::FRAC_PI_2 - 0.05;
 const ORBIT_PIVOT_DIST: f32 = 8.0; // 왼쪽 드래그로 궤도 회전할 때 카메라 앞 몇 미터를 중심점으로 잡을지
 const DOLLY_SPEED: f32 = 0.15; // 휠 한 칸당 전진/후진 거리
 
+const GIZMO_HANDLE_LEN: f32 = 1.3; // 이동/회전 손잡이가 중심에서 떨어진 거리(월드 단위)
+const GIZMO_HANDLE_HIT_R: f32 = 12.0; // 손잡이를 클릭으로 잡을 수 있는 반경(픽셀)
+const GIZMO_ROTATE_SENS: f32 = 0.012; // 회전 모드에서 픽셀당 라디안
+
+// 인스펙터의 위치/회전/크기 -/+ 행 9개를 (라벨, 현재값, 증감폭, 적용함수) 로
+// 표로 짜서 찍어내는 데 쓴다.
+type InspectorRow = (&'static str, f32, f32, fn(&mut Box3D, f32));
+
 fn default_box(center: [f32; 3]) -> Box3D {
     Box3D { center, half: [0.5, 0.5, 0.5], yaw: 0.0, pitch: 0.0, roll: 0.0, color: PALETTE[0], texture: None, walkable: true, solid: true }
+}
+
+// 경로별로 한 번만 디코드/업로드한다(캐시). 실패하면 status 에 알리고 1x1 흰
+// 텍스처(색 곱만 먹는 자리표시자)를 대신 돌려준다. self 전체가 아니라 꼭
+// 필요한 필드만 따로 받는 자유함수라 — 인스펙터 그리기 중(WinInput 이 이미
+// self.input 을 빌려간 동안)에도 그냥 호출할 수 있다.
+fn load_texture(ctx: &mut dyn RenderingBackend, cache: &mut HashMap<String, TextureId>, status: &mut String, path: &str) -> TextureId {
+    if let Some(&tex) = cache.get(path) {
+        return tex;
+    }
+    let tex = match image::open(path) {
+        Ok(img) => {
+            let rgba = img.to_rgba8();
+            ctx.new_texture_from_rgba8(rgba.width() as u16, rgba.height() as u16, &rgba)
+        }
+        Err(e) => {
+            *status = format!("텍스처 로드 실패({path}): {e}");
+            ctx.new_texture_from_rgba8(1, 1, &[255, 255, 255, 255])
+        }
+    };
+    cache.insert(path.to_string(), tex);
+    tex
+}
+
+// 라벨 + 현재 값 텍스트를 그리고 오른쪽에 -/+ 버튼 두 개를 붙인 한 줄 —
+// 인스펙터의 위치/회전/크기 행 9개가 전부 이 모양이다. self 를 안 받는
+// 자유함수라(renderer/win 만 받는다) WinInput 이 살아있는 동안에도 자유롭게
+// 쓸 수 있고, 반환값(있으면 새 값)을 호출부가 그대로 필드에 대입한다.
+fn stepper_row(r: &mut Renderer, win: &WinInput, y: f32, label: &str, value: f32, step: f32) -> Option<f32> {
+    r.text(6.0, y + 3.0, &format!("{label} {value:.2}"), 0.58, [1.0, 1.0, 0.6, 1.0]);
+    let minus = button(r, SIDEBAR_W - 42.0, y, 18.0, ROW_H - 2.0, "-", win);
+    let plus = button(r, SIDEBAR_W - 21.0, y, 18.0, ROW_H - 2.0, "+", win);
+    if minus {
+        Some(value - step)
+    } else if plus {
+        Some(value + step)
+    } else {
+        None
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum GizmoMode {
+    Move,
+    Rotate,
+    Scale,
+}
+
+impl GizmoMode {
+    fn label(self) -> &'static str {
+        match self {
+            GizmoMode::Move => "Move (W)",
+            GizmoMode::Rotate => "Rotate (E)",
+            GizmoMode::Scale => "Scale (R)",
+        }
+    }
 }
 
 // 유니티 씬 카메라처럼: 위치 + yaw/pitch 를 직접 들고 있는 자유 카메라. 오빗(왼쪽
@@ -103,10 +173,16 @@ struct Stage {
     player_start: [f32; 3],
     player_start_yaw: f32,
     cam: FlyCam,
-    flying: bool,           // 오른쪽 버튼을 누르고 있는 동안 — 마우스룩 + WASD 비행
-    orbiting: bool,         // 왼쪽 버튼을 누르고 있는 동안 — 피벗 중심 궤도 회전
-    orbit_pivot: [f32; 3],  // 이번 왼쪽 드래그를 시작할 때 잡은 중심점(드래그 도중엔 고정)
-    left_drag_dist: f32,    // 왼쪽 버튼을 누른 뒤 총 이동 거리 — 문턱보다 작으면 드래그가 아니라 클릭
+    flying: bool,          // 오른쪽 버튼을 누르고 있는 동안 — 마우스룩 + WASD 비행
+    orbiting: bool,        // 왼쪽 버튼을 누르고 있는 동안(뷰포트, 기즈모 아닌 빈 곳) — 피벗 중심 궤도 회전
+    orbit_pivot: [f32; 3], // 이번 왼쪽 드래그를 시작할 때 잡은 중심점(드래그 도중엔 고정)
+    left_drag_dist: f32,   // 왼쪽 버튼을 누른 뒤 총 이동 거리 — 문턱보다 작으면 드래그가 아니라 클릭
+    gizmo_mode: GizmoMode,
+    drag_axis: Option<usize>,      // 지금 드래그 중인 기즈모 축(0=X/1=Y/2=Z) — None 이면 기즈모 드래그 아님
+    drag_start_box: Option<Box3D>, // 드래그 시작 시점의 상자 스냅샷(그 기준으로 델타를 계산)
+    drag_start_mouse: (f32, f32),  // 뷰포트 로컬 좌표(사이드바 폭을 뺀 좌표)
+    drag_pixels_per_unit: f32,     // 그 축 방향 1 월드 단위가 화면에서 몇 픽셀인지(드래그 시작 시점 기준)
+    drag_screen_dir: (f32, f32),   // 그 축이 화면에 투영된 단위 방향
     last_mouse: (f32, f32),
     input: Input,
     ctrl_down: bool,
@@ -136,6 +212,12 @@ impl Stage {
             orbiting: false,
             orbit_pivot: [0.0, 0.0, 0.0],
             left_drag_dist: 0.0,
+            gizmo_mode: GizmoMode::Move,
+            drag_axis: None,
+            drag_start_box: None,
+            drag_start_mouse: (0.0, 0.0),
+            drag_pixels_per_unit: 50.0,
+            drag_screen_dir: (1.0, 0.0),
             last_mouse: (0.0, 0.0),
             input: Input::default(),
             ctrl_down: false,
@@ -160,27 +242,6 @@ impl Stage {
         self.available_textures.sort();
     }
 
-    // 경로별로 한 번만 디코드/업로드한다(캐시). 실패하면 상태 표시줄에 알리고
-    // 1x1 흰 텍스처(색 곱만 먹는 자리표시자)를 대신 돌려준다.
-    fn load_texture(&mut self, path: &str) -> TextureId {
-        if let Some(&tex) = self.texture_cache.get(path) {
-            return tex;
-        }
-        let tex = match image::open(path) {
-            Ok(img) => {
-                let rgba = img.to_rgba8();
-                let (w, h) = (rgba.width() as u16, rgba.height() as u16);
-                self.ctx.new_texture_from_rgba8(w, h, &rgba)
-            }
-            Err(e) => {
-                self.status = format!("텍스처 로드 실패({path}): {e}");
-                self.ctx.new_texture_from_rgba8(1, 1, &[255, 255, 255, 255])
-            }
-        };
-        self.texture_cache.insert(path.to_string(), tex);
-        tex
-    }
-
     fn push_box(&mut self, b: Box3D) {
         self.boxes.push(b);
         self.box_texture_paths.push(None);
@@ -201,22 +262,6 @@ impl Stage {
             self.box_texture_paths.push(None);
             self.selected = 0;
         }
-    }
-
-    // 선택한 상자에 텍스처를 입히거나(Some) 뗀다(None) — 인스펙터의 텍스처
-    // 목록 클릭에서 부른다.
-    fn assign_texture(&mut self, path: Option<String>) {
-        let tex = path.as_deref().map(|p| self.load_texture(p));
-        if let Some(b) = self.boxes.get_mut(self.selected) {
-            b.texture = tex.map(|texture| BoxTexture { texture });
-        }
-        if let Some(p) = self.box_texture_paths.get_mut(self.selected) {
-            *p = path;
-        }
-    }
-
-    fn selected_box(&mut self) -> Option<&mut Box3D> {
-        self.boxes.get_mut(self.selected)
     }
 
     fn save(&mut self) {
@@ -246,7 +291,7 @@ impl Stage {
         // 쓸 거라), 먼저 경로들만 전부 로드해 캐시를 채워두고 캐시 조회만 하는
         // 얕은 클로저를 대신 넘긴다.
         for p in self.box_texture_paths.clone().into_iter().flatten() {
-            self.load_texture(&p);
+            load_texture(self.ctx.as_mut(), &mut self.texture_cache, &mut self.status, &p);
         }
         let cache = &self.texture_cache;
         let mut resolve = |p: &str| -> TextureId { *cache.get(p).expect("위에서 미리 로드해뒀다") };
@@ -282,44 +327,96 @@ impl Stage {
         best.map(|(i, _)| i)
     }
 
-    // 사이드바 레이아웃(씬 목록 → 인스펙터 정보 → 텍스처 목록, 순서대로 아래에
-    // 쌓인다) — 그리기(draw)와 클릭 판정(sidebar_click)이 같은 좌표를 쓰도록
-    // 한곳에 모아뒀다.
-    fn hierarchy_top(&self) -> f32 {
-        20.0
-    }
-    fn inspector_header_top(&self) -> f32 {
-        self.hierarchy_top() + self.boxes.len() as f32 * ROW_H + 12.0
-    }
-    fn inspector_info_top(&self) -> f32 {
-        self.inspector_header_top() + 18.0
-    }
-    fn texture_header_top(&self) -> f32 {
-        self.inspector_info_top() + 5.0 * 14.0 + 10.0
-    }
-    fn texture_list_top(&self) -> f32 {
-        self.texture_header_top() + 18.0
+    // 월드 좌표 → 뷰포트 로컬 화면 좌표(0,0 이 뷰포트 왼쪽 위, pick_box/기즈모와
+    // 같은 좌표계). 카메라 뒤(depth<=0)에 있으면 None.
+    fn world_to_screen(&self, p: [f32; 3]) -> Option<(f32, f32)> {
+        let cam = self.cam.camera();
+        let rel = v_sub(p, cam.pos);
+        let (fwd, right, up) = (cam.forward(), cam.right(), cam.up());
+        let depth = v_dot(rel, fwd);
+        if depth <= 0.05 {
+            return None;
+        }
+        let half_h = (FOV_Y / 2.0).tan();
+        let half_w = half_h * self.mesh3d.aspect();
+        let ndc_x = v_dot(rel, right) / (depth * half_w);
+        let ndc_y = v_dot(rel, up) / (depth * half_h);
+        Some(((ndc_x * 0.5 + 0.5) * VIEWPORT_W, (1.0 - (ndc_y * 0.5 + 0.5)) * WIN_H))
     }
 
-    fn sidebar_click(&mut self, x: f32, y: f32) {
-        if !(0.0..SIDEBAR_W).contains(&x) {
-            return;
+    // 선택한 상자의 이동/회전/크기조절 기즈모 손잡이 3개(X/Y/Z)의 월드 위치.
+    fn gizmo_handles(&self, b: &Box3D) -> [[f32; 3]; 3] {
+        let axes = b.local_axes();
+        let mut out = [[0.0f32; 3]; 3];
+        for ((o, &ax), &half) in out.iter_mut().zip(axes.iter()).zip(b.half.iter()) {
+            let dist = if self.gizmo_mode == GizmoMode::Scale { half + 0.4 } else { GIZMO_HANDLE_LEN };
+            *o = v_add(b.center, v_scale(ax, dist));
         }
-        let hier_top = self.hierarchy_top();
-        let hier_bottom = hier_top + self.boxes.len() as f32 * ROW_H;
-        if y >= hier_top && y < hier_bottom {
-            self.selected = ((y - hier_top) / ROW_H) as usize;
-            return;
+        out
+    }
+
+    // 뷰포트 로컬 좌표 근처에 있는 기즈모 손잡이를 찾는다(있으면 그 축 인덱스).
+    fn pick_gizmo_handle(&self, vx: f32, vy: f32) -> Option<usize> {
+        let b = self.boxes.get(self.selected)?;
+        let handles = self.gizmo_handles(b);
+        let mut best: Option<(usize, f32)> = None;
+        for (i, h) in handles.iter().enumerate() {
+            if let Some((sx, sy)) = self.world_to_screen(*h) {
+                let d = ((sx - vx).powi(2) + (sy - vy).powi(2)).sqrt();
+                if d < GIZMO_HANDLE_HIT_R && best.is_none_or(|(_, bd)| d < bd) {
+                    best = Some((i, d));
+                }
+            }
         }
-        let tex_top = self.texture_list_top();
-        let tex_count = 1 + self.available_textures.len();
-        let tex_bottom = tex_top + tex_count as f32 * ROW_H;
-        if y >= tex_top && y < tex_bottom {
-            let idx = ((y - tex_top) / ROW_H) as usize;
-            if idx == 0 {
-                self.assign_texture(None);
-            } else if let Some(path) = self.available_textures.get(idx - 1).cloned() {
-                self.assign_texture(Some(path));
+        best.map(|(i, _)| i)
+    }
+
+    fn begin_gizmo_drag(&mut self, axis: usize, vx: f32, vy: f32) {
+        let Some(b) = self.boxes.get(self.selected) else { return };
+        let axes = b.local_axes();
+        let center = b.center;
+        self.drag_start_box = Some(b.clone());
+        self.drag_axis = Some(axis);
+        self.drag_start_mouse = (vx, vy);
+        if let (Some(c), Some(t)) = (self.world_to_screen(center), self.world_to_screen(v_add(center, axes[axis]))) {
+            let d = (t.0 - c.0, t.1 - c.1);
+            let len = (d.0 * d.0 + d.1 * d.1).sqrt().max(1e-4);
+            self.drag_screen_dir = (d.0 / len, d.1 / len);
+            self.drag_pixels_per_unit = len;
+        } else {
+            self.drag_screen_dir = (1.0, 0.0);
+            self.drag_pixels_per_unit = 50.0;
+        }
+    }
+
+    // 기즈모 손잡이를 잡은 채 마우스를 옮길 때마다 부른다 — 드래그 시작점부터의
+    // 총 이동을 그 축의 화면-공간 방향에 투영해서(드래그 도중 방향이 바뀌어도
+    // 흔들리지 않게 시작 시점 기준으로 고정) 이동/크기(월드 단위) 또는
+    // 회전(라디안)으로 바꾼다.
+    fn apply_gizmo_drag(&mut self, vx: f32, vy: f32) {
+        let (Some(axis), Some(start)) = (self.drag_axis, self.drag_start_box.clone()) else { return };
+        let total = (vx - self.drag_start_mouse.0, vy - self.drag_start_mouse.1);
+        let proj = total.0 * self.drag_screen_dir.0 + total.1 * self.drag_screen_dir.1;
+        let Some(b) = self.boxes.get_mut(self.selected) else { return };
+        match self.gizmo_mode {
+            GizmoMode::Move => {
+                let delta = proj / self.drag_pixels_per_unit;
+                let axes = start.local_axes();
+                b.center = v_add(start.center, v_scale(axes[axis], delta));
+            }
+            GizmoMode::Scale => {
+                let delta = proj / self.drag_pixels_per_unit;
+                let mut half = start.half;
+                half[axis] = (half[axis] + delta).max(MIN_HALF);
+                b.half = half;
+            }
+            GizmoMode::Rotate => {
+                let delta = proj * GIZMO_ROTATE_SENS;
+                match axis {
+                    0 => b.pitch = start.pitch + delta,
+                    1 => b.yaw = start.yaw + delta,
+                    _ => b.roll = start.roll + delta,
+                }
             }
         }
     }
@@ -352,8 +449,21 @@ impl Stage {
             self.load();
         }
 
-        // 카메라 비행(오른쪽 버튼을 누르고 있을 때만) — WASD/QE 가 상자 편집과
-        // 겹치지 않게, 상자 편집은 전부 다른 키로 옮겨뒀다(아래).
+        // W/E/R 로 기즈모 모드 전환(유니티와 같은 키) — 오른쪽 버튼을 눌러
+        // 카메라를 날리는 중엔 W 가 "전진"이라 겹치니 그때는 반응하지 않는다.
+        if !self.flying {
+            if self.input.pressed(KeyCode::W) {
+                self.gizmo_mode = GizmoMode::Move;
+            }
+            if self.input.pressed(KeyCode::E) {
+                self.gizmo_mode = GizmoMode::Rotate;
+            }
+            if self.input.pressed(KeyCode::R) {
+                self.gizmo_mode = GizmoMode::Scale;
+            }
+        }
+
+        // 카메라 비행(오른쪽 버튼을 누르고 있을 때만).
         if self.flying {
             let fast = self.input.is_down(KeyCode::LeftShift) || self.input.is_down(KeyCode::RightShift);
             let speed = if fast { FLY_SPEED_FAST } else { FLY_SPEED } * dt;
@@ -378,151 +488,133 @@ impl Stage {
                 self.cam.pos[1] -= speed;
             }
         }
+    }
 
-        let move_step = MOVE_STEP_SPEED * dt;
-        let rot_step = ROT_SPEED * dt;
-        let scale_step = SCALE_SPEED * dt;
-        let color_cycle = self.input.pressed(KeyCode::C);
-        let toggle_walk = self.input.pressed(KeyCode::F);
-        let toggle_solid = self.input.pressed(KeyCode::G);
-        let (left, right, up, down) = (
-            self.input.is_down(KeyCode::Left),
-            self.input.is_down(KeyCode::Right),
-            self.input.is_down(KeyCode::Up),
-            self.input.is_down(KeyCode::Down),
-        );
-        let (page_up, page_down) = (self.input.is_down(KeyCode::PageUp), self.input.is_down(KeyCode::PageDown));
-        let (comma, period) = (self.input.is_down(KeyCode::Comma), self.input.is_down(KeyCode::Period));
-        let (lbracket, rbracket) = (self.input.is_down(KeyCode::LeftBracket), self.input.is_down(KeyCode::RightBracket));
-        let (semicolon, apostrophe) = (self.input.is_down(KeyCode::Semicolon), self.input.is_down(KeyCode::Apostrophe));
-        let (u, j, i, k, o, l) = (
-            self.input.is_down(KeyCode::U),
-            self.input.is_down(KeyCode::J),
-            self.input.is_down(KeyCode::I),
-            self.input.is_down(KeyCode::K),
-            self.input.is_down(KeyCode::O),
-            self.input.is_down(KeyCode::L),
-        );
+    // 왼쪽 패널: 씬(오브젝트 목록) → 인스펙터(위치/회전/크기 -/+ 버튼 +
+    // walkable/solid 토글 + 색상 순환 + 텍스처 목록). 전부 `ui::button` 위젯이라
+    // 직접 클릭 판정을 다시 짤 필요가 없다 — WinInput 이 self.input 을 잠깐
+    // 빌려가는 동안엔 self.method(&mut self) 를 못 부르니, 텍스처 선택처럼
+    // self 전체가 필요한 동작은 결과만 `pending_texture` 에 모아뒀다가 이
+    // 함수 끝(WinInput 을 더는 안 쓰는 지점)에 한 번에 반영한다.
+    fn draw_sidebar(&mut self, dt: f32) {
+        self.renderer.rect(0.0, 0.0, SIDEBAR_W, WIN_H, [0.13, 0.13, 0.16, 1.0]);
+        let win = WinInput { mouse: self.input.mouse, mouse_down: self.input.mouse_down, mouse_clicked: self.input.mouse_clicked, focused: true, wheel: 0.0, dt, time: 0.0, input: &self.input };
 
-        if let Some(b) = self.selected_box() {
-            if left {
-                b.center[0] -= move_step;
+        self.renderer.text(6.0, 4.0, "Scene", 0.7, [0.8, 0.85, 1.0, 1.0]);
+        let mut y = 20.0;
+        for i in 0..self.boxes.len() {
+            if i == self.selected {
+                self.renderer.rect(2.0, y, SIDEBAR_W - 4.0, ROW_H - 1.0, [0.3, 0.42, 0.6, 1.0]);
             }
-            if right {
-                b.center[0] += move_step;
+            if button(&mut self.renderer, 2.0, y, SIDEBAR_W - 4.0, ROW_H - 1.0, &format!("Box {}", i + 1), &win) {
+                self.selected = i;
             }
-            if up {
-                b.center[2] -= move_step;
+            y += ROW_H;
+        }
+
+        y += 10.0;
+        self.renderer.text(6.0, y, "Inspector", 0.7, [0.8, 0.85, 1.0, 1.0]);
+        y += 16.0;
+        self.renderer.text(6.0, y, &format!("Gizmo: {}", self.gizmo_mode.label()), 0.58, [0.7, 0.9, 1.0, 1.0]);
+        y += 16.0;
+
+        let mut pending_texture: Option<Option<String>> = None;
+
+        if self.selected < self.boxes.len() {
+            let b = &self.boxes[self.selected];
+            let (px, py, pz) = (b.center[0], b.center[1], b.center[2]);
+            let (yaw, pitch, roll) = (b.yaw, b.pitch, b.roll);
+            let (hx, hy, hz) = (b.half[0], b.half[1], b.half[2]);
+            let (walkable, solid, color) = (b.walkable, b.solid, b.color);
+
+            let rows: [InspectorRow; 9] = [
+                ("Pos X", px, POS_STEP, |b, v| b.center[0] = v),
+                ("Pos Y", py, POS_STEP, |b, v| b.center[1] = v),
+                ("Pos Z", pz, POS_STEP, |b, v| b.center[2] = v),
+                ("Yaw", yaw, ROT_STEP, |b, v| b.yaw = v),
+                ("Pitch", pitch, ROT_STEP, |b, v| b.pitch = v),
+                ("Roll", roll, ROT_STEP, |b, v| b.roll = v),
+                ("Half X", hx, HALF_STEP, |b, v| b.half[0] = v.max(MIN_HALF)),
+                ("Half Y", hy, HALF_STEP, |b, v| b.half[1] = v.max(MIN_HALF)),
+                ("Half Z", hz, HALF_STEP, |b, v| b.half[2] = v.max(MIN_HALF)),
+            ];
+            for (label, value, step, apply) in rows {
+                if let Some(new_val) = stepper_row(&mut self.renderer, &win, y, label, value, step) {
+                    apply(&mut self.boxes[self.selected], new_val);
+                }
+                y += ROW_H;
             }
-            if down {
-                b.center[2] += move_step;
+
+            if button(&mut self.renderer, 2.0, y, SIDEBAR_W - 4.0, ROW_H - 1.0, if walkable { "Walkable: On" } else { "Walkable: Off" }, &win) {
+                self.boxes[self.selected].walkable = !walkable;
             }
-            if page_up {
-                b.center[1] += move_step;
+            y += ROW_H;
+            if button(&mut self.renderer, 2.0, y, SIDEBAR_W - 4.0, ROW_H - 1.0, if solid { "Solid: On" } else { "Solid: Off" }, &win) {
+                self.boxes[self.selected].solid = !solid;
             }
-            if page_down {
-                b.center[1] -= move_step;
+            y += ROW_H;
+
+            self.renderer.rect(2.0, y + 2.0, 14.0, 14.0, color);
+            if button(&mut self.renderer, 20.0, y, SIDEBAR_W - 22.0, ROW_H - 1.0, "Cycle Color", &win) {
+                let cur = PALETTE.iter().position(|c| *c == color).unwrap_or(0);
+                self.boxes[self.selected].color = PALETTE[(cur + 1) % PALETTE.len()];
             }
-            if comma {
-                b.yaw -= rot_step;
+            y += ROW_H + 8.0;
+
+            self.renderer.text(6.0, y, "Textures (maps/textures/*.png)", 0.58, [0.8, 0.85, 1.0, 1.0]);
+            y += 16.0;
+            let cur_path = self.box_texture_paths.get(self.selected).cloned().flatten();
+            if cur_path.is_none() {
+                self.renderer.rect(2.0, y, SIDEBAR_W - 4.0, ROW_H - 1.0, [0.3, 0.42, 0.6, 1.0]);
             }
-            if period {
-                b.yaw += rot_step;
+            if button(&mut self.renderer, 2.0, y, SIDEBAR_W - 4.0, ROW_H - 1.0, "[None] (flat color)", &win) {
+                pending_texture = Some(None);
             }
-            if lbracket {
-                b.pitch -= rot_step;
+            y += ROW_H;
+            if self.available_textures.is_empty() {
+                self.renderer.text(8.0, y, "(no .png in maps/textures/)", 0.55, [0.6, 0.6, 0.6, 1.0]);
             }
-            if rbracket {
-                b.pitch += rot_step;
+            for path in self.available_textures.clone() {
+                if cur_path.as_deref() == Some(path.as_str()) {
+                    self.renderer.rect(2.0, y, SIDEBAR_W - 4.0, ROW_H - 1.0, [0.3, 0.42, 0.6, 1.0]);
+                }
+                let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+                if button(&mut self.renderer, 2.0, y, SIDEBAR_W - 4.0, ROW_H - 1.0, &name, &win) {
+                    pending_texture = Some(Some(path.clone()));
+                }
+                y += ROW_H;
             }
-            if semicolon {
-                b.roll -= rot_step;
-            }
-            if apostrophe {
-                b.roll += rot_step;
-            }
-            if u {
-                b.half[0] = (b.half[0] + scale_step).max(MIN_HALF);
-            }
-            if j {
-                b.half[0] = (b.half[0] - scale_step).max(MIN_HALF);
-            }
-            if i {
-                b.half[1] = (b.half[1] + scale_step).max(MIN_HALF);
-            }
-            if k {
-                b.half[1] = (b.half[1] - scale_step).max(MIN_HALF);
-            }
-            if o {
-                b.half[2] = (b.half[2] + scale_step).max(MIN_HALF);
-            }
-            if l {
-                b.half[2] = (b.half[2] - scale_step).max(MIN_HALF);
-            }
-            if color_cycle {
-                let cur = PALETTE.iter().position(|c| *c == b.color).unwrap_or(0);
-                b.color = PALETTE[(cur + 1) % PALETTE.len()];
-            }
-            if toggle_walk {
-                b.walkable = !b.walkable;
-            }
-            if toggle_solid {
-                b.solid = !b.solid;
-            }
+        }
+
+        if let Some(path) = pending_texture {
+            let tex = path.as_deref().map(|p| load_texture(self.ctx.as_mut(), &mut self.texture_cache, &mut self.status, p));
+            self.boxes[self.selected].texture = tex.map(|texture| BoxTexture { texture });
+            self.box_texture_paths[self.selected] = path;
         }
     }
 
-    // 왼쪽 패널: 씬(오브젝트 목록) → 인스펙터(선택한 상자 정보) → 텍스처 목록.
-    // 클릭 판정은 sidebar_click() 이 이 함수와 같은 좌표 계산(hierarchy_top() 등)을
-    // 그대로 써서 항상 화면에 보이는 자리와 맞는다.
-    fn draw_sidebar(&mut self) {
-        self.renderer.rect(0.0, 0.0, SIDEBAR_W, WIN_H, [0.13, 0.13, 0.16, 1.0]);
-        self.renderer.text(6.0, 4.0, "Scene", 0.7, [0.8, 0.85, 1.0, 1.0]);
-
-        let hier_top = self.hierarchy_top();
-        for i in 0..self.boxes.len() {
-            let y = hier_top + i as f32 * ROW_H;
-            if i == self.selected {
-                self.renderer.rect(2.0, y, SIDEBAR_W - 4.0, ROW_H, [0.25, 0.35, 0.55, 1.0]);
+    // 뷰포트 위에 선택한 상자의 기즈모(중심→손잡이 선 + 손잡이 사각형)를
+    // 그린다. 회전 사각형을 지원 안 하는 렌더러라, 선은 작은 사각형 점을 여러
+    // 개 이어 찍어서 흉내낸다(ui.rs::draw_scale 등과 같은 요령).
+    fn draw_gizmo(&mut self) {
+        let Some(b) = self.boxes.get(self.selected) else { return };
+        let handles = self.gizmo_handles(b);
+        let colors = [[0.95, 0.3, 0.3, 1.0], [0.35, 0.9, 0.35, 1.0], [0.4, 0.55, 1.0, 1.0]];
+        let Some(center_screen) = self.world_to_screen(b.center) else { return };
+        for (i, h) in handles.iter().enumerate() {
+            let Some((hx, hy)) = self.world_to_screen(*h) else { continue };
+            let (cx, cy) = (SIDEBAR_W + center_screen.0, center_screen.1);
+            let (tx, ty) = (SIDEBAR_W + hx, hy);
+            let dx = tx - cx;
+            let dy = ty - cy;
+            let len = (dx * dx + dy * dy).sqrt().max(1.0);
+            let steps = (len / 5.0).ceil().max(1.0) as usize;
+            for s in 0..=steps {
+                let t = s as f32 / steps as f32;
+                self.renderer.rect(cx + dx * t - 1.5, cy + dy * t - 1.5, 3.0, 3.0, colors[i]);
             }
-            self.renderer.text(8.0, y + 2.0, &format!("Box {}", i + 1), 0.62, [0.9, 0.9, 0.9, 1.0]);
-        }
-
-        let inspector_header_top = self.inspector_header_top();
-        self.renderer.text(6.0, inspector_header_top, "Inspector", 0.7, [0.8, 0.85, 1.0, 1.0]);
-        let info_top = self.inspector_info_top();
-        if let Some(b) = self.boxes.get(self.selected) {
-            let lines = [
-                format!("pos {:.2},{:.2},{:.2}", b.center[0], b.center[1], b.center[2]),
-                format!("half {:.2},{:.2},{:.2}", b.half[0], b.half[1], b.half[2]),
-                format!("rot {:.2},{:.2},{:.2}", b.yaw, b.pitch, b.roll),
-                format!("walk={} solid={}", b.walkable, b.solid),
-                "texture:".to_string(),
-            ];
-            for (i, line) in lines.iter().enumerate() {
-                self.renderer.text(8.0, info_top + i as f32 * 14.0, line, 0.58, [1.0, 1.0, 0.6, 1.0]);
-            }
-        }
-
-        let texture_header_top = self.texture_header_top();
-        self.renderer.text(6.0, texture_header_top, "Textures (maps/textures/*.png)", 0.62, [0.8, 0.85, 1.0, 1.0]);
-        let cur_path = self.box_texture_paths.get(self.selected).cloned().flatten();
-        let tex_top = self.texture_list_top();
-        // "[None]" 행 — 텍스처를 떼고 단색으로 되돌린다.
-        if cur_path.is_none() {
-            self.renderer.rect(2.0, tex_top, SIDEBAR_W - 4.0, ROW_H, [0.25, 0.35, 0.55, 1.0]);
-        }
-        self.renderer.text(8.0, tex_top + 2.0, "[None] (flat color)", 0.6, [0.9, 0.9, 0.9, 1.0]);
-        if self.available_textures.is_empty() {
-            self.renderer.text(8.0, tex_top + ROW_H + 2.0, "(no .png found)", 0.58, [0.6, 0.6, 0.6, 1.0]);
-        }
-        for (i, path) in self.available_textures.clone().iter().enumerate() {
-            let y = tex_top + (i + 1) as f32 * ROW_H;
-            if cur_path.as_deref() == Some(path.as_str()) {
-                self.renderer.rect(2.0, y, SIDEBAR_W - 4.0, ROW_H, [0.25, 0.35, 0.55, 1.0]);
-            }
-            let name = path.rsplit('/').next().unwrap_or(path);
-            self.renderer.text(8.0, y + 2.0, name, 0.6, [0.9, 0.9, 0.9, 1.0]);
+            let hl = if self.drag_axis == Some(i) { 1.4 } else { 1.0 };
+            self.renderer.rect(tx - 5.0 * hl, ty - 5.0 * hl, 10.0 * hl, 10.0 * hl, colors[i]);
         }
     }
 }
@@ -543,12 +635,13 @@ impl EventHandler for Stage {
         let tex = self.mesh3d.color_texture();
         self.renderer.sprite_uv(tex, SIDEBAR_W, 0.0, VIEWPORT_W, WIN_H, 0.0, 1.0, 1.0, 0.0, [1.0, 1.0, 1.0, 1.0]);
 
-        self.renderer.rect(SIDEBAR_W, 0.0, VIEWPORT_W, 56.0, [0.0, 0.0, 0.0, 0.6]);
-        self.renderer.text(SIDEBAR_W + 6.0, 4.0, "RMB drag: look + WASD/QE fly (Shift fast)", 0.65, [1.0, 1.0, 1.0, 1.0]);
-        self.renderer.text(SIDEBAR_W + 6.0, 19.0, "LMB click: select, LMB drag: orbit, wheel: zoom", 0.65, [1.0, 1.0, 1.0, 1.0]);
-        self.renderer.text(SIDEBAR_W + 6.0, 34.0, "arrows+PgUp/Dn move, ,.[]; ' rotate, U/J I/K O/L scale", 0.65, [1.0, 1.0, 1.0, 1.0]);
+        self.draw_gizmo();
 
-        self.draw_sidebar();
+        self.renderer.rect(SIDEBAR_W, 0.0, VIEWPORT_W, 40.0, [0.0, 0.0, 0.0, 0.6]);
+        self.renderer.text(SIDEBAR_W + 6.0, 4.0, "RMB drag: look + WASD/QE fly | LMB: select/orbit | wheel: zoom", 0.6, [1.0, 1.0, 1.0, 1.0]);
+        self.renderer.text(SIDEBAR_W + 6.0, 19.0, "Drag colored handle to transform | W move, E rotate, R scale", 0.6, [1.0, 1.0, 1.0, 1.0]);
+
+        self.draw_sidebar(dt);
 
         self.renderer.rect(0.0, WIN_H - 18.0, WIN_W, 18.0, [0.0, 0.0, 0.0, 0.6]);
         self.renderer.text(6.0, WIN_H - 15.0, &self.status, 0.68, [0.7, 1.0, 0.7, 1.0]);
@@ -578,6 +671,12 @@ impl EventHandler for Stage {
         let dx = x - self.last_mouse.0;
         let dy = y - self.last_mouse.1;
         self.last_mouse = (x, y);
+        self.input.mouse = (x, y);
+
+        if self.drag_axis.is_some() {
+            self.apply_gizmo_drag(x - SIDEBAR_W, y);
+            return;
+        }
         if self.orbiting {
             self.left_drag_dist += (dx * dx + dy * dy).sqrt();
         }
@@ -601,30 +700,44 @@ impl EventHandler for Stage {
 
     fn mouse_button_down_event(&mut self, button: MouseButton, x: f32, y: f32) {
         self.last_mouse = (x, y);
+        self.input.mouse = (x, y);
+        if button == MouseButton::Left {
+            self.input.mouse_down = true;
+            self.input.mouse_clicked = true;
+        }
         match button {
             MouseButton::Right => self.flying = true,
-            // 사이드바 위에서 누른 왼쪽 클릭은 그 자리에서 바로 처리하고(오브젝트/
-            // 텍스처 목록 선택), 뷰포트 오빗 드래그를 시작하지 않는다.
-            MouseButton::Left if x < SIDEBAR_W => self.sidebar_click(x, y),
-            MouseButton::Left if !self.flying => {
-                self.orbiting = true;
-                self.left_drag_dist = 0.0;
-                self.orbit_pivot = v_add(self.cam.pos, v_scale(self.cam.camera().forward(), ORBIT_PIVOT_DIST));
+            MouseButton::Left if x >= SIDEBAR_W && !self.flying => {
+                if let Some(axis) = self.pick_gizmo_handle(x - SIDEBAR_W, y) {
+                    self.begin_gizmo_drag(axis, x - SIDEBAR_W, y);
+                } else {
+                    self.orbiting = true;
+                    self.left_drag_dist = 0.0;
+                    self.orbit_pivot = v_add(self.cam.pos, v_scale(self.cam.camera().forward(), ORBIT_PIVOT_DIST));
+                }
             }
             _ => {}
         }
     }
 
     fn mouse_button_up_event(&mut self, button: MouseButton, x: f32, y: f32) {
+        if button == MouseButton::Left {
+            self.input.mouse_down = false;
+        }
         match button {
             MouseButton::Right => self.flying = false,
             MouseButton::Left => {
-                // 드래그가 거의 없었으면(문턱 이하) 오빗이 아니라 "그 자리를
-                // 클릭해서 선택"한 것으로 친다 — 뷰포트 안에서 뗐을 때만 유효.
-                if self.orbiting && self.left_drag_dist < CLICK_DRAG_THRESHOLD && x >= SIDEBAR_W && let Some(i) = self.pick_box(x - SIDEBAR_W, y) {
-                    self.selected = i;
+                if self.drag_axis.is_some() {
+                    self.drag_axis = None;
+                    self.drag_start_box = None;
+                } else {
+                    // 드래그가 거의 없었으면(문턱 이하) 오빗이 아니라 "그 자리를
+                    // 클릭해서 선택"한 것으로 친다 — 뷰포트 안에서 뗐을 때만 유효.
+                    if self.orbiting && self.left_drag_dist < CLICK_DRAG_THRESHOLD && x >= SIDEBAR_W && let Some(i) = self.pick_box(x - SIDEBAR_W, y) {
+                        self.selected = i;
+                    }
+                    self.orbiting = false;
                 }
-                self.orbiting = false;
             }
             _ => {}
         }

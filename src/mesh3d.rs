@@ -272,6 +272,13 @@ impl Box3D {
         mat_mul(&mat_rotate_z(self.roll), &mat_mul(&mat_rotate_x(self.pitch), &mat_rotate_y(self.yaw)))
     }
 
+    // 로컬 X/Y/Z 축을 월드 방향으로 — 맵 에디터의 이동/회전/크기조절 기즈모가
+    // 축 핸들을 어느 방향으로 그릴지 정할 때 쓴다.
+    pub fn local_axes(&self) -> [Vec3; 3] {
+        let r = self.rotation_matrix();
+        [[r[0][0], r[1][0], r[2][0]], [r[0][1], r[1][1], r[2][1]], [r[0][2], r[1][2], r[2][2]]]
+    }
+
     // 월드 방향 벡터 → 이 상자의 로컬 방향(회전만 풀고 이동은 안 건드림). 회전
     // 행렬은 정규직교라 역행렬 = 전치.
     fn world_dir_to_local(&self, d: Vec3) -> Vec3 {
