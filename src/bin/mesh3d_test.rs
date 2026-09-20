@@ -1,8 +1,8 @@
 // 콘솔 창 없이 뜨게(GUI 앱으로) — director.rs/director_panel.rs 와 같은 이유.
 #![windows_subsystem = "windows"]
 
-//! `crate::mesh3d`(진짜 3D 메쉬 렌더러 — raycaster.rs 를 대신할 새 파이프라인)만
-//! 따로 띄워서 확인하는 테스트 창. `cargo run --bin mesh3d_test` 로 띄운다.
+//! `crate::mesh3d`(진짜 3D 메쉬 렌더러)만 따로 띄워서 확인하는 테스트 창.
+//! `cargo run --bin mesh3d_test` 로 띄운다.
 //!
 //! 장면은 전부 `Box3D`(회전 가능한 직육면체) 하나로만 만든다: 평평한 바닥,
 //! 기울어진 경사로(램프, pitch 회전), 그 위 높은 발판, 옆으로 기운 벽(roll 회전)
