@@ -440,7 +440,6 @@ pub enum IconType {
     Mail,
     Computer,
     Img,
-    Game, // 게임 설치 파일/설치된 게임 아이콘(FileKind::GameSetup, FileKind::GameInstalled) — 지금은 종류 구분 없이 같은 아이콘
     Envelope, // Mail 폴더 트리의 Inbox 아이콘
     RecycleEmpty,
     RecycleFull,
@@ -471,7 +470,6 @@ pub fn icon_of(node: &FileNode) -> IconType {
         FileKind::Mail { .. } => IconType::Mail,
         FileKind::Explorer => IconType::Computer,
         FileKind::Img(_) => IconType::Img,
-        FileKind::GameSetup(_) | FileKind::GameInstalled(_) => IconType::Game,
         FileKind::Deleted => IconType::Folder, // 그 무엇에서도 더는 참조 안 되니 실제로 그려질 일이 없다
     }
 }
@@ -483,9 +481,6 @@ pub fn icon_of(node: &FileNode) -> IconType {
 // 32x32)이 있어서 그걸 그대로 `assets/icon_computer.png` 로 가져와 다른 파일
 // 아이콘들과 같은 텍스처 방식으로 바꿨다.
 pub fn draw_icon(r: &mut Renderer, assets: &Assets, icon: &IconType, x: f32, y: f32, s: f32) {
-    if let IconType::Game = icon {
-        return draw_game_icon(r, x, y, s);
-    }
     let tex = match icon {
         IconType::Folder => assets.icon_folder,
         IconType::Txt => assets.icon_txt,
@@ -497,31 +492,8 @@ pub fn draw_icon(r: &mut Renderer, assets: &Assets, icon: &IconType, x: f32, y: 
         IconType::Envelope => assets.icon_envelope,
         IconType::RecycleEmpty => assets.icon_recycle_empty,
         IconType::RecycleFull => assets.icon_recycle_full,
-        IconType::Game => unreachable!(),
     };
     r.sprite(tex, x, y, s, s, WHITE);
-}
-
-// 게임 다운로드 파일 아이콘 — 아직 전용 PNG 에셋이 없어서 팩맨 모양을 직접 그린다
-// (draw_scale/draw_wifi 처럼 이 파일에 이미 있는 벡터 아이콘들과 같은 요령). 노란
-// 원 + 오른쪽으로 벌어진 검은 쐐기꼴 입 — 진짜 부채꼴 클리핑은 이 렌더러에 없어서
-// 배경색에 기대는 대신, 어떤 배경 위에서도 그대로 보이는 검은 입으로 그린다(실제
-// 팩맨 아이콘들이 흔히 쓰는 표현).
-fn draw_game_icon(r: &mut Renderer, x: f32, y: f32, s: f32) {
-    let cx = x + s * 0.5;
-    let cy = y + s * 0.5;
-    fill_circle(r, cx, cy, s * 0.42, [0.95, 0.82, 0.15, 1.0]);
-    // 입 — 오른쪽 끝(원 가장자리)에서 중심을 향해 점점 좁아지는 쐐기꼴을 가로띠
-    // 여러 장으로 근사한다.
-    let steps = 10;
-    let half_open = s * 0.34; // 원 가장자리에서 입이 위아래로 벌어진 폭의 절반
-    for i in 0..steps {
-        let t = i as f32 / (steps - 1) as f32; // 0=원 가장자리, 1=중심
-        let bar_w = s * 0.42 * t + 1.0;
-        let bar_x = cx + s * 0.42 - bar_w;
-        let half_h = half_open * (1.0 - t) + 1.0;
-        r.rect(bar_x, cy - half_h, bar_w, half_h * 2.0, BLACK);
-    }
 }
 
 // draw_drag_ghost 가 그리는 아이콘 크기 — 호출부(explorer.rs)가 "고스트 아이콘의
@@ -616,8 +588,8 @@ pub fn draw_spinner(r: &mut Renderer, cx: f32, cy: f32, radius: f32, time: f32) 
     }
 }
 
-// 꽉 찬 원을 가로줄(1px 높이)들로 라스터화해서 그린다. pacman.rs 가 코인 빌보드를
-// 그리는 데도 그대로 재사용해서 pub(crate) 로 열어뒀다.
+// 꽉 찬 원을 가로줄(1px 높이)들로 라스터화해서 그린다. 다른 파일에서도 재사용할 수
+// 있게 pub(crate) 로 열어뒀다.
 pub(crate) fn fill_circle(r: &mut Renderer, cx: f32, cy: f32, radius: f32, color: Color) {
     let mut dy = -radius;
     while dy <= radius {

@@ -5,12 +5,10 @@
 
 mod credits;
 mod explorer;
-mod game_installer;
 mod image_viewer;
 mod mail;
 mod notepad;
 mod official_site;
-mod pacman;
 mod password;
 mod recycle_bin;
 mod settings;
@@ -19,12 +17,10 @@ mod widgets;
 
 pub use credits::CreditsApp;
 pub use explorer::{ExplorerApp, ExplorerLocation};
-pub use game_installer::GameInstallerApp;
 pub use image_viewer::ImageViewerApp;
 pub use mail::{MailApp, SentMailView};
 pub use notepad::NotepadApp;
 pub use official_site::OfficialSiteApp;
-pub use pacman::PacmanApp;
 pub use password::PasswordApp;
 pub use recycle_bin::RecycleBinApp;
 pub use settings::SettingsApp;
@@ -36,7 +32,7 @@ use std::rc::Rc;
 
 use miniquad::RenderingBackend;
 
-use crate::foundation::{display_name, FileId, FileKind, FileSystem, GameKind, Settings};
+use crate::foundation::{display_name, FileId, FileKind, FileSystem, Settings};
 use crate::gfx::{Assets, Rect, Renderer};
 use crate::scenes::Input;
 use crate::ui::{icon_of, IconType};
@@ -67,8 +63,6 @@ pub enum AppAction {
     EmptyTrash(Vec<FileId>),   // 휴지통의 "Empty Recycle Bin" — 안의 항목들을 전부 영구히 지운다
     MarkMailRead(usize),       // Mail 에서 메시지(인덱스)를 읽었다 — fs.mail_read 에 기록해야 재시작 후에도 유지된다
     Restore(Vec<FileId>),      // 휴지통의 "Restore" — fs.trash_origin 에 기록된 원래 위치로 되돌린다
-    InstallComplete(GameKind),   // GameInstallerApp 의 진행바가 다 참 — 이 게임을 fs.installed_games 에 추가하고 바탕화면에 아이콘을 만들어달라는 요청
-    SavePacmanRound(usize),      // PacmanApp 이 새 라운드를 시작했다 — fs.pacman_round 에 기록해서 다음에 열 때 그 라운드부터 이어지게 해달라는 요청
     // Mail 의 "Write Mail" 탭에서 새 메일을 작성해 보냄 — fs.sent_mail 에 내용째 쌓는다.
     // 첨부는 여러 개를 붙일 수 있어서 Vec(순서대로 붙인 순서).
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
@@ -238,9 +232,8 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
                     SentMailView { to: m.to.clone(), subject: m.subject.clone(), body: m.body.clone(), attachments }
                 })
                 .collect();
-            let game_name = fs.get(fs.mail_game_attachment).name.clone();
             Opened {
-                app: Box::new(MailApp::new(fs.mail_arrived, &fs.mail_read, attachable, sent, fs.mail_game_attachment, game_name, settings.clone())),
+                app: Box::new(MailApp::new(fs.mail_arrived, &fs.mail_read, attachable, sent, settings.clone())),
                 title: name,
                 // Outlook Express/Exchange 참고 레이아웃 — 메뉴바 + 폴더 트리(150) +
                 // 상태바(20)까지 들어가야 해서 기존보다 좌우/위아래로 넉넉해야 한다.
@@ -268,30 +261,6 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (340.0, 260.0),
         },
-        // "(게임 이름) Setup.exe" — 열면 항상 설치 마법사가 뜨는데, 이미 설치된
-        // 게임이면(GameInstallerApp 내부에서 곧장 "이미 설치됨" 페이지로) 마법사를
-        // 다시 완주할 필요 없이 바로 그 페이지가 열린다. 진행바가 다 차는 순간
-        // desktop.rs 가 AppAction::InstallComplete 를 받아 fs.installed_games 에
-        // 추가하고 바탕화면에 새 아이콘(FileKind::GameInstalled)을 만든다.
-        &FileKind::GameSetup(kind) => Opened {
-            app: Box::new(GameInstallerApp::new(kind, fs.is_game_installed(kind), settings.clone())),
-            title: name,
-            size: (360.0, 220.0),
-            maximized: false,
-            resizable: false,
-            maximizable: false,
-            movable: true,
-            min_size: (360.0, 220.0),
-        },
-        // 설치 마법사가 끝나고 바탕화면에 새로 생긴 아이콘 — 실제 게임 앱을 연다.
-        // 게임 창은 (다른 말이 없는 한) 크기를 고정한다 — 리사이즈/최대화로
-        // 레이아웃이 흐트러지는 걸 막는 편이 화면 하나짜리 아케이드 게임엔 더 자연스럽다.
-        &FileKind::GameInstalled(kind) => {
-            let app: Box<dyn App> = match kind {
-                GameKind::Pacman => Box::new(PacmanApp::new(fs.pacman_round)),
-            };
-            Opened { app, title: name, size: (420.0, 360.0), maximized: false, resizable: false, maximizable: false, movable: true, min_size: (420.0, 360.0) }
-        }
         FileKind::Deleted => unreachable!("삭제된 파일은 그 무엇에서도 더는 참조되지 않아 열릴 일이 없다"),
     }
 }

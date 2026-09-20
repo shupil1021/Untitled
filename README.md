@@ -68,20 +68,12 @@ cargo run
 - **Inbox**: 새 게임을 시작하면 처음엔 비어있다가, 5초(`MAIL_ARRIVAL_DELAY`, `scenes/
   desktop.rs`) 뒤에 메일이 한 통 자동으로 도착한다. 도착하는 순간 화면 우측
   하단(작업표시줄 바로 위)에 5초짜리 "New Mail" 토스트 알림이 뜨는데, 누르면 바로
-  Mail 을 연다(`DesktopScene::update_toast`). 제목/본문은 지금 일부러 비워뒀고
-  (`(게임 이름) Setup.exe` 첨부만 걸려있다, 예: `Pacman Setup.exe`) — 지금은 "메일 →
-  다운로드 → 설치 마법사 → 바탕화면에 설치" 파이프라인만 만드는 단계라 내용은 다음
-  기획 확정 때 채운다. 첨부를 다운로드해도(예전과 달리) 자동으로 열리지 않고,
-  Downloads 탭에서 직접 더블클릭해야 열린다 — 처음 열 때는(그 게임이 아직
-  `fs.installed_games`에 없으면) 옛 HexTool Setup.exe와 같은 요령의 설치 마법사
-  (`apps/game_installer.rs::GameInstallerApp` — Welcome → Installing(들쭉날쭉한
-  가짜 진행바) → Finish, 약관 페이지는 뺐다)가 뜨고, 진행바가 다 차는 순간 그
-  게임을 설치된 것으로 기록하면서 바탕화면에 새 아이콘("(게임 이름).exe", 예:
-  `Pacman.exe`)을 만든다. 그 아이콘을 열면 곧장 실제 게임 창(`apps/pacman.rs::
-  PacmanApp`)이 뜬다. Setup.exe 자체를 나중에 또 열면(예: Downloads 에 남아있던
-  첨부를 다시 눌러본 경우) 마법사를 다시 태우지 않고 "이미 설치됨" 페이지로
-  곧장 연다. 새 게임을 추가할 땐 `GameKind`에 variant 하나, `apps/mod.rs::open()`의
-  `GameInstalled` 분기에 그 게임 앱을 고르는 한 줄만 더하면 되도록 설계해뒀다.
+  Mail 을 연다(`DesktopScene::update_toast`). 제목/본문/첨부는 지금 일부러 비워뒀다
+  — 예전엔 여기에 미니게임 설치 파일(`(게임 이름) Setup.exe`)을 첨부로 걸고
+  "메일 → 다운로드 → 설치 마법사 → 바탕화면에 설치" 파이프라인(`GameKind`/
+  `apps/game_installer.rs::GameInstallerApp`/미로 미니게임 앱 등)이 있었는데,
+  그 미니게임 자체를 지우면서 파이프라인도 통째로 걷어냈다 — 실제 스토리 내용은
+  다음 기획 확정 때 이 자리에 다시 채운다.
 - **Write Mail**: To/Subject/Body 실제 텍스트 입력(커서 클릭 이동 포함), Desktop/Downloads
   파일 첨부(다중), Send는 To·Body가 채워져야 활성화. 한글/일본어 IME 조합을 지원(백스페이스로
   조합 중 자모 하나만 지우기 등, `ime.rs` 참고).
@@ -100,43 +92,13 @@ cargo run
 - **Credits**, **Official Site**(WebView2를 오프스크린 렌더 + 주기적 캡처로 텍스처화해서
   CRT 파이프라인을 그대로 통과시킨다 — 실제 클릭/스크롤/타이핑 가능), **비밀번호 대화상자**
   (`.lock` 파일용).
-- **팩맨**(`apps/pacman.rs::PacmanApp`, 설치된 `(게임 이름).exe`를 열면 뜬다): `raycaster.rs`
-  (아래 참고)로 미로를 그리는 1인칭 버전 — 텍스처/유령은 아직 없다. W/S 로 바라보는
-  방향 기준 앞/뒤 이동, A/D 로 좌우 회전(스트레이프 없음). 창이 포커스를 잃으면 키
-  입력을 아예 안 읽는다.
-  - **라운드 5개**(`ROUND_MAP_SIZES` 상수, 맵 크기 4/5/7/9/14): 1~4라운드는 매번
-    `raycaster::generate_maze`(랜덤 Prim)로 미로를 새로 생성해서 플레이할 때마다
-    다르게 나오고, 5라운드만 고정 시드(`ROUND5_SEED`)로 생성해 항상 같은 미로가
-    나온다. 생성 직후 `raycaster::braid_maze`(`MAZE_BRAID_CHANCE=1.0`)로 막다른
-    길마다 벽을 하나씩 더 허물어서 루프를 만든다 — 완전미로 그대로 두면 갈림길
-    마다 결국 되돌아 나와야 하는 "끊기는" 구조라, 서로 이어지는 구조가 되게
-    했다. `map_size`는 방 격자 한 변의 방 개수(1~14) — 실제 격자는 (2×map_size+1)
-    칸이다. 코인은 시작 칸을 뺀 바닥 칸 전부에 놓는다(`place_coins`) — 그 라운드의
-    coins_total 은 맵 크기에 따라 자연히 정해진다. 시작 방향은 시작 칸에서 실제로
-    뚫려있는 방향(동→남→서→북 순서로 검사, `Raycaster::face_open_direction`)을
-    찾아 그쪽을 보게 한다 — 미로 생성 결과 시작 칸 동쪽이 벽인 경우도 흔해서,
-    안 그러면 벽을 마주보고 시작하는 경우가 있었다.
-  - 코인 칸을 밟으면 즉시 먹고, 그 라운드에 놓인 코인을 전부 먹으면 화면이 검은
-    배경 + "Round Clear"로 2초간 바뀌었다가(`ROUND_CLEAR_HOLD`) 다음 라운드로
-    넘어간다(5라운드를 깨면 1라운드로 되돌아간다 — "올 클리어" 화면은 아직 없다).
-  - 화면 위쪽 검은 띠에 "(현재 라운드)Round (그 라운드에서 먹은 코인)/(그 라운드
-    전체 코인)"이 흰 글씨로 뜬다(코인 자체는 계속 노란 원). 게임 내 텍스트(HUD,
-    "Round Clear")는 전부 흰색으로 통일했다.
-  - **조작법 안내**: W/A/S/D 를 한 번도 안 눌러봤으면 화면 아래쪽에 "W/S to
-    move" / "A/D to turn camera"를 띄운다. 네 키 중 아무거나 한 번 누르면 그
-    뒤로는 이 창이 열려있는 동안(라운드가 바뀌어도) 계속 숨긴다.
-  - **진행 저장**: 라운드가 새로 시작될 때마다(맨 처음 열 때 포함) 그 즉시
-    `fs.pacman_round`에 기록한다(`AppAction::SavePacmanRound` →
-    `DeskAction::SavePacmanRound` → `write_save`) — 5초 자동저장을 기다리지
-    않고, 창을 닫았다 다시 열어도 마지막으로 도달했던 라운드부터 이어서
-    한다(매번 1라운드부터 다시 시작하지 않는다).
-
 ### 1인칭 3D 레이캐스팅 엔진 (`raycaster.rs`)
 
-팩맨을 만들면서 생긴 "벽 DDA 레이캐스팅 + 충돌 이동 + 미로 생성 + 빌보드(작은
-물체) 렌더링"을 게임 고유 규칙(라운드/코인/HUD)과 분리해 재사용 모듈로 뽑아뒀다 —
-앞으로 미로/복도 구조의 1인칭 3D 미니게임을 더 추가할 때 이 모듈 하나로 엔진
-부분을 공유한다.
+원래 팩맨류 미로 미니게임(`apps/pacman.rs::PacmanApp` — 이후 지워졌다, 메일 첨부/
+설치 마법사 파이프라인과 함께 통째로 걷어냈다)을 만들면서 생긴 "벽 DDA 레이캐스팅
++ 충돌 이동 + 미로 생성 + 빌보드(작은 물체) 렌더링"을 게임 고유 규칙(라운드/코인/
+HUD)과 분리해 재사용 모듈로 뽑아뒀다 — 엔진 자체는 그대로 남겨둬서, 앞으로 미로/
+복도 구조의 1인칭 3D 미니게임을 추가할 때 이 모듈 하나로 엔진 부분을 공유한다.
 
 - `Raycaster`: 그리드 미로(`walls: Vec<Vec<bool>>`) + 플레이어 위치/각도를 들고,
   `is_wall`/`try_move`/`apply_wasd`(W/S/A/D 네 방향 bool 을 받아 이동/회전에 그대로
@@ -153,7 +115,7 @@ cargo run
   정확히 하나인 방)마다 막혀있는 이웃 벽 하나를 `chance` 확률로 더 허물어
   루프를 만든다 — 미로가 갈림길마다 결국 되돌아 나와야 하는 "끊기는" 구조가
   아니라, 경로끼리 서로 이어지는 구조가 되게 한다. `chance=1.0`이면 막다른
-  길을 최대한 다 없앤다(팩맨이 씀, `ROUND_MAP_SIZES`/`MAZE_BRAID_CHANCE` 참고).
+  길을 최대한 다 없앤다.
 - `Billboard` + `render_billboards`: 코인처럼 완전히 둥근 물체 — 항상 카메라를
   향하는 평면(스프라이트) 하나로 그린다. 둥근 물체는 어느 각도에서 봐도 실루엣이
   원이라 이걸로 충분하다.
@@ -219,7 +181,7 @@ cargo run
   칠하는 근사치로 남겨뒀다 — 면이 올바른 자리에 입혀지는지 확인하기엔
   충분하지만 옆면만큼 세밀하지는 않다.
 - `src/bin/raycaster_test.rs`: 이 엔진만 따로 띄워서 확인하는 가장 작은 테스트
-  창(`cargo run --bin raycaster_test`) — 팩맨의 라운드/코인 규칙도, 미로도 없이
+  창(`cargo run --bin raycaster_test`) — 어떤 게임의 라운드/코인 규칙도, 미로도 없이
   사방이 벽인 뻥 뚫린 방 하나(`generate_open_room`)를 만들고, 그 바닥에 책상/의자
   /상자/책장(전부 `Prop3D`, 크기·색이 서로 다른 진짜 입체)을 무작위 위치·종류로
   8개 흩뿌려놓은 뒤 WASD 로 걸어 다니며 벽/물체끼리 잘 가려지는지 확인한다.
@@ -281,13 +243,12 @@ src/
 ├── ime.rs              # 한/일 IME 조합 타이밍/팝업 위치 우회(Win32 IMM32)
 ├── window_manager.rs   # 창 관리자 (z순서, 드래그, 크기조절, 타이틀바 버튼)
 ├── director_ipc.rs     # director/director_panel 간 JSON IPC (게임은 안 씀)
-├── raycaster.rs        # 재사용 1인칭 3D 레이캐스팅 엔진(DDA/이동/미로 생성/빌보드) — 팩맨이 씀
+├── raycaster.rs        # 재사용 1인칭 3D 레이캐스팅 엔진(DDA/이동/미로 생성/빌보드) — 지금은 raycaster_test 에서만 씀
 ├── apps/               # 파일별 앱 — 새 앱은 파일 하나 + mod.rs 한 줄
 │   ├── mod.rs             # App 트레잇 / AppAction / Opened + open() 파일→앱 매칭
 │   ├── widgets.rs         # 여러 앱이 같이 쓰는 위젯(아이콘 격자/슬라이더/스크롤바)
 │   ├── notepad.rs, video_player.rs, image_viewer.rs, mail.rs, explorer.rs,
-│   │   recycle_bin.rs, password.rs, credits.rs, settings.rs, official_site.rs,
-│   │   game_installer.rs, pacman.rs
+│   │   recycle_bin.rs, password.rs, credits.rs, settings.rs, official_site.rs
 └── scenes/              # 화면 전체를 차지하는 씬 — 새 씬은 파일 하나 + mod.rs 한 줄
     ├── mod.rs              # Scene 트레잇 / Transition / SceneManager / Frame / Input
     ├── lobby.rs, boot.rs, desktop.rs, shutdown.rs, erase.rs, bluescreen.rs
@@ -307,13 +268,14 @@ src/bin/
 ## 알려진 제한사항
 
 - 기획이 갈아엎이면서 예전에 있던 "메일로 HexTool 설치 마법사를 받아 ????? 사진을
-  검수하는" 라인(자동 도착 메일, HexTool, 사진 검수 도구)을 통째로 걷어냈다 — 새 기획인
-  "메일로 게임 설치 파일을 받아 팩맨류 게임을 플레이하는" 방식은 메일 도착 → 다운로드 →
-  설치 마법사 → 바탕화면 설치 → 레이캐스팅 미로/코인까지는 만들어져 있고, 유령/충돌
-  판정에 따른 게임오버·점수 저장 같은 나머지 팩맨 규칙은 아직 없다.
-- 게임류 창(팩맨 등)은 따로 이야기 없으면 항상 리사이즈/최대화가 꺼진 고정 크기로
-  연다(`apps/mod.rs::open()`) — 아케이드 게임 화면이 창 크기에 따라 늘어나 보이는 걸
-  막기 위한 기본값.
+  검수하는" 라인(자동 도착 메일, HexTool, 사진 검수 도구)을 통째로 걷어냈다. 그 뒤에
+  만들었던 "메일로 게임 설치 파일을 받아 팩맨류 게임을 플레이하는" 라인(메일 도착 →
+  다운로드 → 설치 마법사 → 바탕화면 설치 → 레이캐스팅 미로/코인)도 미니게임 자체와
+  함께 다시 걷어냈다 — 메일은 지금 도착 타이밍/토스트 알림만 남고 내용은 비어있고,
+  `raycaster.rs`(엔진 자체)만 `raycaster_test.rs`에서 계속 재사용할 수 있게 남겨뒀다.
+- 게임류 창을 추가할 땐 따로 이야기 없으면 항상 리사이즈/최대화가 꺼진 고정 크기로
+  여는 게 기본값이다(`apps/mod.rs::open()`) — 아케이드 게임 화면이 창 크기에 따라
+  늘어나 보이는 걸 막기 위함.
 - 작성 중인 메일에 첨부한 파일을 보내기 전에 삭제/이동하면, 이미 첨부된 항목은 자동으로
   갱신되지 않는다.
 - 이미지 뷰어/일부 스토리 콘텐츠는 [ROADMAP.md](ROADMAP.md)의 챕터 진행에 맞춰 계속

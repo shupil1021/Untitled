@@ -87,43 +87,6 @@ pub mod video_player {
     pub const PUT_VIDEO_AT: S = S { en: "Put a video at", ko: "다음 경로에 동영상을 넣으세요:", ja: "動画を次の場所に置いてください:" };
 }
 
-// apps/pacman.rs — 메일로 받은 게임 다운로드 파일을 열면 뜨는 창(아직 자리표시자).
-// apps/game_installer.rs — 메일 첨부(Game.exe)를 처음 열면 뜨는 설치 마법사.
-// fs.game_installed 가 false 인 동안만 뜨고, 설치가 끝나면 다음부턴 곧장
-// PacmanApp(pacman 모듈)이 열린다.
-pub mod game_installer {
-    use super::S;
-    pub const WINDOW_TITLE: S = S { en: "Game Setup", ko: "Game 설치", ja: "Gameセットアップ" };
-    pub const INSTALL: S = S { en: "Install", ko: "설치", ja: "インストール" };
-    pub const FINISH: S = S { en: "Finish", ko: "마침", ja: "完了" };
-
-    pub const PAGE_ALREADY_INSTALLED: S = S { en: "Already Installed", ko: "이미 설치됨", ja: "インストール済み" };
-    pub const ALREADY_INSTALLED_MSG: S =
-        S { en: "Game is already installed on this computer.", ko: "이 컴퓨터에는 Game이(가) 이미 설치되어 있습니다.", ja: "このコンピューターにはGameが既にインストールされています。" };
-
-    pub const PAGE_WELCOME: S = S { en: "Welcome", ko: "환영합니다", ja: "ようこそ" };
-    pub const WELCOME_MSG: S = S {
-        en: "This wizard will install Game on your computer.",
-        ko: "이 마법사는 이 컴퓨터에 Game을(를) 설치합니다.",
-        ja: "このウィザードは、このコンピューターにGameをインストールします。",
-    };
-    pub const CLICK_INSTALL_OR_CANCEL: S =
-        S { en: "Click Install to continue, or Cancel to exit.", ko: "계속하려면 설치를, 종료하려면 취소를 누르세요.", ja: "続けるにはインストール、終了するにはキャンセルを押してください。" };
-
-    pub const PAGE_INSTALLING: S = S { en: "Installing", ko: "설치 중", ja: "インストール中" };
-    pub const INSTALLING_MSG: S = S { en: "Please wait while Game is installed.", ko: "Game을(를) 설치하는 동안 잠시 기다려 주세요.", ja: "Gameのインストール中です。お待ちください。" };
-    pub const STEP_COPYING: S = S { en: "Copying files...", ko: "파일 복사 중...", ja: "ファイルをコピー中..." };
-    pub const STEP_REGISTERING: S = S { en: "Registering Game.dll...", ko: "Game.dll 등록 중...", ja: "Game.dllを登録中..." };
-    pub const STEP_UPDATING: S = S { en: "Updating configuration...", ko: "설정 업데이트 중...", ja: "設定を更新中..." };
-    pub const STEP_VERIFYING: S = S { en: "Verifying installation...", ko: "설치 확인 중...", ja: "インストールを確認中..." };
-    pub const STEP_FINALIZING: S = S { en: "Finalizing...", ko: "마무리 중...", ja: "仕上げ中..." };
-    pub const DONE: S = S { en: "Done.", ko: "완료.", ja: "完了。" };
-
-    pub const PAGE_FINISH: S = S { en: "Setup Complete", ko: "설치 완료", ja: "セットアップ完了" };
-    pub const FINISH_MSG: S = S { en: "Setup has finished installing Game on your computer.", ko: "Game 설치가 완료되었습니다.", ja: "Gameのインストールが完了しました。" };
-    pub const CLICK_FINISH_TO_CLOSE: S = S { en: "Click Finish to close this wizard.", ko: "마법사를 닫으려면 마침을 누르세요.", ja: "ウィザードを閉じるには完了を押してください。" };
-}
-
 // apps/mail.rs — 메일 앱(Outlook Express 스타일).
 pub mod mail {
     use super::S;

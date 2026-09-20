@@ -458,17 +458,6 @@ impl DesktopScene {
         (0, 0) // 격자가 완전히 꽉 찼으면 어쩔 수 없이 겹쳐서라도 첫 칸에 둔다.
     }
 
-    // fs 에 새 파일을 만들어 바탕화면에 아이콘으로 추가한다 — 바탕화면 아이콘은
-    // 대부분 시작할 때 한 번만 고정으로 깔리는데(fs.desktop 이 그 뒤로 안 바뀜),
-    // 설치 마법사를 끝내면 "설치된 프로그램" 아이콘이 실행 중에 새로 생겨야 해서
-    // 런타임에 fs.desktop/icon_pos 를 늘리는 경로가 하나 필요하다.
-    fn add_desktop_icon(&mut self, name: &str, kind: FileKind) {
-        let id = self.fs.add(name, kind);
-        self.fs.desktop.push(id);
-        let (fc, fr) = self.first_free_tile();
-        self.icon_pos.push(Self::tile_to_pos(fc, fr));
-    }
-
     // File Explorer 에서 드래그해온 기존 파일(id)을 바탕화면에 놓는다 — Downloads/폴더에서
     // 옮겨오는 경우. drop_at 은 실제로 마우스를 놓은 화면 좌표 — 그 위치에서 가장
     // 가까운 빈 칸(nearest_free_tile)에 둬서 "마우스로 놓은 자리"에 실제로 놓인다.
@@ -486,8 +475,7 @@ impl DesktopScene {
     // 버튼처럼 놓은 지점이라는 게 아예 없는(버튼을 누른 시점의 마우스 좌표는 그
     // 버튼 위, 즉 지금 열려있는 휴지통 창 안이라 그 좌표를 드롭 지점으로 쓰면
     // 복구된 아이콘이 바로 그 창 뒤에 깔려 안 보이는 문제가 있었다) 프로그램적
-    // 복구/생성엔 add_desktop_icon 처럼 항상 실제로 비어있는 첫 칸(first_free_tile)
-    // 에 놓는 게 맞다.
+    // 프로그램적 복구엔 항상 실제로 비어있는 첫 칸(first_free_tile)에 놓는 게 맞다.
     fn add_existing_to_desktop_default(&mut self, id: FileId) {
         if self.fs.desktop.contains(&id) {
             return;
@@ -1319,22 +1307,6 @@ impl Scene for DesktopScene {
                     self.refresh_explorer_if_open(&f.settings);
                     self.refresh_recycle_bin_if_open(&f.settings);
                     self.refresh_mail_attachable_if_open();
-                    self.write_save(&f.settings);
-                }
-                // 설치 마법사 진행바가 다 찬 순간 한 번 온다 — 지금 열려있는 마법사
-                // 창 자체는 그대로 두고(Finish 버튼으로 사용자가 직접 닫는다) fs 에
-                // 설치 완료를 기록하고 바탕화면에 "설치된 프로그램" 아이콘을 새로
-                // 만든다(HexTool 때와 같은 요령) — 그 아이콘을 열면 실제 게임이 뜬다.
-                DeskAction::InstallComplete(kind) => {
-                    self.fs.mark_game_installed(kind);
-                    self.add_desktop_icon(&kind.installed_file_name(), FileKind::GameInstalled(kind));
-                    self.write_save(&f.settings);
-                }
-                // 팩맨이 새 라운드를 시작할 때마다(맨 처음 열 때 포함) 온다 — 그
-                // 즉시 저장해둬야, 플레이 중 창을 닫아도(자동저장 5초를 기다리지
-                // 않고) 마지막으로 도달했던 라운드부터 다시 이어진다.
-                DeskAction::SavePacmanRound(round) => {
-                    self.fs.pacman_round = round;
                     self.write_save(&f.settings);
                 }
                 DeskAction::MarkMailRead(i) => {

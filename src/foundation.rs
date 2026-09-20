@@ -25,44 +25,7 @@ pub enum FileKind {
     #[serde(rename = "Email")]
     Mail { attachment: Option<FileId> },                // 메일 앱 (첨부파일 하나까지)
     Explorer,                                           // 바탕화면의 File Explorer (탭 있는 탐색기)
-    // 메일로 받는 "(게임 이름) Setup.exe" — 열면 GameInstallerApp(설치 마법사)가
-    // 뜬다. 이미 설치된 게임이면(FileSystem::is_game_installed) 마법사가 Welcome
-    // 부터가 아니라 곧장 "이미 설치됨" 페이지로 연다.
-    GameSetup(GameKind),
-    // 설치 마법사가 끝나면 add_desktop_icon 으로 바탕화면에 새로 생기는 아이콘 —
-    // 열면 그 게임의 실제 앱(PacmanApp 등)이 뜬다.
-    GameInstalled(GameKind),
     Deleted,                                             // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
-}
-
-// 메일로 받을 수 있는 게임들의 종류 — 지금은 팩맨 하나뿐이지만, 설치 마법사/바탕화면
-// 아이콘/실제 게임 앱을 고르는 로직이 전부 이 값 하나로 갈라지도록 설계해뒀다 —
-// 새 게임을 추가할 땐 여기 variant 하나와 display_name() 매치 한 줄, 그리고
-// apps/mod.rs::open() 의 GameInstalled 분기에 그 게임 앱을 고르는 한 줄만 더하면 된다.
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum GameKind {
-    Pacman,
-}
-
-impl GameKind {
-    // 실제 파일/아이콘 이름에 쓰는 게임 이름 — HexTool 때처럼 언어와 무관한 "실제
-    // 파일" 이름이라 번역하지 않는다(display_name() 을 거치지 않고 fs 에 그대로 저장됨).
-    pub fn display_name(self) -> &'static str {
-        match self {
-            GameKind::Pacman => "Pacman",
-        }
-    }
-
-    // 메일 첨부로 오는 설치 파일의 실제 이름 — "(게임 이름) Setup.exe".
-    pub fn setup_file_name(self) -> String {
-        format!("{} Setup.exe", self.display_name())
-    }
-
-    // 설치 마법사가 끝나고 바탕화면에 생기는 아이콘의 실제 파일 이름 — 실행 파일이니
-    // Setup.exe 와 마찬가지로 ".exe" 를 붙인다.
-    pub fn installed_file_name(self) -> String {
-        format!("{}.exe", self.display_name())
-    }
 }
 
 // 일부 fs 노드는 이름 자체가 "이건 특수 노드다"라는 표식으로 쓰인다(전용
@@ -98,23 +61,6 @@ pub struct FileSystem {
     // 상태. desktop.rs 의 타이머가 새 게임을 시작하고 일정 시간 뒤 true 로 바꾼다.
     #[serde(default)]
     pub mail_arrived: bool,
-    // 입사 안내 메일이 첨부로 거는 실제 FileKind::GameSetup 노드의 id — 메일 쪽
-    // (apps/mail.rs::seed_messages)은 fs 를 직접 들고 있지 않아서 첨부에 쓸
-    // FileId 를 스스로 만들 수 없다. 그래서 FileSystem::new() 가 미리 하나
-    // 만들어서 이 필드에 박아두고, apps/mod.rs::open() 의 FileKind::Mail
-    // 분기가 매번 이 값을 MailApp::new() 로 그대로 넘겨준다.
-    #[serde(default)]
-    pub mail_game_attachment: FileId,
-    // 설치 마법사(GameInstallerApp)가 끝까지(진행바가 다 찬 순간) 간 게임 종류들 —
-    // HexTool 때의 단일 bool 과 달리 여러 게임을 구분해야 해서 Vec 로 둔다. 여기
-    // 있는 게임은 Setup.exe 를 다시 열어도 마법사 없이 "이미 설치됨" 페이지로 연다.
-    #[serde(default)]
-    pub installed_games: Vec<GameKind>,
-    // 팩맨(apps/pacman.rs)이 지금까지 도달한 라운드(0부터) — 라운드가 새로
-    // 시작될 때마다(처음 열 때 포함) 그 즉시 저장해서, 창을 닫았다 다시 열어도
-    // 처음(0라운드)부터가 아니라 마지막으로 도달했던 라운드부터 이어서 한다.
-    #[serde(default)]
-    pub pacman_round: usize,
     // 읽은 메일의 인덱스(MailApp::seed_messages 순번) — MailApp 자체는 창을 닫거나
     // 3초 주기 새로고침으로 새로 만들어질 때마다 통째로 새 인스턴스가 되므로, 읽음
     // 여부를 여기(저장 파일에 실리는 fs)에 둬야 새로고침은 물론 게임을 종료했다
@@ -201,9 +147,6 @@ impl FileSystem {
             downloads: Vec::new(),
             ever_downloaded: Vec::new(),
             mail_arrived: false,
-            mail_game_attachment: 0, // 아래에서 실제 노드를 만들고 바로 채운다
-            installed_games: Vec::new(),
-            pacman_round: 0,
             mail_read: Vec::new(),
             sent_mail: Vec::new(),
             trash_origin: Vec::new(),
@@ -221,12 +164,6 @@ impl FileSystem {
 
         fs.desktop = vec![recycle_bin, explorer, mail];
 
-        // 입사 안내 메일이 첨부로 거는 게임 설치 파일 — 바탕화면/Downloads 어디에도
-        // 아직 안 걸려있는, 오직 메일 첨부용으로만 미리 만들어두는 실제 노드. 이름은
-        // "Pacman Setup.exe" 처럼 GameKind::setup_file_name() 이 정한다. 다운로드하면
-        // Downloads 탭에 나타나고, 그걸 열면(FileKind::GameSetup) 설치 마법사가 뜬다.
-        const FIRST_GAME: GameKind = GameKind::Pacman;
-        fs.mail_game_attachment = fs.add(&FIRST_GAME.setup_file_name(), FileKind::GameSetup(FIRST_GAME));
         fs
     }
 
@@ -237,19 +174,6 @@ impl FileSystem {
 
     pub fn get(&self, id: FileId) -> &FileNode {
         &self.nodes[id]
-    }
-
-    pub fn is_game_installed(&self, kind: GameKind) -> bool {
-        self.installed_games.contains(&kind)
-    }
-
-    // 설치 마법사가 끝까지 가면(진행바가 다 찬 순간) desktop.rs 가 부른다 — 이미
-    // 설치돼 있으면(같은 Setup.exe 를 두 번 완주한 경우는 없지만 만약을 위해)
-    // 중복으로 쌓지 않는다.
-    pub fn mark_game_installed(&mut self, kind: GameKind) {
-        if !self.installed_games.contains(&kind) {
-            self.installed_games.push(kind);
-        }
     }
 
     // desktop.rs 가 Credits/Official Site 처럼 "실제 파일은 아니지만 중복으로
