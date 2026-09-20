@@ -10,7 +10,8 @@
 //! 보여주는 게 목적이다.
 //!
 //! 조작: W/S 전진/후진, A/D 좌우 회전, ↑/↓ 로 위아래를 본다, Space 로 점프,
-//! Esc 로 종료.
+//! `[`/`]` 로 색상 단계 수(`Mesh3D::set_retro_shading`) 줄이기/늘리기, `;`/`'`
+//! 로 디더링 세기 줄이기/늘리기, `\` 로 레트로 프리셋 켬/끔 토글, Esc 로 종료.
 
 use miniquad::*;
 
@@ -202,7 +203,10 @@ impl Stage {
     fn new() -> Stage {
         let mut ctx: Box<dyn RenderingBackend> = window::new_rendering_backend();
         let renderer = Renderer::new(ctx.as_mut());
-        let mesh3d = Mesh3D::new(ctx.as_mut(), WIN_W as u32, WIN_H as u32);
+        let mut mesh3d = Mesh3D::new(ctx.as_mut(), WIN_W as u32, WIN_H as u32);
+        // 새로 추가한 디더링/색상 제한 셰이더를 바로 보여주려고 PS1 스타일
+        // 프리셋을 켜둔다 — `\` 키로 끄고 켤 수 있다.
+        mesh3d.set_retro_shading(1.0, 5.0);
         let boxes = build_scene();
         let player = Player { feet: [0.0, 0.0, -3.0], yaw: std::f32::consts::FRAC_PI_2, pitch: 0.0, vel_y: 0.0, grounded: true };
         Stage { ctx, renderer, mesh3d, boxes, player, input: Input::default(), last_time: date::now() }
@@ -229,9 +233,10 @@ impl EventHandler for Stage {
 
         self.renderer.rect(0.0, 0.0, WIN_W, 18.0, [0.0, 0.0, 0.0, 0.55]);
         self.renderer.text(6.0, 3.0, "mesh3d.rs test - WASD move/turn, Up/Down look, Space jump, Esc quit", 0.7, [1.0, 1.0, 1.0, 1.0]);
+        let (dither, levels) = self.mesh3d.retro_shading();
         let status = format!(
-            "pos=({:.1},{:.1},{:.1}) grounded={}",
-            self.player.feet[0], self.player.feet[1], self.player.feet[2], self.player.grounded
+            "pos=({:.1},{:.1},{:.1}) grounded={} | dither={:.2}([;/') levels={:.0}([/]) \\=toggle",
+            self.player.feet[0], self.player.feet[1], self.player.feet[2], self.player.grounded, dither, levels
         );
         self.renderer.text(6.0, WIN_H - 16.0, &status, 0.7, [1.0, 1.0, 0.6, 1.0]);
 
@@ -246,6 +251,25 @@ impl EventHandler for Stage {
     fn key_down_event(&mut self, keycode: KeyCode, _mods: KeyMods, repeat: bool) {
         if keycode == KeyCode::Escape {
             window::order_quit();
+        }
+        if !repeat {
+            let (dither, levels) = self.mesh3d.retro_shading();
+            match keycode {
+                KeyCode::LeftBracket => self.mesh3d.set_retro_shading(dither, levels - 1.0),
+                KeyCode::RightBracket => self.mesh3d.set_retro_shading(dither, levels + 1.0),
+                KeyCode::Semicolon => self.mesh3d.set_retro_shading(dither - 0.1, levels),
+                KeyCode::Apostrophe => self.mesh3d.set_retro_shading(dither + 0.1, levels),
+                // 지금 켜져 있으면(디더나 색상 제한이 조금이라도 걸려 있으면) 완전히
+                // 끄고, 꺼져 있으면 PS1 스타일 프리셋(채널당 5단계 + 최대 디더)을 켠다.
+                KeyCode::Backslash => {
+                    if dither > 0.0 || levels < 255.0 {
+                        self.mesh3d.set_retro_shading(0.0, 256.0);
+                    } else {
+                        self.mesh3d.set_retro_shading(1.0, 5.0);
+                    }
+                }
+                _ => {}
+            }
         }
         self.input.on_key_down(keycode, repeat);
     }
