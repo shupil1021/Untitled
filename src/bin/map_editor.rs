@@ -11,7 +11,10 @@
 //!
 //! UI 는 Win9x 위젯(`ui::button`) 대신 이 파일 안에서 직접 그리는 플랫 다크
 //! 테마다(`flat_button`/`stepper_row`) — 유니티 인스펙터/하이어라키(어두운 회색
-//! 패널, 그보다 살짝 밝은 사각 필드, 파란 강조색, 들여쓰기된 트리)를 참고했다.
+//! 패널, 파란 강조색, 들여쓰기된 트리)를 참고했다. 가만히 있는 항목은 사각
+//! 박스로 안 둘러싸고 글자만 보이다가, 마우스가 올라가거나 선택됐을 때만
+//! 배경이 생긴다(전부 박스/버튼처럼 보이면 "짝대기 더미" 같다는 피드백을
+//! 받았다) — 실제 입력 필드(숫자 값 칸)만 항상 옅은 배경이 있다.
 //! 왼쪽엔 씬(들여쓰기된 오브젝트 트리, 스크롤 가능) + 그 아래 인스펙터(기즈모
 //! 모드 버튼/이름 바꾸기/부모 지정/위치·회전·크기 -/+ 필드/walkable·solid
 //! 토글/색상 순환/텍스처 목록) 패널이 있고, 오른쪽이 3D 뷰포트다.
@@ -20,7 +23,10 @@
 //! - **뷰포트에서 마우스 왼쪽 클릭**(드래그 없이): 그 자리의 상자 하나만 선택.
 //!   **드래그**(빈 곳에서 시작): 사각형 안에 중심이 들어오는 상자를 전부 선택
 //!   (여러 개 선택 — 유니티 씬 뷰의 드래그 선택과 같다). **왼쪽 패널의 오브젝트
-//!   트리 클릭**도 단일 선택.
+//!   트리 클릭**도 단일 선택, **트리 행을 눌러서 드래그**하면 다른 행(또는 맨
+//!   위 "루트로 놓기" 구역) 위에 놓아 부모-자식 관계를 바꿀 수 있다(블렌더/
+//!   유니티의 아웃라이너/하이어라키와 같은 방식 — 자기 자신이나 자기 자손
+//!   위엔 못 놓는다).
 //! - **선택한 상자에 뜨는 기즈모**(빨강=X, 초록=Y, 파랑=Z): 이동 모드는 화살표,
 //!   회전 모드는 축 둘레 고리, 크기조절 모드는 끝에 각진 손잡이로 서로 다르게
 //!   그린다 — 셋 다 "그냥 막대기"로 보이지 않게. 중심에서 손잡이까지 이어진
@@ -31,12 +37,17 @@
 //!   만큼 같이 움직인다.
 //! - **마우스 오른쪽 버튼을 누른 채** 드래그: 시점 회전(마우스룩), 그 상태에서
 //!   W/A/S/D 로 그 방향을 향해 날아다니고 Q/E 로 위/아래로 움직인다(Shift 로 빠르게).
+//!   **드래그 없이 그냥 눌렀다 떼면**(블렌더/유니티처럼) 그 자리의 오브젝트를
+//!   먼저 선택하고 작은 컨텍스트 메뉴(Rename/Duplicate/Unparent/Delete, 빈
+//!   곳이면 New Box)를 띄운다. 메뉴가 떠 있을 때 아무 데나 클릭하면(항목 위가
+//!   아니면) 그냥 닫히기만 한다.
 //! - 휠: 사이드바 위에서는 오브젝트 목록 스크롤, 뷰포트 위에서는 카메라를
 //!   보고 있는 방향으로 조금씩 전진/후진(줌).
 //! - Tab / Shift+Tab: 다음/이전 상자 단일 선택, N: 카메라 앞에 새 상자,
 //!   Delete: 선택한(여러 개면 전부) 상자 삭제
 //! - P: 플레이어 시작 위치/방향을 지금 선택한 상자 자리로 설정
-//! - Ctrl+S: 저장, Ctrl+O: 불러오기, Esc: 종료(이름 바꾸는 중엔 취소)
+//! - Ctrl+S: 저장, Ctrl+O: 불러오기, Esc: 종료(이름 바꾸는 중/메뉴가 떠 있는
+//!   중엔 그것부터 취소·닫기)
 //!
 //! 창 밖으로 마우스가 나가면(`mouse_leave_event`) 비행/기즈모 드래그 상태를
 //! 전부 강제로 끈다 — 안 그러면 오른쪽 버튼을 누른 채 화면 가장자리 밖에서
@@ -66,9 +77,12 @@ const TEXTURE_DIR: &str = "maps/textures";
 const ROW_H: f32 = 22.0;
 const PAD: f32 = 6.0;
 const INDENT_W: f32 = 14.0; // 하이어라키 트리 한 단계당 들여쓰기(유니티 참고)
-const HIER_LIST_TOP: f32 = 22.0;
+const ROOT_ZONE_TOP: f32 = 20.0;
+const ROOT_ZONE_H: f32 = 16.0; // 하이어라키 드래그 중 여기에 놓으면 부모를 뗀다(맨 위 루트로)
+const HIER_LIST_TOP: f32 = ROOT_ZONE_TOP + ROOT_ZONE_H + 4.0;
 const HIER_VISIBLE_ROWS: usize = 6; // 이 이상 쌓이면 스크롤 — 인스펙터가 밀려나지 않게 목록 높이를 고정한다
-const MARQUEE_MIN_DRAG: f32 = 4.0; // 이 픽셀 이하로 움직였으면 드래그 선택이 아니라 클릭으로 친다
+const MARQUEE_MIN_DRAG: f32 = 4.0; // 이 픽셀 이하로 움직였으면 드래그 선택/재부모 지정이 아니라 클릭으로 친다
+const MENU_W: f32 = 130.0; // 우클릭 컨텍스트 메뉴 폭
 
 const SKY_COLOR: [f32; 4] = [0.12, 0.13, 0.17, 1.0];
 const PALETTE: [[f32; 4]; 6] = [
@@ -131,13 +145,18 @@ fn point_in_rect(mx: f32, my: f32, x: f32, y: f32, w: f32, h: f32) -> bool {
 
 // 클릭됐으면 true 를 돌려준다(mouse: 현재 마우스 위치, clicked: 이번 프레임에
 // 왼쪽 버튼이 눌린 순간인지). active 면 파란 강조(선택된 씬 항목/켜진 토글/
-// 지금 고른 텍스처 등)로 그린다.
+// 지금 고른 텍스처 등)로, 마우스가 올라가 있으면 옅은 배경으로 그린다 —
+// 유니티/블렌더의 리스트·버튼처럼 가만히 있을 땐 배경 없이 글자만 보이고
+// (전부 사각 박스로 둘러싸여 있으면 "짝대기/박스 더미"처럼 보인다는 피드백을
+// 받았다), 마우스가 올라가거나 선택됐을 때만 배경이 생긴다.
 #[allow(clippy::too_many_arguments)]
 fn flat_button(r: &mut Renderer, x: f32, y: f32, w: f32, h: f32, label: &str, mouse: (f32, f32), clicked: bool, active: bool) -> bool {
     let hover = point_in_rect(mouse.0, mouse.1, x, y, w, h);
-    let bg = if active { COL_ACTIVE } else if hover { COL_FIELD_HOVER } else { COL_FIELD };
-    r.rect(x, y, w, h, COL_BORDER);
-    r.rect(x + 1.0, y + 1.0, w - 2.0, h - 2.0, bg);
+    if active {
+        r.rect(x, y, w, h, COL_ACTIVE);
+    } else if hover {
+        r.rect(x, y, w, h, COL_FIELD_HOVER);
+    }
     let tw = r.text_width(label, 0.62);
     let tx = (x + (w - tw) / 2.0).max(x + 4.0);
     r.text(tx, y + h / 2.0 - 6.0, label, 0.62, if active { [1.0, 1.0, 1.0, 1.0] } else { COL_TEXT });
@@ -246,6 +265,24 @@ impl GizmoMode {
     }
 }
 
+// 블렌더/유니티처럼 오른쪽 클릭(드래그 없이 누르고 바로 뗀 경우만 — 드래그하면
+// 그냥 시점 회전이다)으로 뜨는 작은 메뉴. target 이 있으면 그 상자에 대한
+// 메뉴(이름 바꾸기/복제/부모 떼기/삭제), 없으면 빈 곳 메뉴(새 상자)다.
+#[derive(Clone, Copy, PartialEq)]
+enum MenuAction {
+    Rename,
+    Duplicate,
+    Unparent,
+    Delete,
+    NewBox,
+}
+
+#[derive(Clone, Copy)]
+struct ContextMenu {
+    pos: (f32, f32), // 뜬 자리(창 좌표) — 메뉴 판정/그리기 둘 다 이 좌표 기준
+    target: Option<usize>,
+}
+
 // 유니티 씬 카메라처럼: 위치 + yaw/pitch 를 직접 들고 있는 자유 카메라. 오빗(왼쪽
 // 드래그로 궤도 회전)은 없앴다 — 왼쪽 드래그는 이제 다중 선택(마퀴)에 쓴다.
 struct FlyCam {
@@ -281,6 +318,12 @@ struct Stage {
     marqueeing: bool,
     marquee_start: (f32, f32), // 창 좌표(마퀴 드래그를 시작한 지점)
     left_drag_dist: f32,       // 왼쪽 버튼을 누른 뒤 총 이동 거리 — 문턱보다 작으면 드래그가 아니라 클릭
+    hier_press: Option<usize>, // 하이어라키 행을 누른 순간의 상자 인덱스(드래그하면 재부모 지정 후보)
+    hier_press_pos: (f32, f32),
+    hier_dragging: bool,
+    rmb_press_pos: (f32, f32), // 오른쪽 버튼을 누른 자리 — 거의 안 움직이고 뗐으면 컨텍스트 메뉴
+    rmb_drag_dist: f32,
+    context_menu: Option<ContextMenu>,
     gizmo_mode: GizmoMode,
     hovered_axis: Option<usize>,        // 지금 프레임에 마우스가 근처에 있는 기즈모 축(드래그 전 미리보기용)
     drag_axis: Option<usize>,           // 지금 드래그 중인 기즈모 축(0=X/1=Y/2=Z) — None 이면 기즈모 드래그 아님
@@ -324,6 +367,12 @@ impl Stage {
             marqueeing: false,
             marquee_start: (0.0, 0.0),
             left_drag_dist: 0.0,
+            hier_press: None,
+            hier_press_pos: (0.0, 0.0),
+            hier_dragging: false,
+            rmb_press_pos: (0.0, 0.0),
+            rmb_drag_dist: 0.0,
+            context_menu: None,
             gizmo_mode: GizmoMode::Move,
             hovered_axis: None,
             drag_axis: None,
@@ -412,6 +461,26 @@ impl Stage {
         self.drag_axis = None;
         self.drag_start_box = None;
         self.drag_group_start.clear();
+        self.hier_press = None;
+        self.hier_dragging = false;
+    }
+
+    // 상자 하나를 복제한다 — 살짝 옆으로 어긋나게, 같은 부모 밑에, 이름 뒤에
+    // " Copy"를 붙여서. 복제본을 바로 선택한다(블렌더/유니티와 같은 느낌).
+    fn duplicate_box(&mut self, idx: usize) {
+        let mut b = self.boxes[idx].clone();
+        b.center[0] += 0.3;
+        b.center[2] += 0.3;
+        let tex = self.box_texture_paths[idx].clone();
+        let name = format!("{} Copy", self.names[idx]);
+        let parent = self.parents[idx];
+        self.boxes.push(b);
+        self.box_texture_paths.push(tex);
+        self.names.push(name);
+        self.parents.push(parent);
+        let new_idx = self.boxes.len() - 1;
+        self.selected = Some(new_idx);
+        self.multi_selected = vec![new_idx];
     }
 
     // `node` 가 `ancestor` 의 자손인지(부모 체인을 따라 올라가며 확인) — 부모를
@@ -473,6 +542,98 @@ impl Stage {
             }
         }
         out
+    }
+
+    // 창 좌표(mx,my) 아래에 있는 하이어라키 행의 상자 인덱스 — 클릭/드래그
+    // 판정과 우클릭 메뉴 대상 찾기에 같이 쓴다. 사이드바 밖이거나 스크롤된
+    // 범위 밖이면 None.
+    fn hierarchy_row_at(&self, mx: f32, my: f32) -> Option<usize> {
+        if !(0.0..SIDEBAR_W).contains(&mx) || my < HIER_LIST_TOP {
+            return None;
+        }
+        let row = ((my - HIER_LIST_TOP) / ROW_H) as usize;
+        if row >= HIER_VISIBLE_ROWS {
+            return None;
+        }
+        let order = self.hierarchy_order();
+        order.get(self.hier_scroll as usize + row).map(|&(idx, _)| idx)
+    }
+
+    fn root_zone_hit(&self, mx: f32, my: f32) -> bool {
+        point_in_rect(mx, my, PAD, ROOT_ZONE_TOP, SIDEBAR_W - PAD * 2.0, ROOT_ZONE_H)
+    }
+
+    // 컨텍스트 메뉴 항목 목록 — target 이 있으면 그 상자용, 없으면 빈 곳용.
+    fn context_menu_items(&self, target: Option<usize>) -> Vec<(&'static str, MenuAction)> {
+        if let Some(t) = target {
+            let mut items = vec![("Rename", MenuAction::Rename), ("Duplicate", MenuAction::Duplicate)];
+            if self.parents.get(t).copied().flatten().is_some() {
+                items.push(("Unparent", MenuAction::Unparent));
+            }
+            items.push(("Delete", MenuAction::Delete));
+            items
+        } else {
+            vec![("New Box", MenuAction::NewBox)]
+        }
+    }
+
+    // 메뉴의 화면 좌상단(x,y) + 항목 목록 — 화면 밖으로 안 나가게 clamp 한다.
+    // 그리기와 클릭 판정이 항상 같은 계산을 쓰도록 한곳에 모아뒀다.
+    fn context_menu_layout(&self, menu: &ContextMenu) -> (f32, f32, Vec<(&'static str, MenuAction)>) {
+        let items = self.context_menu_items(menu.target);
+        let h = items.len() as f32 * ROW_H;
+        let x = menu.pos.0.clamp(0.0, WIN_W - MENU_W - 2.0);
+        let y = menu.pos.1.clamp(0.0, WIN_H - h - 2.0);
+        (x, y, items)
+    }
+
+    fn run_menu_action(&mut self, action: MenuAction, target: Option<usize>, pos: (f32, f32)) {
+        match action {
+            MenuAction::Rename => {
+                if let Some(t) = target {
+                    self.renaming = Some(t);
+                    self.rename_buffer = self.names[t].clone();
+                }
+            }
+            MenuAction::Duplicate => {
+                if let Some(t) = target {
+                    self.duplicate_box(t);
+                }
+            }
+            MenuAction::Unparent => {
+                if let Some(t) = target {
+                    self.parents[t] = None;
+                }
+            }
+            MenuAction::Delete => {
+                if let Some(t) = target {
+                    self.selected = Some(t);
+                    self.multi_selected = vec![t];
+                    self.remove_selected();
+                }
+            }
+            MenuAction::NewBox => {
+                let _ = pos; // 뷰포트 어디를 우클릭했든 지금은 카메라 정면에 놓는다(N 키와 같은 자리)
+                let near = v_add(self.cam.pos, v_scale(self.cam.camera().forward(), 5.0));
+                self.push_box(default_box(near));
+            }
+        }
+    }
+
+    // 컨텍스트 메뉴가 열려있을 때 왼쪽 클릭을 처리한다 — 메뉴 항목 위였으면 그
+    // 동작을 실행하고, 메뉴 바깥이었으면 그냥 닫기만 한다(그 클릭 자체는
+    // 선택/기즈모 등 평소 동작으로 이어지지 않는다 — 메뉴를 닫는 클릭 한 번은
+    // "그것만" 한다는 보통 에디터들의 관례).
+    fn handle_context_menu_click(&mut self, x: f32, y: f32) {
+        let Some(menu) = self.context_menu else { return };
+        let (mx, my, items) = self.context_menu_layout(&menu);
+        if point_in_rect(x, y, mx, my, MENU_W, items.len() as f32 * ROW_H) {
+            let row = ((y - my) / ROW_H) as usize;
+            if let Some(&(_, action)) = items.get(row) {
+                self.run_menu_action(action, menu.target, menu.pos);
+            }
+        }
+        self.context_menu = None;
     }
 
     fn save(&mut self) {
@@ -777,6 +938,16 @@ impl Stage {
         let clicked = self.input.mouse_clicked;
 
         self.renderer.text(PAD, 4.0, "SCENE", 0.62, COL_TEXT_DIM);
+
+        // 하이어라키 행을 드래그하는 동안(재부모 지정)에만 뜨는 "루트로 놓기"
+        // 구역 — 여기에 놓으면 부모를 뗀다. 평소엔 옅게, 드래그 중 마우스가
+        // 위에 있으면 파란 강조로.
+        if self.hier_dragging {
+            let hover = self.root_zone_hit(mouse.0, mouse.1);
+            self.renderer.rect(PAD, ROOT_ZONE_TOP, SIDEBAR_W - PAD * 2.0, ROOT_ZONE_H, if hover { COL_ACTIVE } else { COL_FIELD });
+            self.renderer.text(PAD + 4.0, ROOT_ZONE_TOP + 2.0, "— drop here to unparent —", 0.5, COL_TEXT);
+        }
+
         let order = self.hierarchy_order();
         let max_scroll = order.len().saturating_sub(HIER_VISIBLE_ROWS) as f32;
         self.hier_scroll = self.hier_scroll.clamp(0.0, max_scroll);
@@ -788,9 +959,16 @@ impl Stage {
             if self.renaming == Some(idx) {
                 self.renderer.rect(PAD + indent, y, SIDEBAR_W - PAD * 2.0 - indent, ROW_H - 3.0, COL_ACTIVE);
                 self.renderer.text(PAD + indent + 4.0, y + ROW_H / 2.0 - 7.0, &format!("{}_", self.rename_buffer), 0.6, [1.0, 1.0, 1.0, 1.0]);
+            } else if self.hier_dragging && self.hier_press == Some(idx) {
+                // 드래그 중인 행 자신 — 옅게 표시만(놓을 수 있는 대상이 아니다).
+                self.renderer.text(PAD + indent + 4.0, y + ROW_H / 2.0 - 6.0, &self.names[idx], 0.62, COL_TEXT_DIM);
             } else {
                 let is_sel = self.multi_selected.contains(&idx);
-                if flat_button(&mut self.renderer, PAD + indent, y, SIDEBAR_W - PAD * 2.0 - indent, ROW_H - 3.0, &self.names[idx], mouse, clicked, is_sel) {
+                let is_drop_hover = self.hier_dragging && point_in_rect(mouse.0, mouse.1, PAD, y, SIDEBAR_W - PAD * 2.0, ROW_H - 3.0);
+                if is_drop_hover {
+                    self.renderer.rect(PAD + indent, y, SIDEBAR_W - PAD * 2.0 - indent, ROW_H - 3.0, COL_ACTIVE);
+                    self.renderer.text(PAD + indent + 4.0, y + ROW_H / 2.0 - 6.0, &self.names[idx], 0.62, [1.0, 1.0, 1.0, 1.0]);
+                } else if flat_button(&mut self.renderer, PAD + indent, y, SIDEBAR_W - PAD * 2.0 - indent, ROW_H - 3.0, &self.names[idx], mouse, clicked, is_sel) {
                     clicked_row = Some(idx);
                 }
             }
@@ -940,6 +1118,21 @@ impl Stage {
         }
     }
 
+    // 우클릭 컨텍스트 메뉴 — 항상 맨 위(다른 모든 UI 위)에 그린다.
+    fn draw_context_menu(&mut self) {
+        let Some(menu) = self.context_menu else { return };
+        let (x, y, items) = self.context_menu_layout(&menu);
+        let h = items.len() as f32 * ROW_H;
+        self.renderer.rect(x, y, MENU_W, h, COL_BORDER);
+        let mouse = self.input.mouse;
+        for (i, (label, _)) in items.iter().enumerate() {
+            let iy = y + i as f32 * ROW_H;
+            let hover = point_in_rect(mouse.0, mouse.1, x, iy, MENU_W, ROW_H);
+            self.renderer.rect(x + 1.0, iy + 1.0, MENU_W - 2.0, ROW_H - 2.0, if hover { COL_FIELD_HOVER } else { COL_FIELD });
+            self.renderer.text(x + 8.0, iy + ROW_H / 2.0 - 6.0, label, 0.6, COL_TEXT);
+        }
+    }
+
     fn draw_screen_dotted_line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, thick: f32, color: [f32; 4]) {
         let (dx, dy) = (x1 - x0, y1 - y0);
         let len = (dx * dx + dy * dy).sqrt().max(1.0);
@@ -1047,6 +1240,8 @@ impl EventHandler for Stage {
         self.renderer.rect(0.0, WIN_H - 18.0, WIN_W, 18.0, [0.0, 0.0, 0.0, 0.6]);
         self.renderer.text(6.0, WIN_H - 15.0, &self.status, 0.68, [0.7, 1.0, 0.7, 1.0]);
 
+        self.draw_context_menu();
+
         self.ctx.begin_default_pass(PassAction::clear_color(0.0, 0.0, 0.0, 1.0));
         self.renderer.flush(self.ctx.as_mut());
         self.ctx.end_render_pass();
@@ -1072,6 +1267,10 @@ impl EventHandler for Stage {
                 }
                 _ => {}
             }
+            return;
+        }
+        if keycode == KeyCode::Escape && self.context_menu.is_some() {
+            self.context_menu = None;
             return;
         }
         if keycode == KeyCode::Escape {
@@ -1106,7 +1305,14 @@ impl EventHandler for Stage {
         if self.marqueeing {
             self.left_drag_dist += (dx * dx + dy * dy).sqrt();
         }
+        if let Some(_src) = self.hier_press {
+            let d = ((x - self.hier_press_pos.0).powi(2) + (y - self.hier_press_pos.1).powi(2)).sqrt();
+            if d > MARQUEE_MIN_DRAG {
+                self.hier_dragging = true;
+            }
+        }
         if self.flying {
+            self.rmb_drag_dist += (dx * dx + dy * dy).sqrt();
             // 화면 아래로 드래그(dy>0)하면 아래를 보게(pitch 감소) — 마우스가 위로
             // 갈수록 pitch 가 올라가야(위를 봐야) 자연스럽다. yaw 는 forward()가
             // -sin(yaw) 방향이라 마우스를 오른쪽(dx>0)으로 움직이면 yaw 를 줄여야
@@ -1123,9 +1329,28 @@ impl EventHandler for Stage {
         if button == MouseButton::Left {
             self.input.mouse_down = true;
             self.input.mouse_clicked = true;
+            // 컨텍스트 메뉴가 떠 있는 동안엔 그 클릭이 메뉴만 처리한다 — 평소
+            // 클릭 동작(선택/기즈모/드래그 시작)으로는 절대 안 이어진다.
+            if self.context_menu.is_some() {
+                self.handle_context_menu_click(x, y);
+                return;
+            }
         }
         match button {
-            MouseButton::Right => self.flying = true,
+            MouseButton::Right => {
+                self.context_menu = None;
+                self.flying = true;
+                self.rmb_press_pos = (x, y);
+                self.rmb_drag_dist = 0.0;
+            }
+            MouseButton::Left if x < SIDEBAR_W => {
+                if let Some(idx) = self.hierarchy_row_at(x, y)
+                    && self.renaming != Some(idx)
+                {
+                    self.hier_press = Some(idx);
+                    self.hier_press_pos = (x, y);
+                }
+            }
             MouseButton::Left if x >= SIDEBAR_W && !self.flying => {
                 if let Some(axis) = self.nearest_gizmo_axis(x - SIDEBAR_W, y) {
                     self.begin_gizmo_drag(axis, x - SIDEBAR_W, y);
@@ -1145,9 +1370,37 @@ impl EventHandler for Stage {
             self.input.mouse_down = false;
         }
         match button {
-            MouseButton::Right => self.flying = false,
+            MouseButton::Right => {
+                self.flying = false;
+                if self.rmb_drag_dist < MARQUEE_MIN_DRAG {
+                    // 드래그가 아니라 그냥 우클릭 — 블렌더/유니티처럼 그 자리의
+                    // 오브젝트(있으면 먼저 선택도 해준다)에 대한 메뉴를 띄운다.
+                    let target = if x < SIDEBAR_W { self.hierarchy_row_at(x, y) } else { self.pick_box(x - SIDEBAR_W, y) };
+                    if let Some(t) = target {
+                        self.selected = Some(t);
+                        self.multi_selected = vec![t];
+                    }
+                    self.context_menu = Some(ContextMenu { pos: (x, y), target });
+                }
+            }
             MouseButton::Left => {
-                if self.drag_axis.is_some() {
+                if let Some(src) = self.hier_press.take() {
+                    if self.hier_dragging {
+                        // 드래그해서 재부모 지정 — 루트 구역에 놓으면 부모를 떼고,
+                        // 다른(자기 자손이 아닌) 행 위에 놓으면 그 상자를 부모로 삼는다.
+                        if self.root_zone_hit(x, y) {
+                            self.parents[src] = None;
+                            self.status = format!("\"{}\" → 루트로 이동", self.names[src]);
+                        } else if let Some(target) = self.hierarchy_row_at(x, y)
+                            && target != src
+                            && !self.is_descendant(src, target)
+                        {
+                            self.parents[src] = Some(target);
+                            self.status = format!("\"{}\" → \"{}\" 의 자식으로", self.names[src], self.names[target]);
+                        }
+                    }
+                    self.hier_dragging = false;
+                } else if self.drag_axis.is_some() {
                     self.drag_axis = None;
                     self.drag_start_box = None;
                     self.drag_group_start.clear();
