@@ -27,6 +27,15 @@ pub struct MapBoxData {
     pub walkable: bool,
     #[serde(default = "default_true")]
     pub solid: bool,
+    // 맵 에디터가 씬 목록에 보여주는 사람이 붙인 이름 — 없던 예전 저장 파일은
+    // 그냥 빈 문자열로 불러와지고, 에디터가 "Box N"으로 대신 보여준다.
+    #[serde(default)]
+    pub name: String,
+    // 부모 오브젝트의 인덱스(scene.boxes 안에서) — 에디터에서 이동시키면 이
+    // 상자를 부모로 둔 자식들도 같은 만큼 같이 움직인다. 게임/뷰어는 지금은
+    // 이 필드를 안 쓴다(에디터 전용 정보).
+    #[serde(default)]
+    pub parent: Option<usize>,
 }
 
 fn default_color() -> [f32; 4] {
@@ -37,7 +46,7 @@ fn default_true() -> bool {
 }
 
 impl MapBoxData {
-    pub fn from_box3d(b: &Box3D, texture_path: Option<String>) -> MapBoxData {
+    pub fn from_box3d(b: &Box3D, texture_path: Option<String>, name: String, parent: Option<usize>) -> MapBoxData {
         MapBoxData {
             center: b.center,
             half: b.half,
@@ -48,6 +57,8 @@ impl MapBoxData {
             texture: texture_path,
             walkable: b.walkable,
             solid: b.solid,
+            name,
+            parent,
         }
     }
 
