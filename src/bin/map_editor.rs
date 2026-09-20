@@ -102,6 +102,20 @@ const COL_TEXT: [f32; 4] = [0.82, 0.82, 0.84, 1.0];
 const COL_TEXT_DIM: [f32; 4] = [0.5, 0.5, 0.52, 1.0];
 const COL_PANEL_BG: [f32; 4] = [0.145, 0.145, 0.155, 1.0];
 
+// 실제 창 좌표 → 이 창이 가정하는 가상 해상도(800x600). main.rs::to_virtual()
+// 과 같은 이유로 필요하다 — high_dpi:false 로 대부분 막히지만(director_panel.rs
+// 에도 같은 조치가 있다), 실제 화면 크기(window::screen_size())가 conf 에 넣은
+// window_width/height 와 어떤 이유로든 어긋나면(드문 DPI/창관리자 조합) 마우스
+// 좌표와 렌더러가 그리는 좌표계가 안 맞아 클릭이 죄다 빗나간다 — 매 이벤트마다
+// 실제 화면 크기를 다시 재서 비율로 보정하면 그 어긋남과 무관하게 항상 맞는다.
+fn to_virtual(x: f32, y: f32) -> (f32, f32) {
+    let (sw, sh) = window::screen_size();
+    if sw <= 0.0 || sh <= 0.0 {
+        return (x, y);
+    }
+    (x * WIN_W / sw, y * WIN_H / sh)
+}
+
 fn point_in_rect(mx: f32, my: f32, x: f32, y: f32, w: f32, h: f32) -> bool {
     mx >= x && mx < x + w && my >= y && my < y + h
 }
@@ -770,6 +784,7 @@ impl EventHandler for Stage {
     }
 
     fn mouse_motion_event(&mut self, x: f32, y: f32) {
+        let (x, y) = to_virtual(x, y);
         let dx = x - self.last_mouse.0;
         let dy = y - self.last_mouse.1;
         self.last_mouse = (x, y);
@@ -801,6 +816,7 @@ impl EventHandler for Stage {
     }
 
     fn mouse_button_down_event(&mut self, button: MouseButton, x: f32, y: f32) {
+        let (x, y) = to_virtual(x, y);
         self.last_mouse = (x, y);
         self.input.mouse = (x, y);
         if button == MouseButton::Left {
@@ -823,6 +839,7 @@ impl EventHandler for Stage {
     }
 
     fn mouse_button_up_event(&mut self, button: MouseButton, x: f32, y: f32) {
+        let (x, y) = to_virtual(x, y);
         if button == MouseButton::Left {
             self.input.mouse_down = false;
         }
@@ -867,6 +884,15 @@ fn main() {
         window_height: WIN_H as i32,
         fullscreen: false,
         high_dpi: false,
+        // miniquad 는 기본적으로 창이 리사이즈 가능하다(`window_resizable` 기본값
+        // true) — 이 창을 최대화/리사이즈하면 실제 화면 크기(window::screen_size())가
+        // 800x600 을 벗어나는데, 렌더러는 여전히 고정된 800x600 가상 해상도로
+        // 그리기 때문에(CRT 가상 해상도 변환이 없는 단순한 창이라) 리사이즈된 창의
+        // 실제 마우스 좌표와 그 가상 좌표계가 완전히 어긋나 버튼/기즈모가 전혀
+        // 안 눌리는 것처럼 보인다 — 아예 리사이즈를 막아서 그 문제 자체를 없앤다
+        // (to_virtual() 로 한 번 더 방어하지만, 제일 확실한 건 애초에 안 어긋나게
+        // 하는 것).
+        window_resizable: false,
         ..Default::default()
     };
     miniquad::start(conf, || Box::new(Stage::new()));
