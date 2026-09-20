@@ -190,6 +190,54 @@ HUD)과 분리해 재사용 모듈로 뽑아뒀다 — 엔진 자체는 그대�
   `PropTexture`가 실제로 동작하는지도 같이 보여준다. R 키를 누르면 같은 방에서
   물체 배치만 다시 무작위로 뽑는다.
 
+### 진짜 3D 메쉬 엔진 (`mesh3d.rs`) + 맵 에디터
+
+`raycaster.rs`는 컬럼 하나당 광선 하나(카메라 피치도 없는 2D 그리드)라 바닥
+높낮이나 기울어진 벽을 표현할 수 없다 — 그 한계를 넘으려고 진짜 깊이 테스트가
+있는 GPU 삼각형 래스터라이저를 새로 만들었다. `raycaster.rs`는 지우지 않고
+그대로 남겨뒀다(2D 미로류 미니게임엔 여전히 더 가볍고 유효하다).
+
+- **`Box3D`(유일한 지오메트리 타입)**: 중심/반너비/회전(yaw·pitch·roll) 하나로
+  벽도 바닥도 경사로도 전부 표현한다 — 회전이 없으면 흔한 축정렬 상자, yaw 만
+  있으면 "비스듬히 놓인 벽", pitch/roll 이 있으면 "기울어진 벽"이나 "경사로"가
+  된다. **경사로는 특수 케이스가 아니라 그냥 회전된 상자의 로컬 윗면**이다 —
+  바닥 높이 탐색(`ground_height`)이 상자의 로컬 +Y면(윗면) 두 삼각형에 레이를
+  쏴서 걸을 수 있는 높이를 구하는데, 상자가 기울어 있으면 그 삼각형 자체가
+  기울어 있으니 교차점 높이가 경사를 자동으로 따라간다.
+- **렌더링**: `Box3D::to_triangles()`가 CPU 에서 상자를 월드 공간 삼각형 12개
+  (면마다 2개)로 펼치고, 텍스처별로 묶어 miniquad 파이프라인(깊이 테스트 켬,
+  `Comparison::LessOrEqual`)으로 오프스크린 컬러+깊이 렌더 타깃에 그린다. 그
+  결과 컬러 텍스처를 `gfx::Renderer::sprite_uv`로 보통 창처럼 2D 오버레이(HUD
+  등) 위에 합성한다(video.rs 가 디코딩한 영상 프레임을 텍스처로 올리는 것과
+  같은 요령) — CRT 파이프라인은 그 합성된 최종 화면 전체에 이미 그대로 걸린다.
+- **텍스처**: `BoxTexture` — `raycaster.rs::PropTexture`와 같은 가로 4칸×세로
+  3칸 십자 전개도 한 장으로 상자 6면을 입힌다.
+- **충돌/바닥 높이**: `resolve_horizontal`은 플레이어를 상자의 로컬 좌표로 옮겨
+  AABB 클램프한 뒤 되돌리는 "가장 가까운 점" 방식이라 회전된 상자에도 그대로
+  맞는다. 발이 상자의 로컬 윗면 높이 근처거나 그 위(경사로를 오르는 중 포함)면
+  수평 충돌 대상에서 제외해서, 경사로를 오르내리는 동안 그 경사로 자체에
+  옆으로 밀려나지 않는다. `walkable`(바닥/경사로로 쓰이는지)과 `solid`(수평
+  충돌에 끼는지)를 상자마다 따로 켤 수 있어서, 밟고 지나가야 하는 얇은 경사로는
+  `solid=false`로, 위로 못 올라가야 하는 장식 벽은 `walkable=false`로 둔다.
+- `src/bin/mesh3d_test.rs`: 이 엔진만 확인하는 테스트 창(`cargo run --bin
+  mesh3d_test`) — 평평한 바닥 → 기울어진 경사로(pitch 회전) → 높은 발판 →
+  옆으로 기운 벽(roll 회전)을 한 장면에 두고 WASD 이동/회전, ↑/↓ 로 카메라
+  피치, Space 로 점프하며 확인한다.
+- **`src/bin/map_editor.rs`**: PICOCAD 스타일의 이 게임 전용 최소 맵 에디터
+  (`cargo run --bin map_editor`) — 궤도 카메라(마우스 드래그로 회전, 휠로
+  확대/축소)로 장면을 보면서 상자를 추가(`N`)/선택(`Tab`)/삭제(`Delete`)하고,
+  키보드로 이동(WASD/QE)·회전(방향키+,·.)·크기조절(U/J, I/K, O/L)·색상 순환
+  (`C`)·`walkable`/`solid` 토글(F/G)을 할 수 있다. `Ctrl+S`/`Ctrl+O`로
+  `maps/scene.json`에 저장/불러오기하고, `P`로 선택한 상자 자리를 플레이어
+  시작 위치로 지정한다. **아직 없는 것**: 얼굴 단위 텍스처를 고르는 UI(저장
+  포맷/`Box3D` 쪽엔 이미 자리가 있다 — `mapfile::MapBoxData::texture`가 에셋
+  경로 문자열을 들고 있는데 지금은 항상 `None`으로 저장한다), 마우스로 직접
+  상자를 클릭해 고르는 기능(지금은 `Tab` 순환만 가능), 정점 단위 편집.
+- **`src/mapfile.rs`**: 에디터(저장)와 게임/뷰어(로드) 둘 다 쓰는 공유 JSON
+  포맷(`MapScene`/`MapBoxData`) — 텍스처는 `TextureId`(런타임 GPU 핸들)가 아니라
+  에셋 경로 문자열로 저장해두고, 불러오는 쪽이 실제로 이미지를 읽어 텍스처를
+  만든 뒤 `to_box3d()`에 그 결과를 넘겨준다.
+
 ### 로컬라이제이션
 
 - 영어/한국어/일본어 3개 언어. 모든 UI 문자열은 `strings.rs`에 `S { en, ko, ja }` 상수로
@@ -244,6 +292,8 @@ src/
 ├── window_manager.rs   # 창 관리자 (z순서, 드래그, 크기조절, 타이틀바 버튼)
 ├── director_ipc.rs     # director/director_panel 간 JSON IPC (게임은 안 씀)
 ├── raycaster.rs        # 재사용 1인칭 3D 레이캐스팅 엔진(DDA/이동/미로 생성/빌보드) — 지금은 raycaster_test 에서만 씀
+├── mesh3d.rs           # 진짜 3D 메쉬 렌더러(GPU 깊이테스트) + Box3D + 충돌/바닥높이 — raycaster.rs 를 대신할 새 파이프라인
+├── mapfile.rs          # mesh3d 장면(Box3D들) JSON 저장/불러오기 포맷 — map_editor(저장)/게임(로드) 공유
 ├── apps/               # 파일별 앱 — 새 앱은 파일 하나 + mod.rs 한 줄
 │   ├── mod.rs             # App 트레잇 / AppAction / Opened + open() 파일→앱 매칭
 │   ├── widgets.rs         # 여러 앱이 같이 쓰는 위젯(아이콘 격자/슬라이더/스크롤바)
@@ -255,7 +305,9 @@ src/
 src/bin/
 ├── director.rs          # 녹화용 게임 화면 창(별도 실행 파일)
 ├── director_panel.rs    # 그 옆의 조작 창(별도 실행 파일)
-└── raycaster_test.rs    # raycaster.rs 만 따로 확인하는 최소 테스트 창(별도 실행 파일)
+├── raycaster_test.rs    # raycaster.rs 만 따로 확인하는 최소 테스트 창(별도 실행 파일)
+├── mesh3d_test.rs       # mesh3d.rs 만 따로 확인하는 최소 테스트 창(별도 실행 파일)
+└── map_editor.rs        # PICOCAD 스타일 최소 맵 에디터(별도 실행 파일)
 ```
 
 의존 방향: `gfx`/`crt`/`foundation`/`video`/`strings`/`secrets`는 서로 독립적인 기반
