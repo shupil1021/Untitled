@@ -486,18 +486,11 @@ pub struct Mesh3D {
     pipeline: Pipeline,
     white_tex: TextureId, // 텍스처 없는(단색) 상자용 1x1 흰 텍스처
     size: (f32, f32),
-    // PS1/세가새턴류 레트로 셰이딩 — 기본은 꺼짐(색상 무제한, 디더 없음)과
-    // 사실상 같은 값이라 호출부가 굳이 안 건드리면 기존 화면 그대로 나온다.
-    // set_retro_shading() 으로 켠다.
-    dither_amount: f32, // 0=디더링 없음 .. 1=노이즈 디더 최대 세기
-    color_levels: f32,  // 채널당 색 단계 수 — 낮을수록(4~8) PS1 식 밴딩이 강해진다
 }
 
 #[repr(C)]
 struct Mesh3DUniform {
     view_proj: Mat4,
-    dither_amount: f32,
-    color_levels: f32,
 }
 
 const MESH3D_VS: &str = r#"#version 100
@@ -514,42 +507,13 @@ void main() {
 }
 "#;
 
-// 디더링(색상을 양자화하기 전에 픽셀마다 노이즈를 살짝 섞어서, 낮은 색상
-// 단계에서도 매끈한 그라데이션처럼 보이게 하는 기법 — PS1/세가새턴 시절
-// 하드웨어가 색을 적게 표현할 수 있었던 걸 흉내낸다) + 색상 단계 제한(channel
-// 당 color_levels 단계로 반올림)을 프래그먼트 셰이더에서 한다.
-//
-// 처음엔 규칙적인 베이어 4x4 타일 패턴을 썼는데, 이 렌더러의 면(face)이
-// 전부 단색 평면 셰이딩이라(그라데이션이 없다) 디더링할 대상 자체가 "면
-// 전체가 똑같은 값"이었다 — 그 결과 패턴이 매 픽셀 다른 값을 섞는 게 아니라
-// 타일 하나가 화면에 그대로 반복 찍혀서, 디더링이 아니라 "격자무늬가 그려진
-// 것"처럼 보였다(주관적 피드백: "이질적으로 보인다"). 그래서 Jorge Jimenez 의
-// interleaved gradient noise(IGN, 여러 상용 게임의 디더링/노이즈에 쓰이는
-// 잘 알려진 해시 노이즈)로 바꿨다 — 주기가 없는 유사난수라 평평한 면 위에서도
-// 격자 없이 거친 입자(그레인) 느낌으로 흩뿌려진다.
 const MESH3D_FS: &str = r#"#version 100
 precision highp float;
 varying highp vec2 uv;
 varying lowp vec4 color;
 uniform sampler2D tex;
-uniform float dither_amount;
-uniform float color_levels;
-
-float interleavedGradientNoise(vec2 fragCoord) {
-    vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
-    return fract(magic.z * fract(dot(fragCoord, magic.xy)));
-}
-
 void main() {
-    vec4 texel = texture2D(tex, uv) * color;
-    float levels = max(color_levels, 1.0);
-    // 노이즈(0..1)를 -0.5..0.5 로 정규화하고 한 단계 폭(1/levels)만큼만
-    // 흔든다 — 그래야 흔드는 양이 지금 색상 단계 폭을 넘지 않아 엉뚱한 색으로
-    // 안 튄다.
-    float d = (interleavedGradientNoise(gl_FragCoord.xy) - 0.5) * dither_amount / levels;
-    vec3 dithered = texel.rgb + d;
-    vec3 quantized = floor(dithered * levels + 0.5) / levels;
-    gl_FragColor = vec4(clamp(quantized, 0.0, 1.0), texel.a);
+    gl_FragColor = texture2D(tex, uv) * color;
 }
 "#;
 
@@ -571,16 +535,7 @@ impl Mesh3D {
         let shader = ctx
             .new_shader(
                 ShaderSource::Glsl { vertex: MESH3D_VS, fragment: MESH3D_FS },
-                ShaderMeta {
-                    images: vec!["tex".to_string()],
-                    uniforms: UniformBlockLayout {
-                        uniforms: vec![
-                            UniformDesc::new("view_proj", UniformType::Mat4),
-                            UniformDesc::new("dither_amount", UniformType::Float1),
-                            UniformDesc::new("color_levels", UniformType::Float1),
-                        ],
-                    },
-                },
+                ShaderMeta { images: vec!["tex".to_string()], uniforms: UniformBlockLayout { uniforms: vec![UniformDesc::new("view_proj", UniformType::Mat4)] } },
             )
             .expect("mesh3d 셰이더 컴파일 실패");
 
@@ -600,21 +555,7 @@ impl Mesh3D {
             },
         );
 
-        Mesh3D { pass, color_tex, depth_tex, pipeline, white_tex, size: (vw as f32, vh as f32), dither_amount: 0.0, color_levels: 256.0 }
-    }
-
-    // 레트로(PS1/세가새턴풍) 셰이딩 세기를 켠다 — dither_amount 는 0(없음)~1(최대
-    // 노이즈 디더 세기), color_levels 는 채널당 색 단계 수(낮을수록 밴딩이 강해진다
-    // — 4~8 정도가 그럴싸하다, 256 이면 사실상 무제한이라 원래 색 그대로 나온다).
-    // 기본값(생성 직후)은 둘 다 꺼진 상태와 같아서, 이 메서드를 안 부르면 기존
-    // 화면과 똑같이 나온다.
-    pub fn set_retro_shading(&mut self, dither_amount: f32, color_levels: f32) {
-        self.dither_amount = dither_amount.clamp(0.0, 1.0);
-        self.color_levels = color_levels.max(1.0);
-    }
-
-    pub fn retro_shading(&self) -> (f32, f32) {
-        (self.dither_amount, self.color_levels)
+        Mesh3D { pass, color_tex, depth_tex, pipeline, white_tex, size: (vw as f32, vh as f32) }
     }
 
     pub fn set_resolution(&mut self, ctx: &mut dyn RenderingBackend, w: u32, h: u32) {
@@ -678,7 +619,7 @@ impl Mesh3D {
             let ibuf = ctx.new_buffer(BufferType::IndexBuffer, BufferUsage::Stream, BufferSource::slice(indices.as_slice()));
             let bindings = Bindings { vertex_buffers: vec![vbuf], index_buffer: ibuf, images: vec![*tex] };
             ctx.apply_bindings(&bindings);
-            let u = Mesh3DUniform { view_proj: mat_transpose(&view_proj), dither_amount: self.dither_amount, color_levels: self.color_levels };
+            let u = Mesh3DUniform { view_proj: mat_transpose(&view_proj) };
             ctx.apply_uniforms(UniformsSource::table(&u));
             ctx.draw(0, verts.len() as i32, 1);
             owned_buffers.push(vbuf);
