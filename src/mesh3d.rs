@@ -55,6 +55,22 @@ pub fn mat_identity() -> Mat4 {
     m
 }
 
+// GLSL 의 mat4 유니폼은 열 우선(column-major) 바이트 배치를 기대한다(OpenGL 표준
+// 관례 — glUniformMatrix4fv 의 transpose=false 가 "이미 열 우선"이라는 뜻). 이
+// 파일의 Mat4 는 읽고 쓰기 편하라고 행 우선(m[row][col])으로 짰으니, 유니폼으로
+// 넘기기 직전에 반드시 이걸로 전치해야 한다 — 안 그러면 GLSL 쪽에서 우리 행렬의
+// 전치를 읽게 되어(바이트를 그대로 열 우선으로 재해석하니) 투영이 뒤틀려서
+// 화면이 이상하게 늘어나 보인다.
+pub fn mat_transpose(m: &Mat4) -> Mat4 {
+    let mut out = [[0.0; 4]; 4];
+    for r in 0..4 {
+        for c in 0..4 {
+            out[c][r] = m[r][c];
+        }
+    }
+    out
+}
+
 pub fn mat_mul(a: &Mat4, b: &Mat4) -> Mat4 {
     let mut out = [[0.0; 4]; 4];
     for r in 0..4 {
@@ -547,7 +563,7 @@ impl Mesh3D {
             let ibuf = ctx.new_buffer(BufferType::IndexBuffer, BufferUsage::Stream, BufferSource::slice(indices.as_slice()));
             let bindings = Bindings { vertex_buffers: vec![vbuf], index_buffer: ibuf, images: vec![*tex] };
             ctx.apply_bindings(&bindings);
-            let u = Mesh3DUniform { view_proj };
+            let u = Mesh3DUniform { view_proj: mat_transpose(&view_proj) };
             ctx.apply_uniforms(UniformsSource::table(&u));
             ctx.draw(0, verts.len() as i32, 1);
             owned_buffers.push(vbuf);
