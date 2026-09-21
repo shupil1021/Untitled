@@ -35,7 +35,7 @@ use miniquad::*;
 
 use crackhead::crt::Crt;
 use crackhead::gfx::Renderer;
-use crackhead::mesh3d::{ground_height, resolve_horizontal, v_dot, v_sub, Box3D, Camera, Mesh3D};
+use crackhead::mesh3d::{ground_height, resolve_horizontal, v_dot, v_sub, Box3D, BoxTexture, Camera, Mesh3D};
 use crackhead::scenes::Input;
 
 const WIN_W: f32 = 640.0;
@@ -172,32 +172,58 @@ struct Item {
     yaw: f32,
     pitch: f32,
     roll: f32,
+    texture: Option<BoxTexture>, // 텍스처 테스트용 — Note 아이템에만 채워 넣는다
 }
 
 fn build_items() -> Vec<Item> {
     vec![
-        Item { name: "Key", pos: [-1.2, 0.06, -2.3], half: [0.18, 0.06, 0.06], color: [0.85, 0.7, 0.2, 1.0], yaw: 0.4, pitch: 0.0, roll: 0.0 },
-        Item { name: "Note", pos: [-1.8, 0.015, -1.8], half: [0.14, 0.015, 0.18], color: [0.9, 0.88, 0.75, 1.0], yaw: 0.2, pitch: 0.0, roll: 0.0 },
-        Item { name: "Flashlight", pos: [-2.2, 0.05, -2.6], half: [0.05, 0.05, 0.22], color: [0.3, 0.3, 0.33, 1.0], yaw: -0.5, pitch: 0.0, roll: 0.0 },
+        Item { name: "Key", pos: [-1.2, 0.06, -2.3], half: [0.18, 0.06, 0.06], color: [0.85, 0.7, 0.2, 1.0], yaw: 0.4, pitch: 0.0, roll: 0.0, texture: None },
+        Item { name: "Note", pos: [-1.8, 0.015, -1.8], half: [0.14, 0.015, 0.18], color: [0.9, 0.88, 0.75, 1.0], yaw: 0.2, pitch: 0.0, roll: 0.0, texture: None },
+        Item { name: "Flashlight", pos: [-2.2, 0.05, -2.6], half: [0.05, 0.05, 0.22], color: [0.3, 0.3, 0.33, 1.0], yaw: -0.5, pitch: 0.0, roll: 0.0, texture: None },
     ]
 }
 
-// 월드에 놓인 모습 그대로의 Box3D.
+// assets/icon_folder.png(32x32 아이콘) 하나를 BoxTexture 가 기대하는 4x3
+// 전개도(가로 4칸×세로 3칸, mesh3d.rs::BoxTexture::uv_for 참고) 형태로 복제해
+// 채운 텍스처를 만든다 — 어느 면을 보든 같은 아이콘이 그대로 보이게. 로드
+// 실패하면 조용히 None(무늬 없이 color 만 쓴다).
+fn load_note_texture(ctx: &mut dyn RenderingBackend, path: &str) -> Option<BoxTexture> {
+    let icon = image::open(path).ok()?.to_rgba8();
+    let (iw, ih) = (icon.width(), icon.height());
+    let (net_w, net_h) = (iw * 4, ih * 3);
+    let mut net = image::RgbaImage::new(net_w, net_h);
+    for row in 0..3 {
+        for col in 0..4 {
+            for y in 0..ih {
+                for x in 0..iw {
+                    net.put_pixel(col * iw + x, row * ih + y, *icon.get_pixel(x, y));
+                }
+            }
+        }
+    }
+    let texture = ctx.new_texture_from_rgba8(net_w as u16, net_h as u16, &net);
+    Some(BoxTexture { texture })
+}
+
+// 월드에 놓인 모습 그대로의 Box3D. 텍스처가 있으면 tint 색은 흰색으로 둬서
+// 아이콘 원본 색이 그대로 보이게 한다.
 fn item_world_box(item: &Item) -> Box3D {
-    Box3D { center: item.pos, half: item.half, yaw: item.yaw, pitch: item.pitch, roll: item.roll, color: item.color, texture: None, walkable: false, solid: false }
+    let color = if item.texture.is_some() { [1.0, 1.0, 1.0, 1.0] } else { item.color };
+    Box3D { center: item.pos, half: item.half, yaw: item.yaw, pitch: item.pitch, roll: item.roll, color, texture: item.texture, walkable: false, solid: false }
 }
 
 // 확대 창 안에서 원점에 두고 보여줄 Box3D — extra_yaw/pitch 는 오른쪽 드래그로
 // 사용자가 더한 회전(아이템 자체의 기본 방향에 얹는다).
 fn item_inspect_box(item: &Item, extra_yaw: f32, extra_pitch: f32) -> Box3D {
+    let color = if item.texture.is_some() { [1.0, 1.0, 1.0, 1.0] } else { item.color };
     Box3D {
         center: [0.0, 0.0, 0.0],
         half: item.half,
         yaw: item.yaw + extra_yaw,
         pitch: item.pitch + extra_pitch,
         roll: item.roll,
-        color: item.color,
-        texture: None,
+        color,
+        texture: item.texture,
         walkable: false,
         solid: false,
     }
@@ -355,7 +381,11 @@ impl Stage {
         let inspect_mesh3d = Mesh3D::new(ctx.as_mut(), WIN_W as u32, WIN_H as u32);
         let crt = Crt::new(ctx.as_mut(), WIN_W as u32, WIN_H as u32);
         let boxes = build_scene();
-        let items = build_items();
+        let mut items = build_items();
+        // 텍스처 테스트 — Note 아이템에 폴더 아이콘(assets/icon_folder.png)을 입혀본다.
+        if let Some(note) = items.iter_mut().find(|it| it.name == "Note") {
+            note.texture = load_note_texture(ctx.as_mut(), "assets/icon_folder.png");
+        }
         let player = Player { feet: [0.0, 0.0, -3.0], yaw: std::f32::consts::FRAC_PI_2, pitch: 0.0, vel_y: 0.0, grounded: true };
         let now = date::now();
         // FPS 식 마우스룩 — 커서를 숨기고 창 안에 가둔다. raw_mouse_motion 은 이
