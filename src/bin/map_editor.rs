@@ -54,7 +54,7 @@
 //! 손을 떼는 순간 그 릴리즈 이벤트를 못 받아서 "비행 모드에 계속 갇히는"
 //! (이후 마우스를 움직이기만 해도 카메라가 계속 도는) 버그가 있었다. 또한
 //! 창은 리사이즈/최대화가 가능하고(`window_resizable: true`), 실제 화면
-//! 크기가 이 창이 가정하는 가상 해상도(800x600)와 어긋나도 항상 맞게 마우스
+//! 크기가 이 창이 가정하는 가상 해상도(800x800)와 어긋나도 항상 맞게 마우스
 //! 좌표를 다시 재는 `to_virtual()`을 매 마우스 이벤트에 건다(main.rs 의 같은
 //! 이름 함수와 같은 이유) — 전에는 이 보정 없이 리사이즈 자체를 막아뒀었지만,
 //! to_virtual() 이 그 어긋남을 항상 방어하므로 지금은 막아둘 필요가 없다.
@@ -69,7 +69,11 @@ use crackhead::mesh3d::{v_add, v_dot, v_scale, v_sub, Box3D, BoxTexture, Camera,
 use crackhead::scenes::Input;
 
 const WIN_W: f32 = 800.0;
-const WIN_H: f32 = 600.0;
+// 인스펙터(기즈모 버튼+이름+부모+위치/회전/스케일 9칸+walkable/solid/색+텍스처
+// 목록 헤더)가 선택 상태에서 이미 640px 가까이 차지해서, 600이면 텍스처가
+// 하나도 없어도 아래쪽(Walkable 아래)이 잘렸다 — 800으로 늘려서 텍스처 목록
+// 몇 줄까지 실제로 다 보이게 한다(그 이상은 TEXTURE_VISIBLE_ROWS 로 스크롤).
+const WIN_H: f32 = 800.0;
 const SIDEBAR_W: f32 = 240.0;
 const VIEWPORT_W: f32 = WIN_W - SIDEBAR_W;
 const FOV_Y: f32 = std::f32::consts::PI / 3.2;
@@ -82,6 +86,7 @@ const ROOT_ZONE_TOP: f32 = 20.0;
 const ROOT_ZONE_H: f32 = 16.0; // 하이어라키 드래그 중 여기에 놓으면 부모를 뗀다(맨 위 루트로)
 const HIER_LIST_TOP: f32 = ROOT_ZONE_TOP + ROOT_ZONE_H + 4.0;
 const HIER_VISIBLE_ROWS: usize = 6; // 이 이상 쌓이면 스크롤 — 인스펙터가 밀려나지 않게 목록 높이를 고정한다
+const TEXTURE_VISIBLE_ROWS: usize = 5; // 텍스처가 아무리 많아도 이 이상은 스크롤(무한정 안 늘어나게)
 const MARQUEE_MIN_DRAG: f32 = 4.0; // 이 픽셀 이하로 움직였으면 드래그 선택/재부모 지정이 아니라 클릭으로 친다
 const MENU_W: f32 = 130.0; // 우클릭 컨텍스트 메뉴 폭
 
@@ -127,10 +132,10 @@ const COL_TEXT: [f32; 4] = [0.82, 0.82, 0.84, 1.0];
 const COL_TEXT_DIM: [f32; 4] = [0.5, 0.5, 0.52, 1.0];
 const COL_PANEL_BG: [f32; 4] = [0.145, 0.145, 0.155, 1.0];
 
-// 실제 창 좌표 → 이 창이 가정하는 가상 해상도(800x600). main.rs::to_virtual()
+// 실제 창 좌표 → 이 창이 가정하는 가상 해상도(800x800). main.rs::to_virtual()
 // 과 같은 이유로 필요하다 — 창을 리사이즈/최대화하면 실제 화면 크기
-// (window::screen_size())가 800x600 과 달라지는데, 렌더러가 그리는 좌표계는
-// 항상 800x600 그대로라 마우스 좌표와 안 맞아 클릭이 죄다 빗나간다 — 매
+// (window::screen_size())가 800x800 과 달라지는데, 렌더러가 그리는 좌표계는
+// 항상 800x800 그대로라 마우스 좌표와 안 맞아 클릭이 죄다 빗나간다 — 매
 // 이벤트마다 실제 화면 크기를 다시 재서 비율로 보정하면 창 크기와 무관하게
 // 항상 맞는다.
 fn to_virtual(x: f32, y: f32) -> (f32, f32) {
@@ -313,6 +318,7 @@ struct Stage {
     renaming: Option<usize>,
     rename_buffer: String,
     hier_scroll: f32,
+    texture_scroll: f32,
     player_start: [f32; 3],
     player_start_yaw: f32,
     cam: FlyCam,
@@ -362,6 +368,7 @@ impl Stage {
             renaming: None,
             rename_buffer: String::new(),
             hier_scroll: 0.0,
+            texture_scroll: 0.0,
             player_start: [0.0, 1.0, -3.0],
             player_start_yaw: std::f32::consts::FRAC_PI_2,
             cam: FlyCam { pos: [6.0, 4.0, 6.0], yaw: -std::f32::consts::FRAC_PI_4 * 3.0, pitch: -0.5 },
@@ -1101,13 +1108,24 @@ impl Stage {
             if self.available_textures.is_empty() {
                 self.renderer.text(PAD + 2.0, y, "(no .png in maps/textures/)", 0.54, COL_TEXT_DIM);
             }
-            for path in self.available_textures.clone() {
-                let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+            // 텍스처가 아무리 많아도 TEXTURE_VISIBLE_ROWS 만큼만 그리고 나머지는
+            // 휠로 스크롤(하이어라키 목록과 같은 방식) — 안 그러면 PNG 개수만큼
+            // 아래로 무한정 늘어나 창 밖으로 잘린다.
+            let textures = self.available_textures.clone();
+            let max_tex_scroll = textures.len().saturating_sub(TEXTURE_VISIBLE_ROWS) as f32;
+            self.texture_scroll = self.texture_scroll.clamp(0.0, max_tex_scroll);
+            let tstart = self.texture_scroll as usize;
+            for path in textures.iter().skip(tstart).take(TEXTURE_VISIBLE_ROWS) {
+                let name = path.rsplit('/').next().unwrap_or(path).to_string();
                 let is_cur = cur_path.as_deref() == Some(path.as_str());
                 if flat_button(&mut self.renderer, PAD, y, SIDEBAR_W - PAD * 2.0, ROW_H - 3.0, &name, mouse, clicked, is_cur) {
                     pending_texture = Some(Some(path.clone()));
                 }
                 y += ROW_H;
+            }
+            if textures.len() > TEXTURE_VISIBLE_ROWS {
+                let hint = format!("{}/{} (wheel to scroll)", tstart + 1, textures.len());
+                self.renderer.text(PAD, y, &hint, 0.5, COL_TEXT_DIM);
             }
 
             if let Some(path) = pending_texture {
@@ -1448,7 +1466,14 @@ impl EventHandler for Stage {
 
     fn mouse_wheel_event(&mut self, _x: f32, y: f32) {
         if self.input.mouse.0 < SIDEBAR_W {
-            self.hier_scroll -= y;
+            // 사이드바 위쪽(하이어라키 목록 구역)이면 그 목록을, 그 아래(인스펙터
+            // 쪽, 지금은 텍스처 목록만 스크롤 대상)면 텍스처 목록을 돌린다.
+            let hier_band_bottom = HIER_LIST_TOP + HIER_VISIBLE_ROWS as f32 * ROW_H + 20.0;
+            if self.input.mouse.1 < hier_band_bottom {
+                self.hier_scroll -= y;
+            } else {
+                self.texture_scroll -= y;
+            }
         } else {
             let fwd = self.cam.camera().forward();
             self.cam.pos = v_add(self.cam.pos, v_scale(fwd, y * DOLLY_SPEED));
@@ -1472,7 +1497,7 @@ fn main() {
         window_height: WIN_H as i32,
         fullscreen: false,
         high_dpi: false,
-        // 리사이즈/최대화 허용 — 렌더러는 항상 고정된 800x600 가상 해상도로
+        // 리사이즈/최대화 허용 — 렌더러는 항상 고정된 800x800 가상 해상도로
         // 그리지만 GL 뷰포트가 실제 창 크기에 맞게 자동으로 늘어나서(별도
         // CRT 스케일링 없이도) 내용이 그냥 창 크기에 맞춰 늘어나 보인다.
         // 실제 마우스 좌표만 `to_virtual()`로 그 비율만큼 다시 재서 가상
