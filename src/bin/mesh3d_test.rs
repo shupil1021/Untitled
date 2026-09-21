@@ -7,8 +7,13 @@
 //! 장면은 전부 `Box3D`(회전 가능한 직육면체) 하나로만 만든다: 평평한 바닥,
 //! 기울어진 경사로(램프, pitch 회전), 그 위 높은 발판, 옆으로 기운 벽(roll 회전)
 //! — 바닥 높낮이도 기울어진 벽/경사로도 전부 같은 상자 타입 하나로 표현된다는 걸
-//! 보여주는 게 목적이다. 바닥엔 작은 아이템(열쇠/쪽지/손전등, 전부 이 프로젝트의
-//! 기존 디자인 그대로 `Box3D` 하나로 표현) 몇 개를 흩어놨다.
+//! 보여주는 게 목적이다. 스폰 지점은 쓰레기 무더기가 쌓인 방(`build_room`) 안이고,
+//! 이 방을 나가는 문은 손잡이를 조준하고 `E`를 누르면 실제로 경첩을 축으로
+//! 열리고 닫힌다(문짝도 손잡이도 그 경첩 축 기준 회전으로 매 프레임 위치를
+//! 다시 계산해서 그린다 — `door_box`/`door_handle_pos` 참고). 문이 닫혀있는
+//! 동안은 진짜로 막는 장애물이라 열어야 지나갈 수 있다. 바닥엔 작은 아이템
+//! (열쇠/쪽지/손전등, 전부 이 프로젝트의 기존 디자인 그대로 `Box3D` 하나로
+//! 표현) 몇 개를 흩어놨다.
 //!
 //! 조작: W/S 전진/후진, A/D 좌우 이동(strafe), Space 로 점프. **마우스를
 //! 움직이면 시점이 돈다**(FPS 게임처럼 커서를 숨기고 창에 가둔다 —
@@ -16,7 +21,9 @@
 //! 회전이 매끄럽다). ↑/↓ 로도 피치를 돌릴 수 있다(키보드만으로도 확인할 수
 //! 있게 남겨뒀다).
 //!
-//! 아이템에 조준선(화면 중앙)을 가까이 대면 그 옆에 "[E] Inspect 이름"이 뜬다 —
+//! 문 손잡이에 조준선을 가까이 대면 "[E] Open/Close door"가 뜨고, `E`를 누르면
+//! 곧바로(확대 창 없이) 문이 열리거나 닫힌다. 아이템에 조준선(화면 중앙)을
+//! 가까이 대면 그 옆에 "[E] Inspect 이름"이 뜬다 —
 //! `E` 를 누르면 화면 가운데에 그 아이템만 확대해서 보여주는 작은 창이 뜨고,
 //! 그 동안 플레이어는 멈추고 **마우스 오른쪽 버튼을 누른 채 드래그**하면 그
 //! 아이템을 그 자리에서 돌려가며 볼 수 있다. `E`나 `Esc`를 다시 누르면 닫힌다
@@ -61,6 +68,138 @@ const RAMP_COLOR: [f32; 4] = [0.5, 0.42, 0.3, 1.0];
 const PLATFORM_COLOR: [f32; 4] = [0.45, 0.45, 0.5, 1.0];
 const WALL_COLOR: [f32; 4] = [0.55, 0.3, 0.3, 1.0];
 const LEANING_WALL_COLOR: [f32; 4] = [0.35, 0.35, 0.6, 1.0];
+
+// 스폰 지점을 감싸는 쓰레기 방 — 북쪽(+Z) 벽에 문 하나를 뚫어서 기존 경사로
+// 코스(ramp_start_z=3.0 부터)로 이어지게 한다. 서쪽 벽을 충분히 멀리 둬서
+// 기존 "옆으로 기운 벽"(LEANING_WALL_COLOR, x=-4.5) 데모도 그대로 방 안에
+// 들어오게 했다 — 방 안의 또 다른 잡동사니처럼 보인다.
+const ROOM_MIN_X: f32 = -8.0; // 기존 "옆으로 기운 벽" 데모(x=-4.5, 대각선으로 튀어나온 회전체)가 안 걸리게 넉넉히
+const ROOM_MAX_X: f32 = 3.0;
+const ROOM_MIN_Z: f32 = -6.0;
+const ROOM_MAX_Z: f32 = 0.4;
+const ROOM_WALL_HALF_Y: f32 = 1.3;
+const ROOM_WALL_THICK: f32 = 0.15;
+const ROOM_WALL_COLOR: [f32; 4] = [0.4, 0.38, 0.35, 1.0];
+
+// 문 — 경첩(DOOR_HINGE_X, ROOM_MAX_Z 위치의 수직선)을 축으로 문짝과 손잡이
+// 둘 다 회전시킨다(door_box/door_handle_pos 가 매 프레임 새로 계산). 북쪽
+// 벽의 문간은 정확히 [DOOR_HINGE_X, DOOR_HINGE_X+DOOR_WIDTH] 만큼 뚫려있고
+// (build_room 참고), 닫힌 문짝이 그 틈을 정확히 채운다.
+const DOOR_HINGE_X: f32 = -0.8; // 문간(대략 x=0 기준)의 서쪽 가장자리 — 경첩 위치
+const DOOR_WIDTH: f32 = 1.5;
+const DOOR_HALF_W: f32 = DOOR_WIDTH / 2.0;
+const DOOR_HALF_H: f32 = 1.15;
+const DOOR_HALF_T: f32 = 0.06;
+const DOOR_Y: f32 = DOOR_HALF_H;
+const DOOR_COLOR: [f32; 4] = [0.35, 0.24, 0.16, 1.0]; // 나무색
+const DOOR_OPEN_ANGLE: f32 = std::f32::consts::PI * 0.55; // 약 99도
+const DOOR_ANIM_SPEED: f32 = 2.2; // door_anim(0~1) 초당 변화량 — 완전히 열리는 데 ~0.45초
+
+const HANDLE_HALF: [f32; 3] = [0.05, 0.05, 0.05];
+const HANDLE_COLOR: [f32; 4] = [0.8, 0.72, 0.45, 1.0]; // 놋쇠색
+
+fn move_toward(cur: f32, target: f32, max_delta: f32) -> f32 {
+    if (target - cur).abs() <= max_delta {
+        target
+    } else {
+        cur + max_delta * (target - cur).signum()
+    }
+}
+
+// hinge 를 지나는 수직축 기준으로 로컬 오프셋(문이 닫혀있을 때 기준의 상대
+// 위치)을 angle 만큼 돌린 "지금" 월드 위치 — mesh3d.rs::mat_rotate_y 와 같은
+// 회전 부호를 써야 문짝의 실제 렌더링 회전(yaw=angle)과 이 위치 계산이
+// 어긋나지 않는다(안 맞으면 경첩이 아니라 이상한 축으로 미끄러지듯 움직여
+// 보인다).
+fn hinge_rotate(hinge: [f32; 3], local_offset: [f32; 3], angle: f32) -> [f32; 3] {
+    let (s, c) = angle.sin_cos();
+    let x = local_offset[0] * c + local_offset[2] * s;
+    let z = -local_offset[0] * s + local_offset[2] * c;
+    [hinge[0] + x, hinge[1] + local_offset[1], hinge[2] + z]
+}
+
+fn door_hinge() -> [f32; 3] {
+    [DOOR_HINGE_X, DOOR_Y, ROOM_MAX_Z]
+}
+
+fn door_angle(anim: f32) -> f32 {
+    anim * DOOR_OPEN_ANGLE
+}
+
+// anim(0=닫힘~1=열림)에 맞는 문짝의 "지금" Box3D — 매 프레임 새로 계산해서
+// 충돌 목록/렌더 목록에 넣는다(닫혀 있으면 진짜로 막는 장애물이 된다).
+fn door_box(anim: f32) -> Box3D {
+    let angle = door_angle(anim);
+    let center = hinge_rotate(door_hinge(), [DOOR_HALF_W, 0.0, 0.0], angle);
+    Box3D { center, half: [DOOR_HALF_W, DOOR_HALF_H, DOOR_HALF_T], yaw: angle, pitch: 0.0, roll: 0.0, color: DOOR_COLOR, texture: None, walkable: false, solid: true }
+}
+
+// 손잡이는 문의 경첩 반대쪽(먼) 가장자리, 방 안쪽 면에서 살짝 튀어나온
+// 자리 — 문과 똑같은 경첩 회전을 타므로 문이 도는 대로 같이 따라 돈다.
+fn door_handle_pos(anim: f32) -> [f32; 3] {
+    let angle = door_angle(anim);
+    hinge_rotate(door_hinge(), [DOOR_WIDTH - 0.15, -0.45, -0.09], angle)
+}
+
+fn door_handle_box(anim: f32) -> Box3D {
+    let angle = door_angle(anim);
+    let center = door_handle_pos(anim);
+    Box3D { center, half: HANDLE_HALF, yaw: angle, pitch: 0.0, roll: 0.0, color: HANDLE_COLOR, texture: None, walkable: false, solid: false }
+}
+
+// 스폰을 감싸는 방 — 벽 4면(북쪽은 문간을 남기고 두 조각으로) + 쓰레기 더미.
+fn build_room() -> Vec<Box3D> {
+    let mut boxes = Vec::new();
+    let center_x = (ROOM_MIN_X + ROOM_MAX_X) / 2.0;
+    let center_z = (ROOM_MIN_Z + ROOM_MAX_Z) / 2.0;
+    let half_x = (ROOM_MAX_X - ROOM_MIN_X) / 2.0;
+    let half_z = (ROOM_MAX_Z - ROOM_MIN_Z) / 2.0;
+
+    let wall = |center: [f32; 3], half: [f32; 3]| Box3D {
+        center,
+        half,
+        yaw: 0.0,
+        pitch: 0.0,
+        roll: 0.0,
+        color: ROOM_WALL_COLOR,
+        texture: None,
+        walkable: false,
+        solid: true,
+    };
+
+    // 서쪽/동쪽 벽.
+    boxes.push(wall([ROOM_MIN_X, ROOM_WALL_HALF_Y, center_z], [ROOM_WALL_THICK, ROOM_WALL_HALF_Y, half_z + ROOM_WALL_THICK]));
+    boxes.push(wall([ROOM_MAX_X, ROOM_WALL_HALF_Y, center_z], [ROOM_WALL_THICK, ROOM_WALL_HALF_Y, half_z + ROOM_WALL_THICK]));
+    // 남쪽 벽(막힌 벽).
+    boxes.push(wall([center_x, ROOM_WALL_HALF_Y, ROOM_MIN_Z], [half_x + ROOM_WALL_THICK, ROOM_WALL_HALF_Y, ROOM_WALL_THICK]));
+    // 북쪽 벽 — 가운데 문간(폭 DOOR_GAP_HALF*2)만 비우고 좌우 두 조각으로.
+    let left_w = (DOOR_HINGE_X - ROOM_MIN_X) / 2.0;
+    boxes.push(wall([ROOM_MIN_X + left_w, ROOM_WALL_HALF_Y, ROOM_MAX_Z], [left_w, ROOM_WALL_HALF_Y, ROOM_WALL_THICK]));
+    let right_start = DOOR_HINGE_X + DOOR_WIDTH;
+    let right_w = (ROOM_MAX_X - right_start) / 2.0;
+    boxes.push(wall([right_start + right_w, ROOM_WALL_HALF_Y, ROOM_MAX_Z], [right_w, ROOM_WALL_HALF_Y, ROOM_WALL_THICK]));
+
+    // 쓰레기 더미 — 벽 쪽에 몰아서 스폰↔문 사이 통로는 비워둔다.
+    // (위치, 반너비, 색, yaw, roll)
+    type TrashSpec = ([f32; 3], [f32; 3], [f32; 4], f32, f32);
+    let trash: &[TrashSpec] = &[
+        ([-5.2, 0.2, -5.2], [0.4, 0.2, 0.35], [0.42, 0.32, 0.18, 1.0], 0.3, 0.0),
+        ([-4.6, 0.15, -4.6], [0.3, 0.15, 0.3], [0.25, 0.3, 0.18, 1.0], -0.6, 0.15),
+        ([-5.5, 0.25, -2.0], [0.35, 0.25, 0.4], [0.4, 0.4, 0.42, 1.0], 1.1, 0.0),
+        ([-2.6, 0.18, -5.5], [0.3, 0.18, 0.25], [0.5, 0.28, 0.15, 1.0], 0.4, 0.0),
+        ([-0.8, 0.15, -5.3], [0.25, 0.15, 0.3], [0.4, 0.3, 0.2, 1.0], -0.2, 0.0),
+        ([2.0, 0.2, -5.0], [0.35, 0.2, 0.3], [0.28, 0.34, 0.2, 1.0], 0.7, 0.0),
+        ([2.3, 0.15, -3.0], [0.25, 0.15, 0.25], [0.42, 0.42, 0.44, 1.0], -0.9, 0.0),
+        ([2.2, 0.3, -1.0], [0.4, 0.3, 0.35], [0.45, 0.32, 0.2, 1.0], 0.15, 0.1),
+        ([-5.7, 0.2, -0.8], [0.25, 0.2, 0.3], [0.5, 0.3, 0.16, 1.0], -0.3, 0.0),
+        ([-3.3, 0.15, -0.9], [0.3, 0.15, 0.25], [0.27, 0.33, 0.19, 1.0], 0.5, 0.0),
+    ];
+    for &(pos, half, color, yaw, roll) in trash {
+        boxes.push(Box3D { center: pos, half, yaw, pitch: 0.0, roll, color, texture: None, walkable: false, solid: true });
+    }
+
+    boxes
+}
 
 // 조준(화면 중앙, 카메라 정면 방향) 판정 — 이 거리 안 + 이 각도(코사인) 안에
 // 있는 아이템 중 가장 가까운 것 하나만 "조준 중"으로 친다. 벽에 가려져 있어도
@@ -159,6 +298,7 @@ fn build_scene() -> Vec<Box3D> {
         solid: true,
     });
 
+    boxes.extend(build_room());
     boxes
 }
 
@@ -254,23 +394,30 @@ fn world_to_screen(cam: &Camera, p: [f32; 3]) -> Option<(f32, f32)> {
     Some(((ndc_x * 0.5 + 0.5) * WIN_W, (1.0 - (ndc_y * 0.5 + 0.5)) * WIN_H))
 }
 
-// 화면 중앙 조준선 기준으로 가장 가까운(각도·거리 조건을 만족하는) 아이템.
-fn find_aimed_item(cam: &Camera, items: &[Item]) -> Option<usize> {
-    let fwd = cam.forward();
+// 화면 중앙 조준선 기준으로 거리 안 + 각도 안이면 Some(거리) — 문 손잡이처럼
+// 딱 하나뿐인 단일 지점 조준 판정에 쓴다.
+fn aim_check(cam: &Camera, target: [f32; 3]) -> Option<f32> {
+    let to = v_sub(target, cam.pos);
+    let dist = crackhead::mesh3d::v_len(to);
+    if !(0.05..=AIM_MAX_DIST).contains(&dist) {
+        return None;
+    }
+    let dir = crackhead::mesh3d::v_scale(to, 1.0 / dist);
+    if v_dot(dir, cam.forward()) > AIM_MAX_COS { Some(dist) } else { None }
+}
+
+// 화면 중앙 조준선 기준으로 가장 가까운(각도·거리 조건을 만족하는) 아이템과
+// 그 거리 — 문 손잡이 조준과 우선순위(더 가까운 쪽)를 비교하는 데 거리가 필요.
+fn find_aimed_item(cam: &Camera, items: &[Item]) -> Option<(usize, f32)> {
     let mut best: Option<(usize, f32)> = None;
     for (i, item) in items.iter().enumerate() {
-        let to_item = v_sub(item.pos, cam.pos);
-        let dist = crackhead::mesh3d::v_len(to_item);
-        if !(0.05..=AIM_MAX_DIST).contains(&dist) {
-            continue;
-        }
-        let dir = crackhead::mesh3d::v_scale(to_item, 1.0 / dist);
-        let cos_angle = v_dot(dir, fwd);
-        if cos_angle > AIM_MAX_COS && best.is_none_or(|(_, bd)| dist < bd) {
+        if let Some(dist) = aim_check(cam, item.pos)
+            && best.is_none_or(|(_, bd)| dist < bd)
+        {
             best = Some((i, dist));
         }
     }
-    best.map(|(i, _)| i)
+    best
 }
 
 struct Player {
@@ -362,6 +509,9 @@ struct Stage {
     items: Vec<Item>,
     player: Player,
     aimed_item: Option<usize>,
+    door_open: bool,  // 목표 상태(열림/닫힘) — 실제 각도는 door_anim 이 서서히 따라간다
+    door_anim: f32,   // 0=닫힘 ~ 1=열림
+    door_aimed: bool, // 지금 조준선이 문 손잡이를 향하고 있는지
     inspecting: Option<usize>,
     item_view_yaw: f32,
     item_view_pitch: f32,
@@ -404,6 +554,9 @@ impl Stage {
             items,
             player,
             aimed_item: None,
+            door_open: false,
+            door_anim: 0.0,
+            door_aimed: false,
             inspecting: None,
             item_view_yaw: 0.0,
             item_view_pitch: 0.0,
@@ -431,13 +584,44 @@ impl EventHandler for Stage {
         let dt = ((now - self.last_time) as f32).min(0.5);
         self.last_time = now;
 
+        // 문은 목표 상태(door_open)를 향해 서서히 회전한다 — 조사 창이 떠 있어도
+        // 계속 진행시켜서(플레이어가 안 보고 있어도) 어색하게 멈춰있지 않게 한다.
+        let door_target = if self.door_open { 1.0 } else { 0.0 };
+        self.door_anim = move_toward(self.door_anim, door_target, DOOR_ANIM_SPEED * dt);
+
         if self.inspecting.is_none() {
-            self.player.update(&self.input, dt, &self.boxes);
-            self.aimed_item = find_aimed_item(&self.player.camera(), &self.items);
+            // 문짝(지금 각도)도 같이 충돌 목록에 넣는다 — 닫혀 있으면 진짜로 막는다.
+            let mut collision_boxes = self.boxes.clone();
+            collision_boxes.push(door_box(self.door_anim));
+            self.player.update(&self.input, dt, &collision_boxes);
+
+            let cam = self.player.camera();
+            let item_hit = find_aimed_item(&cam, &self.items);
+            let handle_hit = aim_check(&cam, door_handle_pos(self.door_anim));
+            match (item_hit, handle_hit) {
+                (Some((i, idist)), Some(hdist)) if idist <= hdist => {
+                    self.aimed_item = Some(i);
+                    self.door_aimed = false;
+                }
+                (_, Some(_)) => {
+                    self.aimed_item = None;
+                    self.door_aimed = true;
+                }
+                (Some((i, _)), None) => {
+                    self.aimed_item = Some(i);
+                    self.door_aimed = false;
+                }
+                (None, None) => {
+                    self.aimed_item = None;
+                    self.door_aimed = false;
+                }
+            }
         }
 
         let mut world_boxes = self.boxes.clone();
         world_boxes.extend(self.items.iter().map(item_world_box));
+        world_boxes.push(door_box(self.door_anim));
+        world_boxes.push(door_handle_box(self.door_anim));
         self.mesh3d.render(self.ctx.as_mut(), SKY_COLOR, &self.player.camera(), &world_boxes, FOV_Y);
 
         self.renderer.begin(WIN_W, WIN_H);
@@ -452,7 +636,7 @@ impl EventHandler for Stage {
         self.renderer.rect(cx - 1.0, cy - 5.0, 2.0, 10.0, [1.0, 1.0, 1.0, 0.8]);
 
         self.renderer.rect(0.0, 0.0, WIN_W, 18.0, [0.0, 0.0, 0.0, 0.55]);
-        self.renderer.text(6.0, 3.0, "mesh3d.rs test - mouse/WASD move, Space jump, E inspect", 0.7, [1.0, 1.0, 1.0, 1.0]);
+        self.renderer.text(6.0, 3.0, "mesh3d.rs test - mouse/WASD move, Space jump, E interact", 0.7, [1.0, 1.0, 1.0, 1.0]);
         let status = format!(
             "pos=({:.1},{:.1},{:.1}) grounded={}",
             self.player.feet[0], self.player.feet[1], self.player.feet[2], self.player.grounded
@@ -468,6 +652,17 @@ impl EventHandler for Stage {
             let tw = self.renderer.text_width(&label, 0.7);
             self.renderer.rect(sx + 10.0, sy - 10.0, tw + 8.0, 16.0, [0.0, 0.0, 0.0, 0.6]);
             self.renderer.text(sx + 14.0, sy - 8.0, &label, 0.7, [1.0, 1.0, 0.4, 1.0]);
+        }
+
+        // 문 손잡이를 조준 중이면 그 옆에 열기/닫기 안내 문구.
+        if self.inspecting.is_none()
+            && self.door_aimed
+            && let Some((sx, sy)) = world_to_screen(&self.player.camera(), door_handle_pos(self.door_anim))
+        {
+            let label = if self.door_open { "[E] Close door" } else { "[E] Open door" };
+            let tw = self.renderer.text_width(label, 0.7);
+            self.renderer.rect(sx + 10.0, sy - 10.0, tw + 8.0, 16.0, [0.0, 0.0, 0.0, 0.6]);
+            self.renderer.text(sx + 14.0, sy - 8.0, label, 0.7, [0.6, 0.9, 1.0, 1.0]);
         }
 
         // 아이템 확대 보기 — 박스형 창 대신 화면 전체를 어둡게 깔고 그 위에
@@ -513,6 +708,8 @@ impl EventHandler for Stage {
         if !repeat && keycode == KeyCode::E {
             if self.inspecting.is_some() {
                 self.close_inspect();
+            } else if self.door_aimed {
+                self.door_open = !self.door_open;
             } else if let Some(i) = self.aimed_item {
                 self.inspecting = Some(i);
                 self.item_view_yaw = 0.0;
