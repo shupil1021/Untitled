@@ -69,19 +69,19 @@ const AIM_MAX_DIST: f32 = 3.0;
 const AIM_MAX_COS: f32 = 0.95; // 대략 앞쪽 ±18도
 
 const ITEM_ROTATE_SENS: f32 = 0.008; // 아이템 확대 창에서 오른쪽 드래그 픽셀당 라디안
-const INSPECT_ZOOM_SENS: f32 = 0.15; // 휠 한 칸(y=1.0)당 배율 변화
-const INSPECT_ZOOM_MIN: f32 = 0.3;
-const INSPECT_ZOOM_MAX: f32 = 4.0;
+// 휠로 조절하는 건 카메라 거리가 아니라 "화면에 그려지는 크기"(0=제일 작게,
+// 1=CRT 화면 가득) 그 자체다 — 최소/최대 둘 다 같은 4:3 비율(WIN_W:WIN_H 와
+// 똑같음)이라 커지고 작아져도 아이템이 찌그러지지 않는다.
+const INSPECT_ZOOM_SENS: f32 = 0.05; // 휠 한 칸(y=1.0)당 0~1 배율 변화 — 이전(0.15)보다 완만하게
+const INSPECT_SIZE_MIN_W: f32 = 200.0;
+const INSPECT_SIZE_MIN_H: f32 = 150.0;
+const INSPECT_SIZE_MAX_W: f32 = WIN_W; // 제한을 CRT 화면 크기까지 — 다 키우면 화면을 가득 채운다
+const INSPECT_SIZE_MAX_H: f32 = WIN_H;
 const DIM_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.6]; // 확대 창 떠 있을 때 화면 전체를 덮는 어둠
 
-const POPUP_W: f32 = 260.0;
-const POPUP_H: f32 = 220.0;
-const POPUP_X: f32 = (WIN_W - POPUP_W) / 2.0;
-const POPUP_Y: f32 = (WIN_H - POPUP_H) / 2.0 - 10.0;
-const POPUP_INNER_W: f32 = 244.0;
-const POPUP_INNER_H: f32 = 140.0;
-const POPUP_INNER_X: f32 = POPUP_X + 8.0;
-const POPUP_INNER_Y: f32 = POPUP_Y + 26.0;
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
 
 // 바닥 높낮이(경사로 → 발판)와 기울어진 벽을 한 장면에 같이 두고 확인한다.
 fn build_scene() -> Vec<Box3D> {
@@ -204,11 +204,11 @@ fn item_inspect_box(item: &Item, extra_yaw: f32, extra_pitch: f32) -> Box3D {
 }
 
 // 아이템 크기에 맞춰 확대 창 카메라를 자동으로 물러나 둔다 — 작은 열쇠든 큰
-// 손전등이든 창 안에 비슷하게 꽉 차 보이게. zoom 이 커질수록(휠을 위로) 카메라가
-// 더 가까이 다가가 아이템이 더 크게 보인다.
-fn inspect_camera(item: &Item, zoom: f32) -> Camera {
+// 손전등이든 창 안에 비슷하게 꽉 차 보이게. 이 거리는 고정이고, 휠로 조절하는
+// "크기"는 대신 화면에 그리는 사각형 자체의 크기를 바꾼다(draw() 참고).
+fn inspect_camera(item: &Item) -> Camera {
     let radius = item.half[0].max(item.half[1]).max(item.half[2]);
-    let dist = (radius * 4.5 / zoom).max(0.15);
+    let dist = (radius * 4.5).max(0.6);
     Camera { pos: [0.0, 0.0, -dist], yaw: std::f32::consts::PI, pitch: 0.0 }
 }
 
@@ -351,7 +351,8 @@ impl Stage {
         let mut ctx: Box<dyn RenderingBackend> = window::new_rendering_backend();
         let renderer = Renderer::new(ctx.as_mut());
         let mesh3d = Mesh3D::new(ctx.as_mut(), WIN_W as u32, WIN_H as u32);
-        let inspect_mesh3d = Mesh3D::new(ctx.as_mut(), POPUP_INNER_W as u32, POPUP_INNER_H as u32);
+        // CRT 화면과 같은 해상도로 만들어둔다 — 휠로 화면 가득 키워도 흐려지지 않게.
+        let inspect_mesh3d = Mesh3D::new(ctx.as_mut(), WIN_W as u32, WIN_H as u32);
         let crt = Crt::new(ctx.as_mut(), WIN_W as u32, WIN_H as u32);
         let boxes = build_scene();
         let items = build_items();
@@ -375,7 +376,7 @@ impl Stage {
             inspecting: None,
             item_view_yaw: 0.0,
             item_view_pitch: 0.0,
-            inspect_zoom: 1.0,
+            inspect_zoom: 0.3,
             rmb_down: false,
             input: Input::default(),
             start_time: now,
@@ -387,7 +388,7 @@ impl Stage {
         self.inspecting = None;
         self.item_view_yaw = 0.0;
         self.item_view_pitch = 0.0;
-        self.inspect_zoom = 1.0;
+        self.inspect_zoom = 0.3;
     }
 }
 
@@ -439,18 +440,26 @@ impl EventHandler for Stage {
         }
 
         // 아이템 확대 보기 — 박스형 창 대신 화면 전체를 어둡게 깔고 그 위에
-        // 아이템만 또렷하게 띄운다. 크기는 휠(inspect_zoom, 카메라 거리)로 조절.
+        // 아이템만 또렷하게 띄운다. 휠(inspect_zoom, 0~1)은 화면에 그리는
+        // 사각형 자체의 크기를 최소 크기 ~ CRT 화면 전체 사이로 조절한다.
         if let Some(i) = self.inspecting {
             self.renderer.rect(0.0, 0.0, WIN_W, WIN_H, DIM_COLOR);
 
             let item = &self.items[i];
             let inspect_box = item_inspect_box(item, self.item_view_yaw, self.item_view_pitch);
-            self.inspect_mesh3d.render(self.ctx.as_mut(), [0.0, 0.0, 0.0, 0.0], &inspect_camera(item, self.inspect_zoom), std::slice::from_ref(&inspect_box), FOV_Y);
+            self.inspect_mesh3d.render(self.ctx.as_mut(), [0.0, 0.0, 0.0, 0.0], &inspect_camera(item), std::slice::from_ref(&inspect_box), FOV_Y);
 
-            self.renderer.text(POPUP_X + 8.0, POPUP_Y - 4.0, item.name, 0.75, [1.0, 1.0, 1.0, 1.0]);
+            let t = self.inspect_zoom;
+            let w = lerp(INSPECT_SIZE_MIN_W, INSPECT_SIZE_MAX_W, t);
+            let h = lerp(INSPECT_SIZE_MIN_H, INSPECT_SIZE_MAX_H, t);
+            let x = (WIN_W - w) / 2.0;
+            let y = (WIN_H - h) / 2.0;
             let inspect_tex = self.inspect_mesh3d.color_texture();
-            self.renderer.sprite_uv(inspect_tex, POPUP_INNER_X, POPUP_INNER_Y, POPUP_INNER_W, POPUP_INNER_H, 0.0, 1.0, 1.0, 0.0, [1.0, 1.0, 1.0, 1.0]);
-            self.renderer.text(POPUP_X + 8.0, POPUP_Y + POPUP_H + 4.0, "RMB drag: rotate  |  wheel: zoom  |  E/Esc: close", 0.6, [0.85, 0.85, 0.9, 1.0]);
+            self.renderer.sprite_uv(inspect_tex, x, y, w, h, 0.0, 1.0, 1.0, 0.0, [1.0, 1.0, 1.0, 1.0]);
+
+            // 문구는 박스 크기와 무관하게 화면 위/아래 고정 위치에 — 다 키워도 안 가려지게.
+            self.renderer.text(10.0, 22.0, item.name, 0.75, [1.0, 1.0, 1.0, 1.0]);
+            self.renderer.text(10.0, WIN_H - 14.0, "RMB drag: rotate  |  wheel: zoom  |  E/Esc: close", 0.6, [0.85, 0.85, 0.9, 1.0]);
         }
 
         // main.rs::draw() 와 같은 순서: 2D 그리기 목록은 이미 위에서 renderer 에
@@ -477,7 +486,7 @@ impl EventHandler for Stage {
                 self.inspecting = Some(i);
                 self.item_view_yaw = 0.0;
                 self.item_view_pitch = 0.0;
-                self.inspect_zoom = 1.0;
+                self.inspect_zoom = 0.3;
             }
         }
         // Esc 로 이 창 전체를 끄는 단축키는 뺐다 — 확대 창을 닫는 용도로만 쓴다.
@@ -506,7 +515,7 @@ impl EventHandler for Stage {
     // 확대 창이 떠 있는 동안 휠로 보고 있는 아이템의 크기(카메라 거리)를 조정한다.
     fn mouse_wheel_event(&mut self, _x: f32, y: f32) {
         if self.inspecting.is_some() {
-            self.inspect_zoom = (self.inspect_zoom + y * INSPECT_ZOOM_SENS).clamp(INSPECT_ZOOM_MIN, INSPECT_ZOOM_MAX);
+            self.inspect_zoom = (self.inspect_zoom + y * INSPECT_ZOOM_SENS).clamp(0.0, 1.0);
         }
     }
 
