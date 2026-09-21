@@ -119,9 +119,8 @@ const HANDLE_HALF: [f32; 3] = [0.05, 0.05, 0.05];
 const HANDLE_COLOR: [f32; 4] = [0.8, 0.72, 0.45, 1.0]; // 놋쇠색
 
 const NOTE_TEXTURE_PATH: &str = "assets/icon_folder.png";
-// 씬을 내보낼(export_scene) 파일 경로 — map_editor.rs 가 쓰는 것과 같은 포맷
-// (mapfile.rs::MapScene) 이라 map_editor 로 그대로 열어서 다시 편집할 수도,
-// 코드에서 MapScene::load() 로 다시 불러올 수도 있다.
+// 씬을 내보낼(export_scene) 파일 경로 — mapfile.rs::MapScene 포맷이라
+// 코드에서 MapScene::load() 로 다시 불러올 수 있다.
 const SCENE_EXPORT_PATH: &str = "maps/mesh3d_test_scene.json";
 const SAVE_TOAST_DURATION: f64 = 2.5;
 
@@ -354,8 +353,8 @@ struct Item {
     texture: Option<BoxTexture>, // 텍스처 테스트용 — Note 아이템에만 채워 넣는다
     // texture 는 런타임 GPU 핸들(TextureId)이라 그 자체로는 저장할 수 없다 —
     // 씬을 내보낼 때(export_scene) 이 경로 문자열을 MapBoxData 에 대신 적어둔다
-    // (map_editor.rs/mapfile.rs 와 같은 방식: 텍스처는 항상 경로로 저장하고
-    // 불러오는 쪽이 실제 텍스처로 다시 바꾼다).
+    // (mapfile.rs 와 같은 방식: 텍스처는 항상 경로로 저장하고 불러오는 쪽이
+    // 실제 텍스처로 다시 바꾼다).
     texture_path: Option<&'static str>,
 }
 
@@ -423,7 +422,6 @@ fn inspect_camera(item: &Item) -> Camera {
 }
 
 // 월드 좌표 → 이 창의 화면 좌표(0,0 이 왼쪽 위). 카메라 뒤에 있으면 None.
-// map_editor.rs::Stage::world_to_screen 과 같은 계산이다.
 fn world_to_screen(cam: &Camera, p: [f32; 3]) -> Option<(f32, f32)> {
     let rel = v_sub(p, cam.pos);
     let (fwd, right, up) = (cam.forward(), cam.right(), cam.up());
@@ -663,11 +661,10 @@ impl Stage {
     }
 
     // 지금 이 창이 그리고 있는 씬(스폰 방 벽/쓰레기 + 아이템 + 문/손잡이 스냅샷)을
-    // map_editor.rs 가 쓰는 것과 같은 JSON 포맷(mapfile.rs::MapScene)으로 저장한다
-    // — 그 파일은 `MapScene::load()`로 코드에서 다시 불러올 수도, map_editor 로
-    // 열어서 마우스로 편집할 수도 있다. 지금 여기 build_scene()/build_items()
-    // 처럼 코드에 박아 넣는 대신, 나중엔 이 JSON을 불러오는 쪽으로 바꿀 수도
-    // 있다(지금 당장은 "내보내기"만 — 불러오는 코드는 아직 안 붙였다).
+    // mapfile.rs::MapScene JSON 포맷으로 저장한다 — 그 파일은 `MapScene::load()`로
+    // 코드에서 다시 불러올 수 있다. 지금 여기 build_scene()/build_items() 처럼
+    // 코드에 박아 넣는 대신, 나중엔 이 JSON을 불러오는 쪽으로 바꿀 수도 있다
+    // (지금 당장은 "내보내기"만 — 불러오는 코드는 아직 안 붙였다).
     fn export_scene(&mut self) {
         let mut map_boxes: Vec<MapBoxData> = self.boxes.iter().map(|b| MapBoxData::from_box3d(b, None, String::new(), None)).collect();
         for item in &self.items {
@@ -887,7 +884,7 @@ impl EventHandler for Stage {
         if keycode == KeyCode::Escape && self.inspecting.is_some() {
             self.close_inspect();
         }
-        // Ctrl+S — 지금 씬을 map_editor 와 같은 JSON 포맷으로 내보낸다.
+        // Ctrl+S — 지금 씬을 mapfile.rs::MapScene JSON 포맷으로 내보낸다.
         if !repeat && keycode == KeyCode::S && mods.ctrl {
             self.export_scene();
         }

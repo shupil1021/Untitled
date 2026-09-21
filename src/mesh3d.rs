@@ -11,6 +11,16 @@
 //! 그 결과 컬러 텍스처를 `gfx::Renderer::sprite_uv`로 일반 2D 창 안에 스프라이트처럼
 //! 끼워 넣으면(video.rs 가 디코딩한 영상 프레임을 텍스처로 올려 보여주는 것과 같은
 //! 요령) 나머지 UI(HUD 등)는 지금까지처럼 2D 배칭 렌더러로 그대로 그릴 수 있다.
+//!
+//! `Box3D` 하나로는 표현 못 하는 형태(블렌더 등에서 만든 임의의 폴리곤 소품)를
+//! 위해 `MeshObject`(+ `MeshData`/`parse_obj`)도 있다 — Wavefront OBJ 텍스트
+//! 파일을 외부 크레이트 없이 직접 파싱해서 실제 삼각형 메시로 불러오고, 같은
+//! `Vertex` 포맷·같은 셰이더/파이프라인을 그대로 타서 `Mesh3D::render_ex()`가
+//! `Box3D`와 한 화면에 같이 그린다. 바닥 높이(`mesh_ground_height`)/수평 충돌
+//! (`mesh_resolve_horizontal`)도 실제 삼각형 단위로(점-삼각형 최근접점 계산)
+//! 판정해서, `Box3D`의 AABB 지름길이 없어도 정밀하게 막히고 밟힌다. 아직 이
+//! 엔진 자체에만 있고 `mesh3d_test.rs`는 그대로 `Box3D`만 쓴다(실제로 메시를
+//! 불러와 배치하는 건 다음 단계).
 
 use miniquad::*;
 
@@ -370,6 +380,200 @@ pub struct Vertex {
     pub color: [f32; 4],
 }
 
+// ================= MeshObject: 블렌더 등에서 만든 임의 메시(OBJ) =================
+//
+// Box3D 는 상자 하나뿐이라 블렌더에서 만든 임의의 폴리곤 형태(곡면/복잡한
+// 소품 등)는 표현할 수 없다 — 그런 걸 그대로 쓰고 싶으면 실제 삼각형 메시가
+// 필요하다. glam 을 새로 끌어온 게 아니듯, gltf/obj 파싱 크레이트도 새로
+// 끌어오는 대신 이 파일 안에서 OBJ(Wavefront .obj, 블렌더 기본 내보내기
+// 포맷 중 하나 — 텍스트 기반이라 파서가 단순하다)만 최소한으로 직접 읽는다.
+// 블렌더 OBJ 내보내기 기본값(Forward -Z, Up Y)이 이 엔진의 좌표계(Y 가 위)와
+// 그대로 맞아서 축 변환이 따로 필요 없다.
+//
+// `vn`(법선)은 안 읽는다 — 이 엔진은 애초에 Box3D 도 "면마다 고정된 셰이딩
+// 계수"로 흉내만 낸 플랫 셰이딩이라, 메시도 삼각형마다 그 면의 실제 법선을
+// 계산해 고정 광원 방향과 내적한 값으로 같은 스타일의 플랫 셰이딩을 준다
+// (아래 mesh_face_shade).
+
+pub struct MeshVertex {
+    pub pos: Vec3,
+    pub uv: [f32; 2],
+}
+
+// 파싱된 메시 데이터 — 여러 MeshObject 인스턴스가 `Rc`로 하나를 공유할 수
+// 있다(같은 소품을 여러 개 배치해도 정점 데이터를 중복으로 안 들고 있게).
+pub struct MeshData {
+    pub vertices: Vec<MeshVertex>,
+    pub triangles: Vec<[u32; 3]>,
+}
+
+impl MeshData {
+    pub fn load(path: &str) -> std::io::Result<MeshData> {
+        let text = std::fs::read_to_string(path)?;
+        parse_obj(&text).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+}
+
+// 아주 단순한 OBJ 파서 — `v`(위치)/`vt`(UV)/`f`(면, v/vt/vn 또는 v/vt 또는 v 단독
+// 다 받는다)만 읽고 나머지 지시어(vn/mtllib/usemtl/o/g/s/# 주석 등)는 무시한다.
+// 삼각형이 아닌 면(사각형 이상)은 팬(fan) 방식으로 삼각형화한다. OBJ 는
+// (위치 인덱스, UV 인덱스) 조합별로 정점이 갈릴 수 있어서(같은 위치라도 UV
+// 이음매에서 다른 UV를 써야 할 수 있다), 그 조합을 키로 중복 없이 새 정점을
+// 만들어 인덱스 메시로 합친다.
+pub fn parse_obj(text: &str) -> Result<MeshData, String> {
+    let mut positions: Vec<Vec3> = Vec::new();
+    let mut uvs: Vec<[f32; 2]> = Vec::new();
+    let mut vertices: Vec<MeshVertex> = Vec::new();
+    let mut triangles: Vec<[u32; 3]> = Vec::new();
+    // (위치 인덱스, uv 인덱스) → 이미 만들어둔 출력 정점 인덱스.
+    let mut cache: std::collections::HashMap<(i64, i64), u32> = std::collections::HashMap::new();
+
+    let parse_f32 = |s: &str| -> Result<f32, String> { s.parse::<f32>().map_err(|_| format!("숫자가 아님: {s}")) };
+
+    // "v_idx/vt_idx/vn_idx" 형태(뒤 두 개는 선택) 하나를 파싱해 (v,vt) 1-based
+    // 인덱스만 뽑는다 — OBJ 는 음수 인덱스(파일 끝 기준 상대)도 허용해서 같이 처리한다.
+    let resolve_index = |raw: i64, len: usize| -> i64 { if raw < 0 { len as i64 + raw + 1 } else { raw } };
+
+    let get_or_add_vertex = |pos_idx: i64, uv_idx: i64, positions: &[Vec3], uvs: &[[f32; 2]], vertices: &mut Vec<MeshVertex>, cache: &mut std::collections::HashMap<(i64, i64), u32>| -> Result<u32, String> {
+        let key = (pos_idx, uv_idx);
+        if let Some(&idx) = cache.get(&key) {
+            return Ok(idx);
+        }
+        let pos = *positions.get((pos_idx - 1) as usize).ok_or_else(|| format!("정점 인덱스 범위 밖: {pos_idx}"))?;
+        let uv = if uv_idx > 0 { *uvs.get((uv_idx - 1) as usize).ok_or_else(|| format!("UV 인덱스 범위 밖: {uv_idx}"))? } else { [0.0, 0.0] };
+        let idx = vertices.len() as u32;
+        vertices.push(MeshVertex { pos, uv });
+        cache.insert(key, idx);
+        Ok(idx)
+    };
+
+    for (line_no, raw_line) in text.lines().enumerate() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut it = line.split_whitespace();
+        let Some(tag) = it.next() else { continue };
+        match tag {
+            "v" => {
+                let parts: Vec<&str> = it.collect();
+                if parts.len() < 3 {
+                    return Err(format!("{}번째 줄: v 는 x y z 세 값이 필요함", line_no + 1));
+                }
+                positions.push([parse_f32(parts[0])?, parse_f32(parts[1])?, parse_f32(parts[2])?]);
+            }
+            "vt" => {
+                let parts: Vec<&str> = it.collect();
+                if parts.len() < 2 {
+                    return Err(format!("{}번째 줄: vt 는 u v 두 값이 필요함", line_no + 1));
+                }
+                // OBJ 의 UV 는 아래가 0 — 이 엔진의 텍스처 좌표는 miniquad 관례상
+                // 위가 0 이라(다른 곳(Mesh3D 오프스크린 합성 등)도 다 v 를 뒤집어
+                // 쓴다) 여기서 한 번 뒤집어두면 나중에 또 신경 안 써도 된다.
+                uvs.push([parse_f32(parts[0])?, 1.0 - parse_f32(parts[1])?]);
+            }
+            "f" => {
+                let mut face_verts: Vec<u32> = Vec::new();
+                for token in it {
+                    let mut comps = token.split('/');
+                    let v_raw: i64 = comps.next().unwrap_or("").parse().map_err(|_| format!("{}번째 줄: 정점 인덱스 파싱 실패({token})", line_no + 1))?;
+                    let vt_raw: i64 = match comps.next() {
+                        Some(s) if !s.is_empty() => s.parse().map_err(|_| format!("{}번째 줄: UV 인덱스 파싱 실패({token})", line_no + 1))?,
+                        _ => 0,
+                    };
+                    let pos_idx = resolve_index(v_raw, positions.len());
+                    let uv_idx = if vt_raw != 0 { resolve_index(vt_raw, uvs.len()) } else { 0 };
+                    face_verts.push(get_or_add_vertex(pos_idx, uv_idx, &positions, &uvs, &mut vertices, &mut cache)?);
+                }
+                if face_verts.len() < 3 {
+                    return Err(format!("{}번째 줄: 면은 정점 3개 이상이어야 함", line_no + 1));
+                }
+                // 팬 삼각형화 — v0 을 축으로 (v0,v1,v2),(v0,v2,v3)... (볼록 다각형
+                // 기준. 블렌더 기본 내보내기는 삼각형/사각형이 대부분이라 충분하다).
+                for i in 1..face_verts.len() - 1 {
+                    triangles.push([face_verts[0], face_verts[i], face_verts[i + 1]]);
+                }
+            }
+            _ => {} // vn/mtllib/usemtl/o/g/s 등은 무시
+        }
+    }
+
+    if vertices.is_empty() || triangles.is_empty() {
+        return Err("정점/면이 하나도 없음(빈 OBJ?)".to_string());
+    }
+    Ok(MeshData { vertices, triangles })
+}
+
+// 고정 광원 방향(위+약간 앞) — Box3D 각 면의 고정 셰이딩 계수와 같은 취지로,
+// 삼각형 실제 법선(뒤섞인 임의 메시라 면마다 다르다)에 내적해 플랫 셰이딩
+// 계수를 만든다. Box3D 면들의 셰이딩 범위(0.45~1.0)와 맞춘다.
+const MESH_LIGHT_DIR: Vec3 = [0.35, 0.82, 0.45];
+
+fn mesh_face_shade(a: Vec3, b: Vec3, c: Vec3) -> f32 {
+    let normal = v_norm(v_cross(v_sub(b, a), v_sub(c, a)));
+    let light = v_norm(MESH_LIGHT_DIR);
+    0.45 + 0.55 * v_dot(normal, light).max(0.0)
+}
+
+// 블렌더 등에서 만들어 OBJ 로 내보낸 소품 하나를 이 엔진 씬에 배치한 것 —
+// Box3D 와 같은 자리(center/yaw/pitch/roll)에 균등하지 않은 스케일까지
+// 더했고, 텍스처는 Box3D 의 4x3 전개도 대신 OBJ 가 가진 실제 UV 를 그대로
+// 쓴다(단일 텍스처).
+pub struct MeshObject {
+    pub center: Vec3,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub roll: f32,
+    pub scale: Vec3,
+    pub color: [f32; 4], // 텍스처와 곱해지는 틴트(텍스처 없으면 이 색 그대로)
+    pub texture: Option<TextureId>,
+    // Box3D 와 같은 뜻 — walkable=false 면 mesh_ground_height() 탐색에서,
+    // solid=false 면 mesh_resolve_horizontal() 에서 제외한다.
+    pub walkable: bool,
+    pub solid: bool,
+    pub mesh: std::rc::Rc<MeshData>,
+}
+
+impl MeshObject {
+    pub fn model_matrix(&self) -> Mat4 {
+        let r = mat_mul(&mat_rotate_z(self.roll), &mat_mul(&mat_rotate_x(self.pitch), &mat_rotate_y(self.yaw)));
+        mat_mul(&mat_translate(self.center), &mat_mul(&r, &mat_scale(self.scale)))
+    }
+
+    // 이 메시의 모든 삼각형을 월드 좌표로 — 충돌 판정과 렌더링 둘 다 이걸 쓴다.
+    // 소품 규모(수백~수천 삼각형)를 가정하고 매 프레임 새로 계산한다(Box3D 의
+    // to_triangles() 와 같은 전제).
+    pub fn world_triangles(&self) -> Vec<(Vec3, Vec3, Vec3)> {
+        let model = self.model_matrix();
+        self.mesh
+            .triangles
+            .iter()
+            .map(|tri| {
+                let v = |i: usize| mat_transform_point(&model, self.mesh.vertices[tri[i] as usize].pos);
+                (v(0), v(1), v(2))
+            })
+            .collect()
+    }
+
+    // 그리기용 — 삼각형마다 실제 면 법선으로 플랫 셰이딩 계수를 계산해 tint 에 곱한다.
+    pub fn to_triangles(&self) -> Vec<(Vertex, Vertex, Vertex)> {
+        let model = self.model_matrix();
+        let tint = self.color;
+        self.mesh
+            .triangles
+            .iter()
+            .map(|tri| {
+                let mv = |i: usize| &self.mesh.vertices[tri[i] as usize];
+                let (v0, v1, v2) = (mv(0), mv(1), mv(2));
+                let (p0, p1, p2) = (mat_transform_point(&model, v0.pos), mat_transform_point(&model, v1.pos), mat_transform_point(&model, v2.pos));
+                let shade = mesh_face_shade(p0, p1, p2);
+                let color = [tint[0] * shade, tint[1] * shade, tint[2] * shade, tint[3]];
+                (Vertex { pos: p0, uv: v0.uv, color }, Vertex { pos: p1, uv: v1.uv, color }, Vertex { pos: p2, uv: v2.uv, color })
+            })
+            .collect()
+    }
+}
+
 // ================= 충돌/바닥 높이 =================
 //
 // 레이-삼각형 교차(뫌러-트룸보어) — 수직으로 아래를 향해 쏴서 "이 xz 위치, 이
@@ -473,6 +677,117 @@ pub fn resolve_horizontal(pos: Vec3, radius: f32, feet_y: f32, height: f32, boxe
         let world_pushed = b.local_to_world(local_pushed);
         p[0] = world_pushed[0];
         p[2] = world_pushed[2];
+    }
+    p
+}
+
+// ---- MeshObject 용 — 같은 두 가지(바닥 높이/수평 밀어내기)를 임의 삼각형
+// 메시에 대해 "정밀"하게 한다. Box3D 는 상자 로컬 공간 AABB 클램프라는 지름길이
+// 있었지만, 메시는 삼각형마다 방향이 제각각이라 그 지름길이 없다 — 실제
+// 점-삼각형 최근접점(closest_point_on_triangle)을 계산해서 판정한다.
+
+// 점 p 에서 삼각형(a,b,c)까지 가장 가까운 점 — 표준 알고리즘(Ericson, Real-Time
+// Collision Detection 5.1.5): 정점/변/면 영역을 순서대로 걸러낸다.
+fn closest_point_on_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Vec3 {
+    let ab = v_sub(b, a);
+    let ac = v_sub(c, a);
+    let ap = v_sub(p, a);
+    let d1 = v_dot(ab, ap);
+    let d2 = v_dot(ac, ap);
+    if d1 <= 0.0 && d2 <= 0.0 {
+        return a; // 꼭짓점 a 영역
+    }
+
+    let bp = v_sub(p, b);
+    let d3 = v_dot(ab, bp);
+    let d4 = v_dot(ac, bp);
+    if d3 >= 0.0 && d4 <= d3 {
+        return b; // 꼭짓점 b 영역
+    }
+
+    let vc = d1 * d4 - d3 * d2;
+    if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        let v = d1 / (d1 - d3);
+        return v_add(a, v_scale(ab, v)); // 변 ab 영역
+    }
+
+    let cp = v_sub(p, c);
+    let d5 = v_dot(ab, cp);
+    let d6 = v_dot(ac, cp);
+    if d6 >= 0.0 && d5 <= d6 {
+        return c; // 꼭짓점 c 영역
+    }
+
+    let vb = d5 * d2 - d1 * d6;
+    if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+        let w = d2 / (d2 - d6);
+        return v_add(a, v_scale(ac, w)); // 변 ac 영역
+    }
+
+    let va = d3 * d6 - d5 * d4;
+    if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
+        let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return v_add(b, v_scale(v_sub(c, b), w)); // 변 bc 영역
+    }
+
+    // 면 내부 — 무게중심 좌표로.
+    let denom = 1.0 / (va + vb + vc);
+    let v = vb * denom;
+    let w = vc * denom;
+    v_add(a, v_add(v_scale(ab, v), v_scale(ac, w)))
+}
+
+// ground_height() 의 메시 버전 — walkable 인 메시의 모든 삼각형(경사면도 그냥
+// 삼각형이라 자동으로 따라간다)에 수직 레이를 쏴서 가장 높은 교차점을 찾는다.
+pub fn mesh_ground_height(x: f32, z: f32, probe_y: f32, search_range: f32, meshes: &[MeshObject]) -> Option<f32> {
+    let orig = [x, probe_y + search_range, z];
+    let dir = [0.0, -1.0, 0.0];
+    let mut best: Option<f32> = None;
+    for m in meshes {
+        if !m.walkable {
+            continue;
+        }
+        for tri in m.world_triangles() {
+            if let Some(t) = ray_triangle(orig, dir, tri) {
+                let hit_y = orig[1] - t;
+                if hit_y <= probe_y + search_range && best.is_none_or(|by| hit_y > by) {
+                    best = Some(hit_y);
+                }
+            }
+        }
+    }
+    best
+}
+
+// resolve_horizontal() 의 메시 버전 — 플레이어를 발~머리 사이 높이의 중간점
+// 하나로 표본화해(원기둥을 선분 하나로 근사) 그 점에서 각 삼각형까지 최근접점을
+// 구하고, 그 최근접점이 발~머리 범위(STEP_EPS 여유) 안에 있으면서 수평 거리가
+// radius 보다 가까우면 그만큼 수평으로 밀어낸다. Box3D 버전처럼 완전히 정확한
+// 원기둥-삼각형 충돌은 아니지만(선분이 아니라 점 하나로 표본화), 이 프로젝트
+// 규모의 소품 충돌에는 충분하고 훨씬 단순하다.
+pub fn mesh_resolve_horizontal(pos: Vec3, radius: f32, feet_y: f32, height: f32, meshes: &[MeshObject]) -> Vec3 {
+    const STEP_EPS: f32 = 0.05;
+    let mut p = pos;
+    for m in meshes {
+        if !m.solid {
+            continue;
+        }
+        let probe = [p[0], feet_y + height * 0.5, p[2]];
+        for (a, b, c) in m.world_triangles() {
+            let cp = closest_point_on_triangle(probe, a, b, c);
+            if cp[1] < feet_y - STEP_EPS || cp[1] > feet_y + height + STEP_EPS {
+                continue; // 발밑보다 한참 아래이거나 머리 위 — 이 삼각형은 안 막는다
+            }
+            let dx = cp[0] - p[0];
+            let dz = cp[2] - p[2];
+            let dist = (dx * dx + dz * dz).sqrt();
+            if dist >= radius || dist < 1e-5 {
+                continue;
+            }
+            let push = radius - dist;
+            p[0] -= dx / dist * push;
+            p[2] -= dz / dist * push;
+        }
     }
     p
 }
@@ -595,8 +910,21 @@ impl Mesh3D {
     // camera/boxes 로 장면을 오프스크린 타깃에 그린다. 텍스처별로 묶어 드로우콜을
     // 나눈다(텍스처 없는 상자는 1x1 흰 텍스처 + 정점색으로 처리해서 파이프라인이
     // 하나로 충분하다). 상자 수가 적은(수십~수백) 스타일화된 장면이 목표라 매 프레임
-      // 버텍스 버퍼를 새로 만들어도 무리 없다.
+    // 버텍스 버퍼를 새로 만들어도 무리 없다. MeshObject 없이 Box3D 만 그리는
+    // 기존 호출부(mesh3d_test.rs)는 안 건드려도 되게 render_ex 의 얇은
+    // 래퍼로 남겨뒀다.
     pub fn render(&mut self, ctx: &mut dyn RenderingBackend, clear: [f32; 4], camera: &Camera, boxes: &[Box3D], fov_y: f32) {
+        self.render_ex(ctx, clear, camera, boxes, &[], fov_y);
+    }
+
+    // render() 와 같지만 MeshObject(블렌더 등에서 OBJ 로 가져온 임의 메시)도
+    // 같이 그린다 — Box3D 와 정확히 같은 정점 포맷(Vertex)과 텍스처별 그룹핑을
+    // 그대로 재사용한다(셰이더/파이프라인도 공유). 주의: 텍스처 그룹 하나당
+    // 정점 인덱스를 u16 로 순차 매긴다(기존 Box3D 방식 그대로) — 텍스처 하나를
+    // 공유하는 메시들의 정점 합이 65536 을 넘으면 넘친다. 이 프로젝트 규모의
+    // 스타일화된 소품이면 충분하지만, 아주 고폴리인 메시를 통째로 넣을 땐
+    // 주의(필요해지면 u32 인덱스로 바꿔야 한다).
+    pub fn render_ex(&mut self, ctx: &mut dyn RenderingBackend, clear: [f32; 4], camera: &Camera, boxes: &[Box3D], meshes: &[MeshObject], fov_y: f32) {
         let proj = mat_perspective(fov_y, self.aspect(), 0.05, 200.0);
         let view = camera.view_matrix();
         let view_proj = mat_mul(&proj, &view);
@@ -609,6 +937,15 @@ impl Mesh3D {
             for (a, bb, c) in b.to_triangles() {
                 entry.push(a);
                 entry.push(bb);
+                entry.push(c);
+            }
+        }
+        for m in meshes {
+            let tex = m.texture.unwrap_or(self.white_tex);
+            let entry = groups.entry(tex).or_default();
+            for (a, b, c) in m.to_triangles() {
+                entry.push(a);
+                entry.push(b);
                 entry.push(c);
             }
         }
