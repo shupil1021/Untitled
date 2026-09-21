@@ -21,9 +21,11 @@
 //! 회전이 매끄럽다). ↑/↓ 로도 피치를 돌릴 수 있다(키보드만으로도 확인할 수
 //! 있게 남겨뒀다).
 //!
-//! 문 손잡이에 조준선을 가까이 대면 "[E] Open/Close door"가 뜨고, `E`를 누르면
-//! 곧바로(확대 창 없이) 문이 열리거나 닫힌다. 아이템에 조준선(화면 중앙)을
-//! 가까이 대면 그 옆에 "[E] Inspect 이름"이 뜬다 —
+//! 문 손잡이에 조준선을 가까이 대면 "[E] Examine"이 뜨고, `E`를 누르면 화면
+//! 아래쪽에 짧은 대화창(지금은 "그냥 문고리다..." 고정 문구, 일단은 문을
+//! 실제로 열진 않는다 — dialogue/dialogue_until 참고, 몇 초 뒤 자동으로
+//! 사라진다)이 뜬다. 아이템에 조준선(화면 중앙)을 가까이 대면 그 옆에
+//! "[E] Inspect 이름"이 뜬다 —
 //! `E` 를 누르면 화면 가운데에 그 아이템만 확대해서 보여주는 작은 창이 뜨고,
 //! 그 동안 플레이어는 멈추고 **마우스 오른쪽 버튼을 누른 채 드래그**하면 그
 //! 아이템을 그 자리에서 돌려가며 볼 수 있다. `E`나 `Esc`를 다시 누르면 닫힌다
@@ -94,6 +96,10 @@ const DOOR_Y: f32 = DOOR_HALF_H;
 const DOOR_COLOR: [f32; 4] = [0.35, 0.24, 0.16, 1.0]; // 나무색
 const DOOR_OPEN_ANGLE: f32 = std::f32::consts::PI * 0.55; // 약 99도
 const DOOR_ANIM_SPEED: f32 = 2.2; // door_anim(0~1) 초당 변화량 — 완전히 열리는 데 ~0.45초
+
+// 손잡이 상호작용 — 일단은 문을 실제로 열지 않고 짧은 대화 문구만 띄운다.
+const DOORKNOB_MESSAGE: &str = "그냥 문고리다...";
+const DIALOGUE_DURATION: f64 = 2.2; // 이 시간(초)이 지나면 자동으로 사라진다
 
 const HANDLE_HALF: [f32; 3] = [0.05, 0.05, 0.05];
 const HANDLE_COLOR: [f32; 4] = [0.8, 0.72, 0.45, 1.0]; // 놋쇠색
@@ -512,6 +518,8 @@ struct Stage {
     door_open: bool,  // 목표 상태(열림/닫힘) — 실제 각도는 door_anim 이 서서히 따라간다
     door_anim: f32,   // 0=닫힘 ~ 1=열림
     door_aimed: bool, // 지금 조준선이 문 손잡이를 향하고 있는지
+    dialogue: Option<String>, // 화면 아래 대화창에 지금 띄우고 있는 문구
+    dialogue_until: f64,      // 이 시각(date::now() 기준)이 지나면 dialogue 를 비운다
     inspecting: Option<usize>,
     item_view_yaw: f32,
     item_view_pitch: f32,
@@ -557,6 +565,8 @@ impl Stage {
             door_open: false,
             door_anim: 0.0,
             door_aimed: false,
+            dialogue: None,
+            dialogue_until: 0.0,
             inspecting: None,
             item_view_yaw: 0.0,
             item_view_pitch: 0.0,
@@ -583,6 +593,10 @@ impl EventHandler for Stage {
         let now = date::now();
         let dt = ((now - self.last_time) as f32).min(0.5);
         self.last_time = now;
+
+        if self.dialogue.is_some() && now >= self.dialogue_until {
+            self.dialogue = None;
+        }
 
         // 문은 목표 상태(door_open)를 향해 서서히 회전한다 — 조사 창이 떠 있어도
         // 계속 진행시켜서(플레이어가 안 보고 있어도) 어색하게 멈춰있지 않게 한다.
@@ -654,12 +668,12 @@ impl EventHandler for Stage {
             self.renderer.text(sx + 14.0, sy - 8.0, &label, 0.7, [1.0, 1.0, 0.4, 1.0]);
         }
 
-        // 문 손잡이를 조준 중이면 그 옆에 열기/닫기 안내 문구.
+        // 문 손잡이를 조준 중이면 그 옆에 상호작용 안내 문구.
         if self.inspecting.is_none()
             && self.door_aimed
             && let Some((sx, sy)) = world_to_screen(&self.player.camera(), door_handle_pos(self.door_anim))
         {
-            let label = if self.door_open { "[E] Close door" } else { "[E] Open door" };
+            let label = "[E] Examine";
             let tw = self.renderer.text_width(label, 0.7);
             self.renderer.rect(sx + 10.0, sy - 10.0, tw + 8.0, 16.0, [0.0, 0.0, 0.0, 0.6]);
             self.renderer.text(sx + 14.0, sy - 8.0, label, 0.7, [0.6, 0.9, 1.0, 1.0]);
@@ -688,6 +702,17 @@ impl EventHandler for Stage {
             self.renderer.text(10.0, WIN_H - 14.0, "RMB drag: rotate  |  wheel: zoom  |  E/Esc: close", 0.6, [0.85, 0.85, 0.9, 1.0]);
         }
 
+        // 화면 아래쪽 대화창 — 손잡이 같은 걸 조사했을 때 나오는 짧은 문구.
+        // 무엇보다 위(맨 마지막에 그림)에 뜨고, dialogue_until 이 지나면 이번
+        // 프레임 맨 위에서 이미 self.dialogue = None 으로 비워졌다.
+        if let Some(msg) = &self.dialogue {
+            let box_h = 48.0;
+            let y = WIN_H - box_h;
+            self.renderer.rect(0.0, y, WIN_W, box_h, [0.0, 0.0, 0.0, 0.8]);
+            self.renderer.rect(0.0, y, WIN_W, 2.0, [0.6, 0.6, 0.65, 0.9]);
+            self.renderer.text(16.0, y + 16.0, msg, 0.8, [1.0, 1.0, 1.0, 1.0]);
+        }
+
         // main.rs::draw() 와 같은 순서: 2D 그리기 목록은 이미 위에서 renderer 에
         // 쌓아뒀고, crt.begin() 이 그 flush 의 대상을 CRT용 오프스크린 타깃으로
         // 돌려놓은 뒤에야 실제로 흘려보낸다 — 그래야 CRT 셰이더가 이 화면
@@ -709,7 +734,10 @@ impl EventHandler for Stage {
             if self.inspecting.is_some() {
                 self.close_inspect();
             } else if self.door_aimed {
-                self.door_open = !self.door_open;
+                // 일단은 문을 실제로 열지 않고 대화 문구만 띄운다(door_open 은
+                // 나중에 다른 계기로 열리게 될 걸 대비해 그대로 남겨둔다).
+                self.dialogue = Some(DOORKNOB_MESSAGE.to_string());
+                self.dialogue_until = date::now() + DIALOGUE_DURATION;
             } else if let Some(i) = self.aimed_item {
                 self.inspecting = Some(i);
                 self.item_view_yaw = 0.0;
