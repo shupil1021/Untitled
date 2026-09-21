@@ -154,7 +154,9 @@ cargo run
   이 뜬다. 문구는 타자기처럼 한 글자씩, 글자마다 `rand01`(외부 크레이트 없는
   아주 작은 xorshift64 PRNG)로 살짝 무작위한 간격을 두고 나타난다. 대화창은
   화면 맨 밑에 딱 붙지 않고 `DIALOGUE_BOTTOM_MARGIN`만큼 띄우고 좌우로도
-  `DIALOGUE_SIDE_MARGIN`만큼 여백을 둔다. **떠 있는 동안은 이동도 시점
+  `DIALOGUE_SIDE_MARGIN`만큼 여백을 둔다. 세로 크기(`DIALOGUE_HEIGHT`)는
+  `WIN_H / 3.0`(화면 세로의 대략 1/3)로 잡아서 아래쪽을 꽤 크게 덮는다.
+  **떠 있는 동안은 이동도 시점
   회전(마우스/키보드 전부)도 멈춘다** — `mouse_motion_event`도 그동안은
   카메라에 반영하지 않고 커서만 계속 중앙으로 되돌린다(끝난 뒤 갑자기 크게
   튀지 않게). 아무 키나 마우스 버튼이나 누르면(`advance_dialogue`) 아직

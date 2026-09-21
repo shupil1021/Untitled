@@ -109,7 +109,7 @@ const DOORKNOB_MESSAGE: &str = "그냥 문고리다...";
 // (더 없으면 닫힌다).
 const DIALOGUE_SIDE_MARGIN: f32 = 24.0;
 const DIALOGUE_BOTTOM_MARGIN: f32 = 36.0;
-const DIALOGUE_HEIGHT: f32 = 58.0;
+const DIALOGUE_HEIGHT: f32 = WIN_H / 3.0; // 화면 아래쪽 대략 1/3을 덮는다
 const DIALOGUE_TEXT_SCALE: f32 = 0.95;
 const DIALOGUE_CHAR_DELAY_MIN: f64 = 0.02;
 const DIALOGUE_CHAR_DELAY_MAX: f64 = 0.09;
