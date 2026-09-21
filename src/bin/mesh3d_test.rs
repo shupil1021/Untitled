@@ -46,6 +46,7 @@ use miniquad::*;
 
 use crackhead::crt::Crt;
 use crackhead::gfx::Renderer;
+use crackhead::mapfile::{MapBoxData, MapScene};
 use crackhead::mesh3d::{ground_height, resolve_horizontal, v_dot, v_sub, Box3D, BoxTexture, Camera, Mesh3D};
 use crackhead::scenes::Input;
 
@@ -116,6 +117,13 @@ const DIALOGUE_CHAR_DELAY_MAX: f64 = 0.09;
 
 const HANDLE_HALF: [f32; 3] = [0.05, 0.05, 0.05];
 const HANDLE_COLOR: [f32; 4] = [0.8, 0.72, 0.45, 1.0]; // 놋쇠색
+
+const NOTE_TEXTURE_PATH: &str = "assets/icon_folder.png";
+// 씬을 내보낼(export_scene) 파일 경로 — map_editor.rs 가 쓰는 것과 같은 포맷
+// (mapfile.rs::MapScene) 이라 map_editor 로 그대로 열어서 다시 편집할 수도,
+// 코드에서 MapScene::load() 로 다시 불러올 수도 있다.
+const SCENE_EXPORT_PATH: &str = "maps/mesh3d_test_scene.json";
+const SAVE_TOAST_DURATION: f64 = 2.5;
 
 fn move_toward(cur: f32, target: f32, max_delta: f32) -> f32 {
     if (target - cur).abs() <= max_delta {
@@ -344,13 +352,18 @@ struct Item {
     pitch: f32,
     roll: f32,
     texture: Option<BoxTexture>, // 텍스처 테스트용 — Note 아이템에만 채워 넣는다
+    // texture 는 런타임 GPU 핸들(TextureId)이라 그 자체로는 저장할 수 없다 —
+    // 씬을 내보낼 때(export_scene) 이 경로 문자열을 MapBoxData 에 대신 적어둔다
+    // (map_editor.rs/mapfile.rs 와 같은 방식: 텍스처는 항상 경로로 저장하고
+    // 불러오는 쪽이 실제 텍스처로 다시 바꾼다).
+    texture_path: Option<&'static str>,
 }
 
 fn build_items() -> Vec<Item> {
     vec![
-        Item { name: "Key", pos: [-1.2, 0.06, -2.3], half: [0.18, 0.06, 0.06], color: [0.85, 0.7, 0.2, 1.0], yaw: 0.4, pitch: 0.0, roll: 0.0, texture: None },
-        Item { name: "Note", pos: [-1.8, 0.015, -1.8], half: [0.14, 0.015, 0.18], color: [0.9, 0.88, 0.75, 1.0], yaw: 0.2, pitch: 0.0, roll: 0.0, texture: None },
-        Item { name: "Flashlight", pos: [-2.2, 0.05, -2.6], half: [0.05, 0.05, 0.22], color: [0.3, 0.3, 0.33, 1.0], yaw: -0.5, pitch: 0.0, roll: 0.0, texture: None },
+        Item { name: "Key", pos: [-1.2, 0.06, -2.3], half: [0.18, 0.06, 0.06], color: [0.85, 0.7, 0.2, 1.0], yaw: 0.4, pitch: 0.0, roll: 0.0, texture: None, texture_path: None },
+        Item { name: "Note", pos: [-1.8, 0.015, -1.8], half: [0.14, 0.015, 0.18], color: [0.9, 0.88, 0.75, 1.0], yaw: 0.2, pitch: 0.0, roll: 0.0, texture: None, texture_path: Some(NOTE_TEXTURE_PATH) },
+        Item { name: "Flashlight", pos: [-2.2, 0.05, -2.6], half: [0.05, 0.05, 0.22], color: [0.3, 0.3, 0.33, 1.0], yaw: -0.5, pitch: 0.0, roll: 0.0, texture: None, texture_path: None },
     ]
 }
 
@@ -553,6 +566,8 @@ struct Stage {
     item_view_pitch: f32,
     inspect_zoom: f32,
     rmb_down: bool,
+    save_message: Option<String>, // Ctrl+S 눌렀을 때 잠깐 뜨는 "저장함/실패" 토스트
+    save_message_until: f64,
     input: Input,
     start_time: f64,
     last_time: f64,
@@ -570,7 +585,7 @@ impl Stage {
         let mut items = build_items();
         // 텍스처 테스트 — Note 아이템에 폴더 아이콘(assets/icon_folder.png)을 입혀본다.
         if let Some(note) = items.iter_mut().find(|it| it.name == "Note") {
-            note.texture = load_note_texture(ctx.as_mut(), "assets/icon_folder.png");
+            note.texture = load_note_texture(ctx.as_mut(), NOTE_TEXTURE_PATH);
         }
         let player = Player { feet: [0.0, 0.0, -3.0], yaw: std::f32::consts::FRAC_PI_2, pitch: 0.0, vel_y: 0.0, grounded: true };
         let now = date::now();
@@ -603,6 +618,8 @@ impl Stage {
             item_view_pitch: 0.0,
             inspect_zoom: 0.3,
             rmb_down: false,
+            save_message: None,
+            save_message_until: 0.0,
             input: Input::default(),
             start_time: now,
             last_time: now,
@@ -644,6 +661,33 @@ impl Stage {
             self.dialogue_next_char_at = date::now();
         }
     }
+
+    // 지금 이 창이 그리고 있는 씬(스폰 방 벽/쓰레기 + 아이템 + 문/손잡이 스냅샷)을
+    // map_editor.rs 가 쓰는 것과 같은 JSON 포맷(mapfile.rs::MapScene)으로 저장한다
+    // — 그 파일은 `MapScene::load()`로 코드에서 다시 불러올 수도, map_editor 로
+    // 열어서 마우스로 편집할 수도 있다. 지금 여기 build_scene()/build_items()
+    // 처럼 코드에 박아 넣는 대신, 나중엔 이 JSON을 불러오는 쪽으로 바꿀 수도
+    // 있다(지금 당장은 "내보내기"만 — 불러오는 코드는 아직 안 붙였다).
+    fn export_scene(&mut self) {
+        let mut map_boxes: Vec<MapBoxData> = self.boxes.iter().map(|b| MapBoxData::from_box3d(b, None, String::new(), None)).collect();
+        for item in &self.items {
+            let world_box = item_world_box(item);
+            map_boxes.push(MapBoxData::from_box3d(&world_box, item.texture_path.map(str::to_string), item.name.to_string(), None));
+        }
+        // 문/손잡이는 hinge_rotate 로 매 프레임 다시 계산되는 동적 오브젝트라
+        // 저장 시점의 각도(door_anim) 그대로 스냅샷 하나만 남긴다.
+        map_boxes.push(MapBoxData::from_box3d(&door_box(self.door_anim), None, "Door".to_string(), None));
+        map_boxes.push(MapBoxData::from_box3d(&door_handle_box(self.door_anim), None, "DoorHandle".to_string(), None));
+
+        let scene = MapScene { boxes: map_boxes, player_start: self.player.feet, player_start_yaw: self.player.yaw };
+        let _ = std::fs::create_dir_all("maps");
+        let box_count = scene.boxes.len();
+        self.save_message = Some(match scene.save(SCENE_EXPORT_PATH) {
+            Ok(()) => format!("Saved {SCENE_EXPORT_PATH} ({box_count} boxes)"),
+            Err(e) => format!("Save failed: {e}"),
+        });
+        self.save_message_until = date::now() + SAVE_TOAST_DURATION;
+    }
 }
 
 impl EventHandler for Stage {
@@ -653,6 +697,10 @@ impl EventHandler for Stage {
         let now = date::now();
         let dt = ((now - self.last_time) as f32).min(0.5);
         self.last_time = now;
+
+        if self.save_message.is_some() && now >= self.save_message_until {
+            self.save_message = None;
+        }
 
         // 대화창 타자기 효과 — 시간이 됐으면 한 글자씩 드러낸다(느려진 프레임
         // 뒤에 한 번에 여러 칸 밀려도 되게 while 로 따라잡는다).
@@ -718,7 +766,7 @@ impl EventHandler for Stage {
         self.renderer.rect(cx - 1.0, cy - 5.0, 2.0, 10.0, [1.0, 1.0, 1.0, 0.8]);
 
         self.renderer.rect(0.0, 0.0, WIN_W, 18.0, [0.0, 0.0, 0.0, 0.55]);
-        self.renderer.text(6.0, 3.0, "mesh3d.rs test - mouse/WASD move, Space jump, E interact", 0.7, [1.0, 1.0, 1.0, 1.0]);
+        self.renderer.text(6.0, 3.0, "mesh3d.rs test - mouse/WASD move, Space jump, E interact, Ctrl+S export scene", 0.7, [1.0, 1.0, 1.0, 1.0]);
         let status = format!(
             "pos=({:.1},{:.1},{:.1}) grounded={}",
             self.player.feet[0], self.player.feet[1], self.player.feet[2], self.player.grounded
@@ -770,6 +818,14 @@ impl EventHandler for Stage {
             self.renderer.text(10.0, WIN_H - 14.0, "RMB drag: rotate  |  wheel: zoom  |  E/Esc: close", 0.6, [0.85, 0.85, 0.9, 1.0]);
         }
 
+        // Ctrl+S 저장 토스트 — 대화창처럼 입력을 막지 않는 그냥 잠깐 뜨는 안내.
+        if let Some(msg) = &self.save_message {
+            let tw = self.renderer.text_width(msg, 0.7);
+            let x = (WIN_W - tw - 16.0) / 2.0;
+            self.renderer.rect(x, 24.0, tw + 16.0, 20.0, [0.0, 0.0, 0.0, 0.75]);
+            self.renderer.text(x + 8.0, 29.0, msg, 0.7, [0.7, 1.0, 0.7, 1.0]);
+        }
+
         // 화면 아래쪽 대화창 — 손잡이 같은 걸 조사했을 때 나오는 짧은 문구.
         // 무엇보다 위(맨 마지막에 그림)에 뜬다. 좌우/아래 여백을 두고 화면
         // 맨 밑에서 좀 띄워서(DIALOGUE_BOTTOM_MARGIN) 그린다.
@@ -804,7 +860,7 @@ impl EventHandler for Stage {
         self.input.end_frame();
     }
 
-    fn key_down_event(&mut self, keycode: KeyCode, _mods: KeyMods, repeat: bool) {
+    fn key_down_event(&mut self, keycode: KeyCode, mods: KeyMods, repeat: bool) {
         // 대화창이 떠 있으면 "아무 입력"을 최우선으로 먹는다 — 다른 단축키는
         // 전부 무시하고 대화만 진행시킨다(타이핑 중이면 그 줄 다 보여주기,
         // 다 보여줬으면 다음 줄/닫기).
@@ -830,6 +886,10 @@ impl EventHandler for Stage {
         // Esc 로 이 창 전체를 끄는 단축키는 뺐다 — 확대 창을 닫는 용도로만 쓴다.
         if keycode == KeyCode::Escape && self.inspecting.is_some() {
             self.close_inspect();
+        }
+        // Ctrl+S — 지금 씬을 map_editor 와 같은 JSON 포맷으로 내보낸다.
+        if !repeat && keycode == KeyCode::S && mods.ctrl {
+            self.export_scene();
         }
         self.input.on_key_down(keycode, repeat);
     }
