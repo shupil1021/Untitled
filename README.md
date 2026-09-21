@@ -125,11 +125,12 @@ cargo run
   `solid=false`로, 위로 못 올라가야 하는 장식 벽은 `walkable=false`로 둔다.
 - `src/bin/mesh3d_test.rs`: 이 엔진만 확인하는 테스트 창(`cargo run --bin
   mesh3d_test`) — 평평한 바닥 → 기울어진 경사로(pitch 회전) → 높은 발판 →
-  옆으로 기운 벽(roll 회전)을 한 장면에 두고 WASD 이동, Space 로 점프하며
-  확인한다. 시점 회전은 **마우스**로 한다 — 창이 뜨면 커서를 숨기고 창 안에
-  가둔 뒤(`window::show_mouse(false)`+`set_cursor_grab(true)`) miniquad 의
-  `raw_mouse_motion`(OS 커서 가속/클램프의 영향을 안 받는 원시 입력, FPS 게임
-  방식)으로 카메라 yaw/pitch 를 돌린다. A/D·↑/↓ 키보드 회전도 그대로 남아있다.
+  옆으로 기운 벽(roll 회전)을 한 장면에 두고 W/S 전후진, A/D 좌우 이동
+  (strafe), Space 로 점프하며 확인한다. 시점 회전은 **마우스**로 한다 —
+  창이 뜨면 커서를 숨기고 창 안에 가둔 뒤(`window::show_mouse(false)`+
+  `set_cursor_grab(true)`) miniquad 의 `raw_mouse_motion`(OS 커서 가속/
+  클램프의 영향을 안 받는 원시 입력, FPS 게임 방식)으로 카메라 yaw/pitch 를
+  돌린다. ↑/↓ 키보드 피치 회전도 그대로 남아있다.
   바닥엔 이 프로젝트 디자인 그대로(새 에셋 없이 `Box3D` 하나로 표현한) 작은
   아이템 세 개(Key/Note/Flashlight)를 뒀다 — 화면 중앙 조준선을 아이템 쪽으로
   가까이·일정 거리 안으로 가져가면 그 옆에 "[E] Inspect 이름" 안내가 뜨고, `E`

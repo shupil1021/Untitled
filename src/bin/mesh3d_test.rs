@@ -10,10 +10,11 @@
 //! 보여주는 게 목적이다. 바닥엔 작은 아이템(열쇠/쪽지/손전등, 전부 이 프로젝트의
 //! 기존 디자인 그대로 `Box3D` 하나로 표현) 몇 개를 흩어놨다.
 //!
-//! 조작: W/S 전진/후진, Space 로 점프. **마우스를 움직이면 시점이 돈다**(FPS
-//! 게임처럼 커서를 숨기고 창에 가둔다 — `raw_mouse_motion`, OS 커서 가속/클램프의
-//! 영향을 안 받는 원시 입력이라 회전이 매끄럽다). A/D·↑/↓ 로도 여전히 돌아간다
-//! (키보드만으로도 확인할 수 있게 남겨뒀다).
+//! 조작: W/S 전진/후진, A/D 좌우 이동(strafe), Space 로 점프. **마우스를
+//! 움직이면 시점이 돈다**(FPS 게임처럼 커서를 숨기고 창에 가둔다 —
+//! `raw_mouse_motion`, OS 커서 가속/클램프의 영향을 안 받는 원시 입력이라
+//! 회전이 매끄럽다). ↑/↓ 로도 피치를 돌릴 수 있다(키보드만으로도 확인할 수
+//! 있게 남겨뒀다).
 //!
 //! 아이템에 조준선(화면 중앙)을 가까이 대면 그 옆에 "[E] Inspect 이름"이 뜬다 —
 //! `E` 를 누르면 화면 가운데에 그 아이템만 확대해서 보여주는 작은 창이 뜨고,
@@ -45,7 +46,6 @@ const CHROMATIC_ABERRATION: f32 = 0.5;
 const CRT_INTENSITY: f32 = 1.0;
 
 const MOVE_SPEED: f32 = 3.2;
-const TURN_SPEED: f32 = 2.4; // 키보드(A/D)용 — 마우스는 MOUSE_SENS 를 따로 쓴다
 const LOOK_SPEED: f32 = 1.6; // 키보드(↑/↓)용
 const MOUSE_SENS: f32 = 0.0032; // 마우스 1px(원시 입력) 당 라디안
 const MAX_PITCH: f32 = std::f32::consts::FRAC_PI_2 - 0.05;
@@ -264,12 +264,6 @@ impl Player {
     }
 
     fn update(&mut self, input: &Input, dt: f32, boxes: &[Box3D]) {
-        if input.is_down(KeyCode::A) {
-            self.look(-TURN_SPEED * dt, 0.0);
-        }
-        if input.is_down(KeyCode::D) {
-            self.look(TURN_SPEED * dt, 0.0);
-        }
         if input.is_down(KeyCode::Up) {
             self.look(0.0, LOOK_SPEED * dt);
         }
@@ -279,12 +273,21 @@ impl Player {
 
         let cam = self.camera();
         let fwd = cam.forward_flat();
+        let right = cam.right_flat();
         let mut move_dir = [0.0f32, 0.0, 0.0];
         if input.is_down(KeyCode::W) {
             move_dir = crackhead::mesh3d::v_add(move_dir, fwd);
         }
         if input.is_down(KeyCode::S) {
             move_dir = crackhead::mesh3d::v_sub(move_dir, fwd);
+        }
+        // A/D 는 이제 시점 회전이 아니라 좌우 이동(strafe) — 마우스가 시점 회전을
+        // 맡게 된 뒤로 키보드 회전은 ↑/↓(피치)만 남기고 A/D 는 옆으로 걷는 데 쓴다.
+        if input.is_down(KeyCode::A) {
+            move_dir = crackhead::mesh3d::v_sub(move_dir, right);
+        }
+        if input.is_down(KeyCode::D) {
+            move_dir = crackhead::mesh3d::v_add(move_dir, right);
         }
         let len = crackhead::mesh3d::v_len(move_dir);
         if len > 1e-4 {
