@@ -513,7 +513,16 @@ varying highp vec2 uv;
 varying lowp vec4 color;
 uniform sampler2D tex;
 void main() {
-    gl_FragColor = texture2D(tex, uv) * color;
+    vec4 texColor = texture2D(tex, uv);
+    // 텍스처의 투명한 부분(예: 아이콘 PNG 의 알파=0 배경)을 그냥 곱해서 그리면
+    // 블렌딩이 없는 이 3D 파이프라인 특성상 알파가 무시되고 그 자리에 박혀있는
+    // RGB 값(보통 검정)이 그대로 불투명하게 칠해진다 — 반투명 합성 대신 완전히
+    // 잘라내는(cutout) 방식으로 처리한다. 텍스처 없는 단색 상자는 1x1 흰
+    // 텍스처(알파=1)를 쓰므로 이 문턱값에 걸리지 않는다.
+    if (texColor.a < 0.5) {
+        discard;
+    }
+    gl_FragColor = texColor * color;
 }
 "#;
 
