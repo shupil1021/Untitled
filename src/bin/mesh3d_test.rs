@@ -69,6 +69,10 @@ const AIM_MAX_DIST: f32 = 3.0;
 const AIM_MAX_COS: f32 = 0.95; // 대략 앞쪽 ±18도
 
 const ITEM_ROTATE_SENS: f32 = 0.008; // 아이템 확대 창에서 오른쪽 드래그 픽셀당 라디안
+const INSPECT_ZOOM_SENS: f32 = 0.15; // 휠 한 칸(y=1.0)당 배율 변화
+const INSPECT_ZOOM_MIN: f32 = 0.3;
+const INSPECT_ZOOM_MAX: f32 = 4.0;
+const DIM_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.6]; // 확대 창 떠 있을 때 화면 전체를 덮는 어둠
 
 const POPUP_W: f32 = 260.0;
 const POPUP_H: f32 = 220.0;
@@ -200,10 +204,11 @@ fn item_inspect_box(item: &Item, extra_yaw: f32, extra_pitch: f32) -> Box3D {
 }
 
 // 아이템 크기에 맞춰 확대 창 카메라를 자동으로 물러나 둔다 — 작은 열쇠든 큰
-// 손전등이든 창 안에 비슷하게 꽉 차 보이게.
-fn inspect_camera(item: &Item) -> Camera {
+// 손전등이든 창 안에 비슷하게 꽉 차 보이게. zoom 이 커질수록(휠을 위로) 카메라가
+// 더 가까이 다가가 아이템이 더 크게 보인다.
+fn inspect_camera(item: &Item, zoom: f32) -> Camera {
     let radius = item.half[0].max(item.half[1]).max(item.half[2]);
-    let dist = (radius * 4.5).max(0.6);
+    let dist = (radius * 4.5 / zoom).max(0.15);
     Camera { pos: [0.0, 0.0, -dist], yaw: std::f32::consts::PI, pitch: 0.0 }
 }
 
@@ -334,6 +339,7 @@ struct Stage {
     inspecting: Option<usize>,
     item_view_yaw: f32,
     item_view_pitch: f32,
+    inspect_zoom: f32,
     rmb_down: bool,
     input: Input,
     start_time: f64,
@@ -369,6 +375,7 @@ impl Stage {
             inspecting: None,
             item_view_yaw: 0.0,
             item_view_pitch: 0.0,
+            inspect_zoom: 1.0,
             rmb_down: false,
             input: Input::default(),
             start_time: now,
@@ -380,6 +387,7 @@ impl Stage {
         self.inspecting = None;
         self.item_view_yaw = 0.0;
         self.item_view_pitch = 0.0;
+        self.inspect_zoom = 1.0;
     }
 }
 
@@ -412,7 +420,7 @@ impl EventHandler for Stage {
         self.renderer.rect(cx - 1.0, cy - 5.0, 2.0, 10.0, [1.0, 1.0, 1.0, 0.8]);
 
         self.renderer.rect(0.0, 0.0, WIN_W, 18.0, [0.0, 0.0, 0.0, 0.55]);
-        self.renderer.text(6.0, 3.0, "mesh3d.rs test - mouse/WASD move, Space jump, E inspect, Esc quit", 0.7, [1.0, 1.0, 1.0, 1.0]);
+        self.renderer.text(6.0, 3.0, "mesh3d.rs test - mouse/WASD move, Space jump, E inspect", 0.7, [1.0, 1.0, 1.0, 1.0]);
         let status = format!(
             "pos=({:.1},{:.1},{:.1}) grounded={}",
             self.player.feet[0], self.player.feet[1], self.player.feet[2], self.player.grounded
@@ -430,17 +438,19 @@ impl EventHandler for Stage {
             self.renderer.text(sx + 14.0, sy - 8.0, &label, 0.7, [1.0, 1.0, 0.4, 1.0]);
         }
 
-        // 아이템 확대 창 — 배경 위 별도 오프스크린 렌더를 창처럼 끼워 넣는다.
+        // 아이템 확대 보기 — 박스형 창 대신 화면 전체를 어둡게 깔고 그 위에
+        // 아이템만 또렷하게 띄운다. 크기는 휠(inspect_zoom, 카메라 거리)로 조절.
         if let Some(i) = self.inspecting {
+            self.renderer.rect(0.0, 0.0, WIN_W, WIN_H, DIM_COLOR);
+
             let item = &self.items[i];
             let inspect_box = item_inspect_box(item, self.item_view_yaw, self.item_view_pitch);
-            self.inspect_mesh3d.render(self.ctx.as_mut(), [0.08, 0.08, 0.1, 1.0], &inspect_camera(item), std::slice::from_ref(&inspect_box), FOV_Y);
+            self.inspect_mesh3d.render(self.ctx.as_mut(), [0.0, 0.0, 0.0, 0.0], &inspect_camera(item, self.inspect_zoom), std::slice::from_ref(&inspect_box), FOV_Y);
 
-            self.renderer.rect(POPUP_X, POPUP_Y, POPUP_W, POPUP_H, [0.05, 0.05, 0.07, 0.92]);
-            self.renderer.text(POPUP_X + 8.0, POPUP_Y + 6.0, item.name, 0.75, [1.0, 1.0, 1.0, 1.0]);
+            self.renderer.text(POPUP_X + 8.0, POPUP_Y - 4.0, item.name, 0.75, [1.0, 1.0, 1.0, 1.0]);
             let inspect_tex = self.inspect_mesh3d.color_texture();
             self.renderer.sprite_uv(inspect_tex, POPUP_INNER_X, POPUP_INNER_Y, POPUP_INNER_W, POPUP_INNER_H, 0.0, 1.0, 1.0, 0.0, [1.0, 1.0, 1.0, 1.0]);
-            self.renderer.text(POPUP_X + 8.0, POPUP_Y + POPUP_H - 20.0, "RMB drag: rotate  |  E/Esc: close", 0.6, [0.75, 0.75, 0.8, 1.0]);
+            self.renderer.text(POPUP_X + 8.0, POPUP_Y + POPUP_H + 4.0, "RMB drag: rotate  |  wheel: zoom  |  E/Esc: close", 0.6, [0.85, 0.85, 0.9, 1.0]);
         }
 
         // main.rs::draw() 와 같은 순서: 2D 그리기 목록은 이미 위에서 renderer 에
@@ -467,14 +477,12 @@ impl EventHandler for Stage {
                 self.inspecting = Some(i);
                 self.item_view_yaw = 0.0;
                 self.item_view_pitch = 0.0;
+                self.inspect_zoom = 1.0;
             }
         }
-        if keycode == KeyCode::Escape {
-            if self.inspecting.is_some() {
-                self.close_inspect();
-            } else {
-                window::order_quit();
-            }
+        // Esc 로 이 창 전체를 끄는 단축키는 뺐다 — 확대 창을 닫는 용도로만 쓴다.
+        if keycode == KeyCode::Escape && self.inspecting.is_some() {
+            self.close_inspect();
         }
         self.input.on_key_down(keycode, repeat);
     }
@@ -492,6 +500,13 @@ impl EventHandler for Stage {
     fn mouse_button_up_event(&mut self, button: MouseButton, _x: f32, _y: f32) {
         if button == MouseButton::Right {
             self.rmb_down = false;
+        }
+    }
+
+    // 확대 창이 떠 있는 동안 휠로 보고 있는 아이템의 크기(카메라 거리)를 조정한다.
+    fn mouse_wheel_event(&mut self, _x: f32, y: f32) {
+        if self.inspecting.is_some() {
+            self.inspect_zoom = (self.inspect_zoom + y * INSPECT_ZOOM_SENS).clamp(INSPECT_ZOOM_MIN, INSPECT_ZOOM_MAX);
         }
     }
 
