@@ -8,12 +8,11 @@
 //! 기울어진 경사로(램프, pitch 회전), 그 위 높은 발판, 옆으로 기운 벽(roll 회전)
 //! — 바닥 높낮이도 기울어진 벽/경사로도 전부 같은 상자 타입 하나로 표현된다는 걸
 //! 보여주는 게 목적이다. 스폰 지점은 쓰레기 무더기가 쌓인 방(`build_room`) 안이고,
-//! 이 방을 나가는 문은 손잡이를 조준하고 `E`를 누르면 실제로 경첩을 축으로
-//! 열리고 닫힌다(문짝도 손잡이도 그 경첩 축 기준 회전으로 매 프레임 위치를
-//! 다시 계산해서 그린다 — `door_box`/`door_handle_pos` 참고). 문이 닫혀있는
-//! 동안은 진짜로 막는 장애물이라 열어야 지나갈 수 있다. 바닥엔 작은 아이템
-//! (열쇠/쪽지/손전등, 전부 이 프로젝트의 기존 디자인 그대로 `Box3D` 하나로
-//! 표현) 몇 개를 흩어놨다.
+//! 이 방을 나가는 문간은 문짝(`door_box`)이 경첩(문간 서쪽 가장자리를 지나는
+//! 수직축, `hinge_rotate`)을 축으로 회전할 수 있게 만들어뒀지만, 지금은 항상
+//! 닫힌 채로 진짜 장애물 역할만 한다(손잡이 상호작용은 대화창 참고). 바닥엔
+//! 작은 아이템(열쇠/쪽지/손전등, 전부 이 프로젝트의 기존 디자인 그대로
+//! `Box3D` 하나로 표현) 몇 개를 흩어놨다.
 //!
 //! 조작: W/S 전진/후진, A/D 좌우 이동(strafe), Space 로 점프. **마우스를
 //! 움직이면 시점이 돈다**(FPS 게임처럼 커서를 숨기고 창에 가둔다 —
@@ -22,9 +21,12 @@
 //! 있게 남겨뒀다).
 //!
 //! 문 손잡이에 조준선을 가까이 대면 "[E] Examine"이 뜨고, `E`를 누르면 화면
-//! 아래쪽에 짧은 대화창(지금은 "그냥 문고리다..." 고정 문구, 일단은 문을
-//! 실제로 열진 않는다 — dialogue/dialogue_until 참고, 몇 초 뒤 자동으로
-//! 사라진다)이 뜬다. 아이템에 조준선(화면 중앙)을 가까이 대면 그 옆에
+//! 아래쪽에 짧은 대화창(지금은 "그냥 문고리다..." 고정 한 줄, `dialogue_lines`
+//! 참고 — 나중에 여러 줄로 늘어날 걸 대비한 구조)이 타자기처럼 한 글자씩
+//! (글자마다 살짝 무작위한 간격으로) 나타난다. 대화창이 떠 있는 동안은
+//! 이동·시점 회전이 전부 멈추고, 아무 키/마우스 버튼이나 누르면 지금 줄을
+//! 즉시 다 보여주거나(타이핑 중이었으면) 다음 줄로 넘어간다(더 없으면
+//! 닫힌다). 아이템에 조준선(화면 중앙)을 가까이 대면 그 옆에
 //! "[E] Inspect 이름"이 뜬다 —
 //! `E` 를 누르면 화면 가운데에 그 아이템만 확대해서 보여주는 작은 창이 뜨고,
 //! 그 동안 플레이어는 멈추고 **마우스 오른쪽 버튼을 누른 채 드래그**하면 그
@@ -99,7 +101,18 @@ const DOOR_ANIM_SPEED: f32 = 2.2; // door_anim(0~1) 초당 변화량 — 완전�
 
 // 손잡이 상호작용 — 일단은 문을 실제로 열지 않고 짧은 대화 문구만 띄운다.
 const DOORKNOB_MESSAGE: &str = "그냥 문고리다...";
-const DIALOGUE_DURATION: f64 = 2.2; // 이 시간(초)이 지나면 자동으로 사라진다
+
+// 대화창 — 타자기처럼 한 글자씩, 글자마다 살짝 다른(무작위) 간격으로
+// 나타난다. 화면 맨 아래에 딱 붙이지 않고 위로 좀 띄우고 좌우/아래 여백을
+// 둔다. 대화창이 떠 있는 동안은 시점 회전·이동이 전부 멈추고, 아무 입력이나
+// 오면 지금 줄을 즉시 다 보여주거나(아직 타이핑 중이면) 다음 줄로 넘어간다
+// (더 없으면 닫힌다).
+const DIALOGUE_SIDE_MARGIN: f32 = 24.0;
+const DIALOGUE_BOTTOM_MARGIN: f32 = 36.0;
+const DIALOGUE_HEIGHT: f32 = 58.0;
+const DIALOGUE_TEXT_SCALE: f32 = 0.95;
+const DIALOGUE_CHAR_DELAY_MIN: f64 = 0.02;
+const DIALOGUE_CHAR_DELAY_MAX: f64 = 0.09;
 
 const HANDLE_HALF: [f32; 3] = [0.05, 0.05, 0.05];
 const HANDLE_COLOR: [f32; 4] = [0.8, 0.72, 0.45, 1.0]; // 놋쇠색
@@ -110,6 +123,18 @@ fn move_toward(cur: f32, target: f32, max_delta: f32) -> f32 {
     } else {
         cur + max_delta * (target - cur).signum()
     }
+}
+
+// 아주 작은 xorshift64 PRNG — 대화창 타자기 효과의 글자별 간격을 살짝씩
+// 흔드는 용도라 암호학적으로 안전할 필요가 없다(외부 rand 크레이트 없이도
+// 충분). 0.0..1.0 사이 값을 돌려주고 seed 를 그 자리에서 갱신한다.
+fn rand01(seed: &mut u64) -> f32 {
+    let mut x = *seed;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    *seed = x;
+    (x % 1_000_000) as f32 / 1_000_000.0
 }
 
 // hinge 를 지나는 수직축 기준으로 로컬 오프셋(문이 닫혀있을 때 기준의 상대
@@ -518,8 +543,11 @@ struct Stage {
     door_open: bool,  // 목표 상태(열림/닫힘) — 실제 각도는 door_anim 이 서서히 따라간다
     door_anim: f32,   // 0=닫힘 ~ 1=열림
     door_aimed: bool, // 지금 조준선이 문 손잡이를 향하고 있는지
-    dialogue: Option<String>, // 화면 아래 대화창에 지금 띄우고 있는 문구
-    dialogue_until: f64,      // 이 시각(date::now() 기준)이 지나면 dialogue 를 비운다
+    dialogue_lines: Vec<String>, // 지금 띄우는 대화의 전체 줄 목록(1줄이어도 그냥 이거)
+    dialogue_index: usize,       // 몇 번째 줄을 보여주는 중인지 — len 이면 대화 끝(안 뜸)
+    dialogue_visible_chars: usize, // 그 줄에서 지금까지 타자기로 드러낸 글자 수
+    dialogue_next_char_at: f64,    // 다음 글자를 드러낼 시각(date::now() 기준)
+    dialogue_rng: u64,             // 글자 간격을 흔드는 xorshift64 시드
     inspecting: Option<usize>,
     item_view_yaw: f32,
     item_view_pitch: f32,
@@ -565,8 +593,11 @@ impl Stage {
             door_open: false,
             door_anim: 0.0,
             door_aimed: false,
-            dialogue: None,
-            dialogue_until: 0.0,
+            dialogue_lines: Vec::new(),
+            dialogue_index: 0,
+            dialogue_visible_chars: 0,
+            dialogue_next_char_at: 0.0,
+            dialogue_rng: 0x9E3779B97F4A7C15, // 아무 고정값(황금비 기반 상수) — 그냥 시작 시드
             inspecting: None,
             item_view_yaw: 0.0,
             item_view_pitch: 0.0,
@@ -584,6 +615,35 @@ impl Stage {
         self.item_view_pitch = 0.0;
         self.inspect_zoom = 0.3;
     }
+
+    fn dialogue_active(&self) -> bool {
+        self.dialogue_index < self.dialogue_lines.len()
+    }
+
+    // lines 를 새 대화로 시작한다(지금 보던 대화가 있었으면 덮어쓴다).
+    fn start_dialogue(&mut self, lines: Vec<String>) {
+        self.dialogue_lines = lines;
+        self.dialogue_index = 0;
+        self.dialogue_visible_chars = 0;
+        self.dialogue_next_char_at = date::now();
+    }
+
+    // "아무 입력"에 대응 — 아직 타이핑 중이면 그 줄을 즉시 다 보여주고, 이미
+    // 다 보여준 줄이면 다음 줄로(더 없으면 대화 자체가 끝나 dialogue_active()
+    // 가 false 가 된다).
+    fn advance_dialogue(&mut self) {
+        if !self.dialogue_active() {
+            return;
+        }
+        let full_len = self.dialogue_lines[self.dialogue_index].chars().count();
+        if self.dialogue_visible_chars < full_len {
+            self.dialogue_visible_chars = full_len;
+        } else {
+            self.dialogue_index += 1;
+            self.dialogue_visible_chars = 0;
+            self.dialogue_next_char_at = date::now();
+        }
+    }
 }
 
 impl EventHandler for Stage {
@@ -594,8 +654,15 @@ impl EventHandler for Stage {
         let dt = ((now - self.last_time) as f32).min(0.5);
         self.last_time = now;
 
-        if self.dialogue.is_some() && now >= self.dialogue_until {
-            self.dialogue = None;
+        // 대화창 타자기 효과 — 시간이 됐으면 한 글자씩 드러낸다(느려진 프레임
+        // 뒤에 한 번에 여러 칸 밀려도 되게 while 로 따라잡는다).
+        if self.dialogue_active() {
+            let full_len = self.dialogue_lines[self.dialogue_index].chars().count();
+            while self.dialogue_visible_chars < full_len && now >= self.dialogue_next_char_at {
+                self.dialogue_visible_chars += 1;
+                let delay = DIALOGUE_CHAR_DELAY_MIN + rand01(&mut self.dialogue_rng) as f64 * (DIALOGUE_CHAR_DELAY_MAX - DIALOGUE_CHAR_DELAY_MIN);
+                self.dialogue_next_char_at = now + delay;
+            }
         }
 
         // 문은 목표 상태(door_open)를 향해 서서히 회전한다 — 조사 창이 떠 있어도
@@ -603,7 +670,8 @@ impl EventHandler for Stage {
         let door_target = if self.door_open { 1.0 } else { 0.0 };
         self.door_anim = move_toward(self.door_anim, door_target, DOOR_ANIM_SPEED * dt);
 
-        if self.inspecting.is_none() {
+        // 대화창이 떠 있는 동안은 이동/시점 회전/조준 갱신을 전부 멈춘다.
+        if self.inspecting.is_none() && !self.dialogue_active() {
             // 문짝(지금 각도)도 같이 충돌 목록에 넣는다 — 닫혀 있으면 진짜로 막는다.
             let mut collision_boxes = self.boxes.clone();
             collision_boxes.push(door_box(self.door_anim));
@@ -703,14 +771,21 @@ impl EventHandler for Stage {
         }
 
         // 화면 아래쪽 대화창 — 손잡이 같은 걸 조사했을 때 나오는 짧은 문구.
-        // 무엇보다 위(맨 마지막에 그림)에 뜨고, dialogue_until 이 지나면 이번
-        // 프레임 맨 위에서 이미 self.dialogue = None 으로 비워졌다.
-        if let Some(msg) = &self.dialogue {
-            let box_h = 48.0;
-            let y = WIN_H - box_h;
-            self.renderer.rect(0.0, y, WIN_W, box_h, [0.0, 0.0, 0.0, 0.8]);
-            self.renderer.rect(0.0, y, WIN_W, 2.0, [0.6, 0.6, 0.65, 0.9]);
-            self.renderer.text(16.0, y + 16.0, msg, 0.8, [1.0, 1.0, 1.0, 1.0]);
+        // 무엇보다 위(맨 마지막에 그림)에 뜬다. 좌우/아래 여백을 두고 화면
+        // 맨 밑에서 좀 띄워서(DIALOGUE_BOTTOM_MARGIN) 그린다.
+        if self.dialogue_active() {
+            let line = &self.dialogue_lines[self.dialogue_index];
+            let shown: String = line.chars().take(self.dialogue_visible_chars).collect();
+            let box_x = DIALOGUE_SIDE_MARGIN;
+            let box_w = WIN_W - DIALOGUE_SIDE_MARGIN * 2.0;
+            let box_y = WIN_H - DIALOGUE_BOTTOM_MARGIN - DIALOGUE_HEIGHT;
+            self.renderer.rect(box_x, box_y, box_w, DIALOGUE_HEIGHT, [0.0, 0.0, 0.0, 0.82]);
+            self.renderer.rect(box_x, box_y, box_w, 2.0, [0.6, 0.6, 0.65, 0.9]);
+            self.renderer.text(box_x + 16.0, box_y + 18.0, &shown, DIALOGUE_TEXT_SCALE, [1.0, 1.0, 1.0, 1.0]);
+            // 다 타이핑됐으면 깜빡이는 화살표로 "아무 키나 눌러 계속" 신호를 준다.
+            if self.dialogue_visible_chars >= line.chars().count() && (now * 2.2).sin() > 0.0 {
+                self.renderer.text(box_x + box_w - 22.0, box_y + DIALOGUE_HEIGHT - 20.0, "v", DIALOGUE_TEXT_SCALE, [0.8, 0.8, 0.85, 1.0]);
+            }
         }
 
         // main.rs::draw() 와 같은 순서: 2D 그리기 목록은 이미 위에서 renderer 에
@@ -730,14 +805,21 @@ impl EventHandler for Stage {
     }
 
     fn key_down_event(&mut self, keycode: KeyCode, _mods: KeyMods, repeat: bool) {
+        // 대화창이 떠 있으면 "아무 입력"을 최우선으로 먹는다 — 다른 단축키는
+        // 전부 무시하고 대화만 진행시킨다(타이핑 중이면 그 줄 다 보여주기,
+        // 다 보여줬으면 다음 줄/닫기).
+        if !repeat && self.dialogue_active() {
+            self.advance_dialogue();
+            self.input.on_key_down(keycode, repeat);
+            return;
+        }
         if !repeat && keycode == KeyCode::E {
             if self.inspecting.is_some() {
                 self.close_inspect();
             } else if self.door_aimed {
                 // 일단은 문을 실제로 열지 않고 대화 문구만 띄운다(door_open 은
                 // 나중에 다른 계기로 열리게 될 걸 대비해 그대로 남겨둔다).
-                self.dialogue = Some(DOORKNOB_MESSAGE.to_string());
-                self.dialogue_until = date::now() + DIALOGUE_DURATION;
+                self.start_dialogue(vec![DOORKNOB_MESSAGE.to_string()]);
             } else if let Some(i) = self.aimed_item {
                 self.inspecting = Some(i);
                 self.item_view_yaw = 0.0;
@@ -757,6 +839,10 @@ impl EventHandler for Stage {
     }
 
     fn mouse_button_down_event(&mut self, button: MouseButton, _x: f32, _y: f32) {
+        if self.dialogue_active() {
+            self.advance_dialogue();
+            return;
+        }
         if button == MouseButton::Right {
             self.rmb_down = true;
         }
@@ -799,7 +885,10 @@ impl EventHandler for Stage {
                 self.item_view_yaw += dx * ITEM_ROTATE_SENS;
                 self.item_view_pitch = (self.item_view_pitch - dy * ITEM_ROTATE_SENS).clamp(-MAX_PITCH, MAX_PITCH);
             }
-        } else {
+        } else if !self.dialogue_active() {
+            // 대화창이 떠 있는 동안은 화면(시점)이 돌아가지 않는다 — 그래도
+            // 커서는 계속 중앙으로 되돌려서, 대화가 끝난 뒤 갑자기 큰 폭으로
+            // 튀어 돌아가지 않게 한다.
             self.player.look(dx * MOUSE_SENS, -dy * MOUSE_SENS);
         }
         recenter_cursor();

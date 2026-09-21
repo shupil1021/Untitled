@@ -149,10 +149,19 @@ cargo run
   보인다(지금은 항상 닫힌 채고, `door_box(door_anim)`이 매 프레임 충돌
   목록에도 들어가서 진짜로 막는 장애물이다). 문 손잡이에 조준선을 가까이
   대면 "[E] Examine"이 뜨고, `E`를 누르면 일단은 문을 열지 않고 화면 아래쪽에
-  짧은 대화창("그냥 문고리다...", `DOORKNOB_MESSAGE`)만 `DIALOGUE_DURATION`
-  (2.2초) 동안 떴다가 자동으로 사라진다 — `door_open`/`door_anim`/여닫는
+  짧은 대화창(지금은 "그냥 문고리다...", `DOORKNOB_MESSAGE` 한 줄뿐이지만
+  여러 줄을 순서대로 보여줄 수 있는 구조 — `dialogue_lines`/`dialogue_index`)
+  이 뜬다. 문구는 타자기처럼 한 글자씩, 글자마다 `rand01`(외부 크레이트 없는
+  아주 작은 xorshift64 PRNG)로 살짝 무작위한 간격을 두고 나타난다. 대화창은
+  화면 맨 밑에 딱 붙지 않고 `DIALOGUE_BOTTOM_MARGIN`만큼 띄우고 좌우로도
+  `DIALOGUE_SIDE_MARGIN`만큼 여백을 둔다. **떠 있는 동안은 이동도 시점
+  회전(마우스/키보드 전부)도 멈춘다** — `mouse_motion_event`도 그동안은
+  카메라에 반영하지 않고 커서만 계속 중앙으로 되돌린다(끝난 뒤 갑자기 크게
+  튀지 않게). 아무 키나 마우스 버튼이나 누르면(`advance_dialogue`) 아직
+  타이핑 중이던 줄은 즉시 다 보여주고, 이미 다 보여준 줄이면 다음 줄로
+  넘어간다(더 없으면 대화창이 닫힌다) — `door_open`/`door_anim`/문 여닫는
   애니메이션 코드 자체는 나중에 다른 계기로 문이 실제로 열리게 될 걸 대비해
-  그대로 남겨뒀다.
+  그대로 남겨뒀다(지금은 항상 닫힌 채).
   바닥엔 이 프로젝트 디자인 그대로(새 에셋 없이 `Box3D` 하나로 표현한) 작은
   아이템 세 개(Key/Note/Flashlight)를 뒀다 — Note 는 텍스처 테스트용으로
   `assets/icon_folder.png`(기존 데스크톱 폴더 아이콘)를 입혀뒀다. `BoxTexture`
