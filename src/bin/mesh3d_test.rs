@@ -527,7 +527,7 @@ impl EventHandler for Stage {
         if self.inspecting.is_some() {
             if self.rmb_down {
                 self.item_view_yaw += dx * ITEM_ROTATE_SENS;
-                self.item_view_pitch = (self.item_view_pitch + dy * ITEM_ROTATE_SENS).clamp(-MAX_PITCH, MAX_PITCH);
+                self.item_view_pitch = (self.item_view_pitch - dy * ITEM_ROTATE_SENS).clamp(-MAX_PITCH, MAX_PITCH);
             }
         } else {
             self.player.look(dx * MOUSE_SENS, -dy * MOUSE_SENS);
