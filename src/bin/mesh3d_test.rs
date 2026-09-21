@@ -363,6 +363,7 @@ impl Stage {
         // 커서를 숨기고 가둬야 실제로 화면 밖으로 안 새어나가고 자연스럽다.
         window::show_mouse(false);
         window::set_cursor_grab(true);
+        recenter_cursor();
         Stage {
             ctx,
             renderer,
@@ -512,6 +513,12 @@ impl EventHandler for Stage {
         }
     }
 
+    // 창을 다시 포커싱해서 커서가 창 안으로 들어올 때(알트탭 복귀 등)도
+    // 곧바로 에임 포인트(화면 중앙)로 되돌려둔다.
+    fn mouse_enter_event(&mut self, _button: MouseButton, _x: f32, _y: f32) {
+        recenter_cursor();
+    }
+
     // 확대 창이 떠 있는 동안 휠로 보고 있는 아이템의 크기(카메라 거리)를 조정한다.
     fn mouse_wheel_event(&mut self, _x: f32, y: f32) {
         if self.inspecting.is_some() {
@@ -519,11 +526,19 @@ impl EventHandler for Stage {
         }
     }
 
-    // 원시(raw) 마우스 이동 — OS 커서 가속/클램프의 영향을 안 받아서 시점
-    // 회전에 더 적합하다(mouse_motion_event 의 절대 좌표 대신 이걸 쓴다).
-    // 평소엔 카메라를 돌리고, 아이템 확대 창이 떠 있는 동안 오른쪽 버튼을
-    // 누르고 있으면 대신 그 아이템의 표시 각도를 돌린다.
-    fn raw_mouse_motion(&mut self, dx: f32, dy: f32) {
+    // 마우스 이동 — `raw_mouse_motion`(WM_INPUT 원시 입력) 대신 평범한
+    // `mouse_motion_event`(절대 좌표, WM_MOUSEMOVE)를 쓴다. raw_mouse_motion 은
+    // 일부 컴퓨터(마우스/터치패드 드라이버, 가상 머신 등)에서 아예 안 들어오는
+    // 경우가 있었다 — WM_MOUSEMOVE 는 그런 환경에서도 항상 들어온다. 대신
+    // 커서를 "에임 포인트"(화면 정중앙, 조준선 위치)에 계속 고정해두고, 그
+    // 중심에서 벗어난 만큼만 회전에 반영한 뒤 다시 중심으로 되돌린다(고전적인
+    // FPS 마우스룩 방식) — recenter_cursor() 참고.
+    fn mouse_motion_event(&mut self, x: f32, y: f32) {
+        let (cx, cy) = (WIN_W / 2.0, WIN_H / 2.0);
+        let (dx, dy) = (x - cx, y - cy);
+        if dx.abs() < 0.01 && dy.abs() < 0.01 {
+            return;
+        }
         if self.inspecting.is_some() {
             if self.rmb_down {
                 self.item_view_yaw += dx * ITEM_ROTATE_SENS;
@@ -531,6 +546,29 @@ impl EventHandler for Stage {
             }
         } else {
             self.player.look(dx * MOUSE_SENS, -dy * MOUSE_SENS);
+        }
+        recenter_cursor();
+    }
+}
+
+// 마우스 커서를 이 창의 클라이언트 좌표 정중앙(화면 조준선이 있는 자리)으로
+// 강제로 되돌린다. miniquad 0.4 에는 커서 위치를 직접 지정하는 API가 없어서
+// (set_cursor_grab 은 그냥 화면 밖으로 못 나가게 "가두기"만 한다) Win32 를
+// 직접 호출한다 — 이 프로젝트는 어차피 Windows 전용(WASAPI/MediaFoundation
+// 사용)이라 문제 없다.
+fn recenter_cursor() {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::ClientToScreen;
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow;
+    use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
+    unsafe {
+        let hwnd = GetActiveWindow();
+        if hwnd.is_invalid() {
+            return;
+        }
+        let mut pt = POINT { x: (WIN_W / 2.0) as i32, y: (WIN_H / 2.0) as i32 };
+        if ClientToScreen(hwnd, &mut pt).as_bool() {
+            let _ = SetCursorPos(pt.x, pt.y);
         }
     }
 }
