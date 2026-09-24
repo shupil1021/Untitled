@@ -70,15 +70,23 @@ cargo run
   하단(작업표시줄 바로 위)에 5초짜리 "New Mail" 토스트 알림이 뜨는데, 누르면 바로
   Mail 을 연다(`DesktopScene::update_toast`). 보낸 사람은 친구(`FIRST_MAIL_FROM`,
   `apps/mail.rs`)이고, 크랙한 게임을 보낸다는 짧은 본문(`strings.rs::mail::
-  GAME_MAIL_SUBJECT/BODY`, 3개 언어)과 함께 **메인 게임 `DOORS.exe`가 첨부**돼
-  있다(STORY.md 7-1절). 첨부는 fs 안의 `FileKind::Game` 노드(`GAME_FILE_NAME`)로,
+  GAME_MAIL_SUBJECT/BODY`, 3개 언어)과 함께 **메인 게임 설치 파일 `DOORS
+  Setup.exe`가 첨부**돼 있다(STORY.md 7-1절) — 메일로 오는 게임은 항상 이렇게 Setup
+  파일로 온다. 첨부는 fs 안의 `FileKind::GameSetup` 노드(`GAME_SETUP_NAME`)로,
   `FileSystem::ensure_game_attachment()`가 Mail 노드의 `attachment`에 걸어둔다 —
   새 게임은 물론 이 첨부가 생기기 전의 예전 저장 파일을 불러와도 그 자리에서 채워
-  넣는다. "Download"를 누르면 평소처럼 Downloads 에 생기고(한 번 받은 적 있으면
-  `ever_downloaded` 기준으로 창을 다시 열어도 "Downloaded" 그대로), 그걸
-  더블클릭하면 다른 앱들처럼 **PalaceOS 안의 창 하나**로 게임(`apps/doors_game.rs`,
-  아래 "메인 게임" 절)이 뜬다. 아이콘은 새로 그린 `assets/icon_exe.png`
-  (`IconType::Exe`, Win98풍 프로그램 창 + 문).
+  넣는다(잠깐 있었던 "바로 실행되는 DOORS.exe" 첨부가 걸린 저장 파일이면 Setup 으로
+  바꿔준다). "Download"를 누르면 평소처럼 Downloads 에 생기고(한 번 받은 적 있으면
+  `ever_downloaded` 기준으로 창을 다시 열어도 "Downloaded" 그대로), 그걸 열면
+  **설치 마법사**(`apps/game_installer.rs::GameInstallerApp`, 예전 팩맨 때 마법사를
+  되살림)가 뜬다: Welcome → Installing(들쭉날쭉한 진행바, 취소 불가) → Finish.
+  진행바가 다 차는 순간 `AppAction::InstallComplete` → desktop.rs 가
+  `fs.game_installed`를 켜고 `add_desktop_icon()`으로 바탕화면 빈 칸에 게임 아이콘
+  `DOORS.exe`(`FileKind::Game`)를 만든다. 이미 설치된 뒤 Setup 을 다시 열면 곧장
+  "이미 설치됨" 페이지만 뜬다(아이콘 중복 방지). 바탕화면의 `DOORS.exe`를 열면
+  **PalaceOS 안의 창 하나**로 게임(`apps/doors_game.rs`, 아래 "메인 게임" 절)이
+  뜬다. 아이콘은 새로 그린 `assets/icon_setup.png`(`IconType::Setup`, 상자+디스크+
+  화살표)와 `assets/icon_exe.png`(`IconType::Exe`, 프로그램 창 + 문).
 - **Write Mail**: To/Subject/Body 실제 텍스트 입력(커서 클릭 이동 포함), Desktop/Downloads
   파일 첨부(다중), Send는 To·Body가 채워져야 활성화. 한글/일본어 IME 조합을 지원(백스페이스로
   조합 중 자모 하나만 지우기 등, `ime.rs` 참고).
@@ -222,8 +230,8 @@ cargo run
   으로 남는다. 저장하면 화면 위쪽에 잠깐 "Saved ..." 토스트가 뜬다(대화창과
   달리 입력을 막지 않고 `SAVE_TOAST_DURATION`초 뒤 그냥 사라진다) — 아직 이
   파일을 다시 불러와 씬을 초기화하는 코드는 안 붙였다(내보내기까지만).
-- **`src/apps/doors_game.rs` — 메인 게임 "DOORS"**: 메일 첨부 `DOORS.exe`
-  (`FileKind::Game`)를 열면 OS 안의 창 하나로 뜨는 앱(`DoorsGameApp`, 별도 실행
+- **`src/apps/doors_game.rs` — 메인 게임 "DOORS"**: 메일 첨부 `DOORS Setup.exe`로
+  설치해 바탕화면에 생긴 `DOORS.exe`(`FileKind::Game`)를 열면 OS 안의 창 하나로 뜨는 앱(`DoorsGameApp`, 별도 실행
   파일이 아니다). 3D 장면은 `mesh3d.rs`로 640x480 오프스크린에 그려서 창 안에 4:3
   으로 끼워 넣고(남는 곳은 검은 띠 — 그래서 창 크기 조절/최대화 자유), HUD/대화창도
   같은 배율로 따라 커진다. CRT 는 바깥 OS 화면에 이미 걸려 있어 따로 안 입힌다.
@@ -306,7 +314,8 @@ src/
 ├── apps/               # 파일별 앱 — 새 앱은 파일 하나 + mod.rs 한 줄
 │   ├── mod.rs             # App 트레잇 / AppAction / Opened + open() 파일→앱 매칭
 │   ├── widgets.rs         # 여러 앱이 같이 쓰는 위젯(아이콘 격자/슬라이더/스크롤바)
-│   ├── doors_game.rs      # 메인 게임 DOORS(메일 첨부 DOORS.exe) — OS 창 안에서 도는 3D 게임
+│   ├── doors_game.rs      # 메인 게임 DOORS — OS 창 안에서 도는 3D 게임
+│   ├── game_installer.rs  # 메일 첨부 DOORS Setup.exe 설치 마법사 → 바탕화면에 DOORS.exe
 │   ├── notepad.rs, video_player.rs, image_viewer.rs, mail.rs, explorer.rs,
 │   │   recycle_bin.rs, password.rs, credits.rs, settings.rs, official_site.rs
 └── scenes/              # 화면 전체를 차지하는 씬 — 새 씬은 파일 하나 + mod.rs 한 줄
@@ -331,7 +340,7 @@ src/bin/
   검수하는" 라인(자동 도착 메일, HexTool, 사진 검수 도구)을 통째로 걷어냈다. 그 뒤에
   만들었던 "메일로 게임 설치 파일을 받아 팩맨류 게임을 플레이하는" 라인(메일 도착 →
   다운로드 → 설치 마법사 → 바탕화면 설치 → 레이캐스팅 미로/코인)도 미니게임 자체와
-  함께 다시 걷어냈다 — 지금 메일에는 그 대신 메인 게임 `DOORS.exe`가 첨부된다
+  함께 다시 걷어냈다 — 지금 메일에는 그 대신 메인 게임 설치 파일 `DOORS Setup.exe`가 첨부된다
   (위 "메일" 절 참고).
   그 미니게임이 쓰던 2D 레이캐스팅 엔진(`raycaster.rs`)도 진짜 3D 메쉬 파이프라인
   (`mesh3d.rs`)으로 완전히 대체하면서 함께 지웠다.

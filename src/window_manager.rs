@@ -62,6 +62,7 @@ pub enum DeskAction {
     MarkMailRead(usize),
     Restore(Vec<FileId>),
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
+    InstallComplete,
 }
 
 // 창 관리자에 넘기는 입력 상태.
@@ -491,6 +492,7 @@ impl WindowManager {
                     actions.push(DeskAction::SendNewMail { to, subject, body, attachments })
                 }
                 AppAction::Restore(ids) => actions.push(DeskAction::Restore(ids)),
+                AppAction::InstallComplete => actions.push(DeskAction::InstallComplete),
             }
         }
 

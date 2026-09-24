@@ -443,7 +443,8 @@ pub enum IconType {
     Envelope, // Mail 폴더 트리의 Inbox 아이콘
     RecycleEmpty,
     RecycleFull,
-    Exe, // 실행 파일(FileKind::Game — 메일로 받은 게임)
+    Exe,   // 실행 파일(FileKind::Game — 설치된 게임)
+    Setup, // 설치 파일(FileKind::GameSetup — 메일로 받은 게임 Setup.exe)
 }
 
 // 목록/트리에서 "이 아이콘은 폴더처럼 안을 열어볼 수 있는 대상인가" — 휴지통도
@@ -472,6 +473,7 @@ pub fn icon_of(node: &FileNode) -> IconType {
         FileKind::Explorer => IconType::Computer,
         FileKind::Img(_) => IconType::Img,
         FileKind::Game => IconType::Exe,
+        FileKind::GameSetup => IconType::Setup,
         FileKind::Deleted => IconType::Folder, // 그 무엇에서도 더는 참조 안 되니 실제로 그려질 일이 없다
     }
 }
@@ -495,6 +497,7 @@ pub fn draw_icon(r: &mut Renderer, assets: &Assets, icon: &IconType, x: f32, y: 
         IconType::RecycleEmpty => assets.icon_recycle_empty,
         IconType::RecycleFull => assets.icon_recycle_full,
         IconType::Exe => assets.icon_exe,
+        IconType::Setup => assets.icon_setup,
     };
     r.sprite(tex, x, y, s, s, WHITE);
 }

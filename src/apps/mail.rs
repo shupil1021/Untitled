@@ -40,7 +40,8 @@ pub struct SentMailView {
 pub const FIRST_MAIL_FROM: &str = "old.friend@mail.com";
 
 // 새 게임을 시작하면 MAIL_ARRIVAL_DELAY 초 뒤에 도착하는 첫(그리고 지금은 유일한)
-// 메일 — 친구가 크랙한 게임(DOORS.exe, FileKind::Game)을 첨부해서 보낸다
+// 메일 — 친구가 크랙한 게임의 설치 파일(DOORS Setup.exe, FileKind::GameSetup)을
+// 첨부해서 보낸다
 // (STORY.md 7-1절). arrived 가 false 면(아직 도착 전) 받은편지함이 비어있다 —
 // DesktopScene 이 타이머로 도착시킨다. from/to 는 이메일 주소라 언어와 무관하게
 // 그대로 두고, subject/body 는 지금 언어로 고른다. attachment 는 fs 의 Mail

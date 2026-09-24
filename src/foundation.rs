@@ -25,8 +25,12 @@ pub enum FileKind {
     #[serde(rename = "Email")]
     Mail { attachment: Option<FileId> },                // 메일 앱 (첨부파일 하나까지)
     Explorer,                                           // 바탕화면의 File Explorer (탭 있는 탐색기)
-    // 메인 게임 실행 파일 — 친구가 메일로 보낸 크랙 게임(STORY.md 7-1절). 열면
-    // OS 안의 창 하나로 3D 게임(apps/doors_game.rs)이 돈다.
+    // 메일로 받는 게임 설치 파일("DOORS Setup.exe") — 열면 설치 마법사
+    // (apps/game_installer.rs)가 뜬다. 메일로 오는 게임은 항상 이 Setup 파일로 온다.
+    GameSetup,
+    // 설치 마법사가 끝나면 바탕화면에 생기는 게임 아이콘("DOORS.exe") — 친구가 메일로
+    // 보낸 크랙 게임(STORY.md 7-1절). 열면 OS 안의 창 하나로 3D 게임
+    // (apps/doors_game.rs)이 돈다.
     Game,
     Deleted,                                            // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
 }
@@ -39,7 +43,9 @@ pub enum FileKind {
 // 타이핑하면 오타 하나로 매칭이 조용히 깨질 수 있어 상수로 모아뒀다.
 pub const MY_COMPUTER_NAME: &str = "My Computer";
 pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
-// 첫 메일에 첨부돼 오는 게임 파일(FileKind::Game)의 fs 이름.
+// 첫 메일에 첨부돼 오는 게임 설치 파일(FileKind::GameSetup)과, 설치가 끝나면
+// 바탕화면에 생기는 게임 아이콘(FileKind::Game)의 fs 이름.
+pub const GAME_SETUP_NAME: &str = "DOORS Setup.exe";
 pub const GAME_FILE_NAME: &str = "DOORS.exe";
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -83,6 +89,10 @@ pub struct FileSystem {
     // (복구되든, 다른 곳으로 다시 옮겨지든) desktop.rs 가 이 기록을 지운다.
     #[serde(default)]
     pub trash_origin: Vec<(FileId, FileOrigin)>,
+    // 설치 마법사(GameSetup)를 끝까지 간 적 있는지 — 켜져 있으면 Setup.exe 를 다시
+    // 열어도 마법사 없이 "이미 설치됨" 페이지로 연다(바탕화면 아이콘 중복 방지).
+    #[serde(default)]
+    pub game_installed: bool,
 }
 
 // Mail 의 "Write Mail" 탭에서 보낸 메일 한 통 — fs.sent_mail 에 쌓인다. 첨부는
@@ -155,6 +165,7 @@ impl FileSystem {
             mail_read: Vec::new(),
             sent_mail: Vec::new(),
             trash_origin: Vec::new(),
+            game_installed: false,
         };
 
         // 바탕화면엔 고정 아이콘들만 둔다 — 나머지 예제 파일들은 다 치웠다.
@@ -173,18 +184,26 @@ impl FileSystem {
         fs
     }
 
-    // Mail 노드의 첨부(첫 메일에 붙어오는 게임 파일)가 아직 없으면 만들어 붙인다 —
-    // 어디에도(바탕화면/Downloads/폴더) 안 넣고 노드만 만들어둔다(메일에서
+    // Mail 노드의 첨부(첫 메일에 붙어오는 게임 설치 파일)가 아직 없으면 만들어
+    // 붙인다 — 어디에도(바탕화면/Downloads/폴더) 안 넣고 노드만 만들어둔다(메일에서
     // "다운로드"해야 Downloads 에 생긴다). 새 게임은 물론, 이 첨부가 생기기 전에
     // 저장된 예전 저장 파일을 불러왔을 때도(desktop.rs 가 불러온 직후 호출) 그대로
-    // 채워 넣는다. 이미 있으면 아무것도 안 한다.
+    // 채워 넣는다. 잠깐 있었던 "설치 없이 바로 실행되는 DOORS.exe"(FileKind::Game)
+    // 가 첨부로 걸린 저장 파일이면 그 노드를 Setup 파일로 바꿔준다.
     pub fn ensure_game_attachment(&mut self) {
         let Some(mail) = self.find_by_name("Mail") else { return };
-        if matches!(self.nodes[mail].kind, FileKind::Mail { attachment: Some(_) }) {
-            return;
+        match self.nodes[mail].kind {
+            FileKind::Mail { attachment: Some(id) } => {
+                if matches!(self.nodes[id].kind, FileKind::Game) {
+                    self.nodes[id].kind = FileKind::GameSetup;
+                    self.nodes[id].name = GAME_SETUP_NAME.to_string();
+                }
+            }
+            _ => {
+                let setup = self.add(GAME_SETUP_NAME, FileKind::GameSetup);
+                self.nodes[mail].kind = FileKind::Mail { attachment: Some(setup) };
+            }
         }
-        let game = self.add(GAME_FILE_NAME, FileKind::Game);
-        self.nodes[mail].kind = FileKind::Mail { attachment: Some(game) };
     }
 
     // Mail 에 붙은 첨부 파일 — 영구 삭제된 뒤엔(Deleted) 없는 것으로 친다.

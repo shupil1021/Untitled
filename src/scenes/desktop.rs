@@ -9,7 +9,7 @@ use crate::apps::{
     MoveDest, OfficialSiteApp, Opened, SettingsApp, FIRST_MAIL_FROM,
 };
 use crate::foundation::{
-    display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, MY_COMPUTER_NAME,
+    display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, GAME_FILE_NAME, MY_COMPUTER_NAME,
     OFFICIAL_SITE_URL, RECYCLE_BIN_NAME,
 };
 use crate::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
@@ -444,6 +444,16 @@ impl DesktopScene {
             }
         }
         (c.clamp(0, GRID_MAX_COL), r.clamp(0, GRID_MAX_ROW))
+    }
+
+    // fs 에 새 파일을 만들어 바탕화면에 아이콘으로 추가한다 — 설치 마법사를 끝내면
+    // "설치된 프로그램" 아이콘이 실행 중에 새로 생겨야 해서 런타임에 fs.desktop/
+    // icon_pos 를 같이 늘리는 경로가 필요하다(둘은 항상 같은 길이여야 한다).
+    fn add_desktop_icon(&mut self, name: &str, kind: FileKind) {
+        let id = self.fs.add(name, kind);
+        self.fs.desktop.push(id);
+        let (fc, fr) = self.first_free_tile();
+        self.icon_pos.push(Self::tile_to_pos(fc, fr));
     }
 
     // 지금 비어있는 칸 중 왼쪽을 1순위, 위쪽을 2순위로 격자 전체를 훑어 첫 번째로
@@ -1240,6 +1250,15 @@ impl Scene for DesktopScene {
                     }
                 }
                 DeskAction::RequestErase => self.erase_confirm = true,
+                // 설치 마법사 진행바가 다 찬 순간 한 번 온다 — 설치 완료를 기록하고
+                // 바탕화면에 게임 아이콘을 만든다(마법사 창은 Finish 로 사용자가 닫는다).
+                DeskAction::InstallComplete => {
+                    if !self.fs.game_installed {
+                        self.fs.game_installed = true;
+                        self.add_desktop_icon(GAME_FILE_NAME, FileKind::Game);
+                    }
+                    self.write_save(&f.settings);
+                }
                 DeskAction::Download(id) => {
                     self.fs.download(id);
                     // 지금 File Explorer 가 열려있으면 Downloads 탭에 바로 반영되도록

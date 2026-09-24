@@ -1,5 +1,6 @@
 //! 메인 게임 "DOORS" — 친구가 메일로 보낸 크랙 게임(STORY.md 7-1절). 메일 첨부
-//! `DOORS.exe`(FileKind::Game)를 받아서 열면 다른 앱들처럼 PalaceOS 안의 창 하나로
+//! `DOORS Setup.exe`로 설치(apps/game_installer.rs)하면 바탕화면에 생기는
+//! `DOORS.exe`(FileKind::Game)를 열었을 때 다른 앱들처럼 PalaceOS 안의 창 하나로
 //! 뜬다(별도 실행 파일/OS 창이 아니다). 3D 장면은 `mesh3d.rs` 로 오프스크린에 그린
 //! 뒤, 그 결과를 창 안에 4:3 비율로 끼워 넣는다(남는 곳은 검은 띠). CRT 효과는
 //! 바깥 OS 화면 전체에 이미 걸려 있어서 따로 안 입힌다.
