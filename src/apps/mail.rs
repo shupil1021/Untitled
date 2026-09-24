@@ -23,7 +23,7 @@ struct MailMsg {
     cc: &'static str,
     subject: &'static str,
     body: &'static str,
-    attachment: Option<(FileId, String)>,
+    attachment: Option<(FileId, String, IconType)>,
 }
 
 // 보낸 메일함(Sent Items)에 보여줄 메일 한 통 — fs.sent_mail(SentMail, 순수
@@ -36,16 +36,27 @@ pub struct SentMailView {
     pub attachments: Vec<(FileId, String, IconType)>,
 }
 
+// 첫 메일을 보낸 사람 — 도착 토스트(desktop.rs)에서도 같은 주소를 보여줘야 해서 공개.
+pub const FIRST_MAIL_FROM: &str = "old.friend@mail.com";
+
 // 새 게임을 시작하면 MAIL_ARRIVAL_DELAY 초 뒤에 도착하는 첫(그리고 지금은 유일한)
-// 메일 — 제목/본문/첨부는 아직 일부러 비워뒀다(실제 안내 문구/첨부는 나중에
-// 채운다). arrived 가 false 면(아직 도착 전) 받은편지함이 비어있다 —
+// 메일 — 친구가 크랙한 게임(DOORS.exe, FileKind::Game)을 첨부해서 보낸다
+// (STORY.md 7-1절). arrived 가 false 면(아직 도착 전) 받은편지함이 비어있다 —
 // DesktopScene 이 타이머로 도착시킨다. from/to 는 이메일 주소라 언어와 무관하게
-// 그대로 두고, subject/body 는 지금은 그냥 빈 문자열이라 번역할 것도 없다.
-fn seed_messages(arrived: bool) -> Vec<MailMsg> {
+// 그대로 두고, subject/body 는 지금 언어로 고른다. attachment 는 fs 의 Mail
+// 노드에 붙은 첨부(apps/mod.rs::open() 이 fs.mail_attachment() 로 구해 넘긴다).
+fn seed_messages(arrived: bool, lang: Language, attachment: Option<(FileId, String, IconType)>) -> Vec<MailMsg> {
     if !arrived {
         return Vec::new();
     }
-    vec![MailMsg { from: "system@mail.com", to: "you@mail.com", cc: "", subject: "", body: "", attachment: None }]
+    vec![MailMsg {
+        from: FIRST_MAIL_FROM,
+        to: "you@mail.com",
+        cc: "",
+        subject: t(lang, s::GAME_MAIL_SUBJECT),
+        body: t(lang, s::GAME_MAIL_BODY),
+        attachment,
+    }]
 }
 
 // 왼쪽 폴더 트리 항목 — Deleted Items/Drafts 는 삭제/임시보관 기능 자체가 아직
@@ -215,11 +226,20 @@ pub struct MailApp {
 
 impl MailApp {
     pub(super) fn new(
-        arrived: bool, read_indices: &[usize], attachable: Vec<(FileId, String, IconType)>, sent: Vec<SentMailView>, settings: Rc<RefCell<Settings>>,
+        arrived: bool,
+        read_indices: &[usize],
+        game_attachment: Option<(FileId, String, IconType, bool)>,
+        attachable: Vec<(FileId, String, IconType)>,
+        sent: Vec<SentMailView>,
+        settings: Rc<RefCell<Settings>>,
     ) -> MailApp {
-        let messages = seed_messages(arrived);
+        let lang = settings.borrow().language;
+        // 마지막 bool 은 "이미 한 번 받은 적 있는지"(fs.ever_downloaded) — 창을 새로
+        // 열어도 다시 "Download" 버튼이 뜨지 않게 downloaded 초기값으로 쓴다.
+        let already_downloaded = game_attachment.as_ref().is_some_and(|a| a.3);
+        let messages = seed_messages(arrived, lang, game_attachment.map(|(id, name, icon, _)| (id, name, icon)));
         let read = (0..messages.len()).map(|i| read_indices.contains(&i)).collect();
-        let downloaded = vec![false; messages.len()];
+        let downloaded = messages.iter().map(|m| m.attachment.is_some() && already_downloaded).collect();
         let downloading = vec![None; messages.len()];
         MailApp {
             messages,
@@ -752,7 +772,7 @@ impl MailApp {
         // 동안에도 계속 받아지고 있어야 자연스럽다) 그리기 여부와 상관없이 항상
         // 갱신하고, 실제 UI(아이콘/버튼)만 보이는 범위일 때만 그린다.
         let mut finished_download = None;
-        if let Some((id, name)) = self.messages[msg_idx].attachment.clone() {
+        if let Some((id, name, icon)) = self.messages[msg_idx].attachment.clone() {
             if let Some(elapsed) = self.downloading[msg_idx] {
                 let elapsed = elapsed + win.dt;
                 if elapsed >= DOWNLOAD_DELAY {
@@ -773,7 +793,7 @@ impl MailApp {
             if box_y + box_h > text_area.y && box_y < text_area.y + text_area.h {
                 r.rect(cx, box_y, box_w, box_h, WHITE);
                 border(r, cx, box_y, box_w, box_h, [0.6, 0.6, 0.62, 1.0]);
-                draw_icon(r, assets, &IconType::Lock, cx + 5.0, box_y + 3.0, 26.0);
+                draw_icon(r, assets, &icon, cx + 5.0, box_y + 3.0, 26.0);
 
                 let dl_label = t(lang, s::DOWNLOAD);
                 let dl_ing_label = t(lang, s::DOWNLOADING);

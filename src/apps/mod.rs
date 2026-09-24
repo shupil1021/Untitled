@@ -18,7 +18,7 @@ mod widgets;
 pub use credits::CreditsApp;
 pub use explorer::{ExplorerApp, ExplorerLocation};
 pub use image_viewer::ImageViewerApp;
-pub use mail::{MailApp, SentMailView};
+pub use mail::{MailApp, SentMailView, FIRST_MAIL_FROM};
 pub use notepad::NotepadApp;
 pub use official_site::OfficialSiteApp;
 pub use password::PasswordApp;
@@ -232,8 +232,11 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
                     SentMailView { to: m.to.clone(), subject: m.subject.clone(), body: m.body.clone(), attachments }
                 })
                 .collect();
+            // 첫 메일의 첨부(게임 파일) — 아이콘까지 미리 구해서 넘긴다. 이미 한 번
+            // 받은 적 있으면(ever_downloaded) 다시 "Download" 버튼이 안 뜨게 표시.
+            let game_attachment = fs.mail_attachment().map(|aid| (aid, fs.get(aid).name.clone(), icon_of(fs.get(aid)), fs.ever_downloaded.contains(&aid)));
             Opened {
-                app: Box::new(MailApp::new(fs.mail_arrived, &fs.mail_read, attachable, sent, settings.clone())),
+                app: Box::new(MailApp::new(fs.mail_arrived, &fs.mail_read, game_attachment, attachable, sent, settings.clone())),
                 title: name,
                 // Outlook Express/Exchange 참고 레이아웃 — 메뉴바 + 폴더 트리(150) +
                 // 상태바(20)까지 들어가야 해서 기존보다 좌우/위아래로 넉넉해야 한다.
@@ -261,6 +264,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (340.0, 260.0),
         },
+        FileKind::Game => unreachable!("게임 파일은 desktop.rs::launch_if_game 이 먼저 가로채서 별도 프로세스로 띄운다 — 창으로 열 일이 없다"),
         FileKind::Deleted => unreachable!("삭제된 파일은 그 무엇에서도 더는 참조되지 않아 열릴 일이 없다"),
     }
 }

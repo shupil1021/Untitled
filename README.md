@@ -20,6 +20,8 @@ cargo run
   기본 `opt-level=0`이면 영상 프레임 변환 같은 픽셀 루프가 매우 느려서다. 최고 성능이
   필요하면 `cargo run --release`.
 - `assets/movie.mp4`를 교체하면 재빌드 없이 반영된다(어떤 H.264 프로파일이든 재생 가능).
+- `cargo run --bin doors`로 메인 게임(DOORS — 메일로 받는 크랙 게임)만 따로
+  띄워볼 수 있다. OS 안에서 메일 첨부를 열면 이 실행 파일이 뜬다("메인 게임" 절).
 - `cargo run --bin mesh3d_test`로 진짜 3D 메쉬 렌더러(`mesh3d.rs`)만 따로
   띄워볼 수 있다 — 실제 게임과 무관한 독립 창(자세한 건 "진짜 3D 메쉬 엔진"
   절 참고).
@@ -68,12 +70,18 @@ cargo run
 - **Inbox**: 새 게임을 시작하면 처음엔 비어있다가, 5초(`MAIL_ARRIVAL_DELAY`, `scenes/
   desktop.rs`) 뒤에 메일이 한 통 자동으로 도착한다. 도착하는 순간 화면 우측
   하단(작업표시줄 바로 위)에 5초짜리 "New Mail" 토스트 알림이 뜨는데, 누르면 바로
-  Mail 을 연다(`DesktopScene::update_toast`). 제목/본문/첨부는 지금 일부러 비워뒀다
-  — 예전엔 여기에 미니게임 설치 파일(`(게임 이름) Setup.exe`)을 첨부로 걸고
-  "메일 → 다운로드 → 설치 마법사 → 바탕화면에 설치" 파이프라인(`GameKind`/
-  `apps/game_installer.rs::GameInstallerApp`/미로 미니게임 앱 등)이 있었는데,
-  그 미니게임 자체를 지우면서 파이프라인도 통째로 걷어냈다 — 실제 스토리 내용은
-  다음 기획 확정 때 이 자리에 다시 채운다.
+  Mail 을 연다(`DesktopScene::update_toast`). 보낸 사람은 친구(`FIRST_MAIL_FROM`,
+  `apps/mail.rs`)이고, 크랙한 게임을 보낸다는 짧은 본문(`strings.rs::mail::
+  GAME_MAIL_SUBJECT/BODY`, 3개 언어)과 함께 **메인 게임 `DOORS.exe`가 첨부**돼
+  있다(STORY.md 7-1절). 첨부는 fs 안의 `FileKind::Game` 노드(`GAME_FILE_NAME`)로,
+  `FileSystem::ensure_game_attachment()`가 Mail 노드의 `attachment`에 걸어둔다 —
+  새 게임은 물론 이 첨부가 생기기 전의 예전 저장 파일을 불러와도 그 자리에서 채워
+  넣는다. "Download"를 누르면 평소처럼 Downloads 에 생기고(한 번 받은 적 있으면
+  `ever_downloaded` 기준으로 창을 다시 열어도 "Downloaded" 그대로), 그걸
+  더블클릭하면 OS 창 대신 `desktop.rs::launch_if_game()`이 같은 폴더의 실제 게임
+  실행 파일(`GAME_EXE_NAME` = `doors.exe`, `src/bin/doors.rs`)을 **별도 프로세스로**
+  띄운다(못 찾으면 조용히 무시). 아이콘은 새로 그린 `assets/icon_exe.png`
+  (`IconType::Exe`, Win98풍 프로그램 창 + 문).
 - **Write Mail**: To/Subject/Body 실제 텍스트 입력(커서 클릭 이동 포함), Desktop/Downloads
   파일 첨부(다중), Send는 To·Body가 채워져야 활성화. 한글/일본어 IME 조합을 지원(백스페이스로
   조합 중 자모 하나만 지우기 등, `ime.rs` 참고).
@@ -217,6 +225,16 @@ cargo run
   으로 남는다. 저장하면 화면 위쪽에 잠깐 "Saved ..." 토스트가 뜬다(대화창과
   달리 입력을 막지 않고 `SAVE_TOAST_DURATION`초 뒤 그냥 사라진다) — 아직 이
   파일을 다시 불러와 씬을 초기화하는 코드는 안 붙였다(내보내기까지만).
+- **`src/bin/doors.rs` — 메인 게임 "DOORS"**: 메일 첨부 `DOORS.exe`를 열면 뜨는
+  별도 실행 파일(고정 크기 640x480 창, CRT 셰이더 동일). 맵은 지금 가장 단순한
+  형태 하나 — 바닥/천장/벽 4면으로 사방이 막힌 방(`build_room()`)에 플레이어
+  정면(-Z) 벽 가운데 닫힌 문 하나(문간 좌우 벽 조각 + 문 위 상인방으로 빈틈 없이
+  막힘). 그 문이 도어즈 NPC라서 손잡이(`HANDLE_POS`)를 조준하고 `E`를 누르면
+  mesh3d_test.rs 프로토타입과 같은 부탁 → `[Y]/[N]` 선택지 → 꽃 퀘스트 스텁
+  (`Enter`로 클리어) 흐름이 그대로 이어지고, 꽃을 얻으면 왼쪽 위에 "보리지꽃 xN"이
+  뜬다. 대화/선택지 코드는 mesh3d_test.rs 에서 복사해 온 것이다(테스트 창의
+  경사로·아이템 확대·Ctrl+S 내보내기·점프는 뺐다) — 앞으로 게임 쪽 기능은 이
+  파일에서 키운다. 문은 아직 열리지 않는 장애물이다.
 - **`src/mapfile.rs`**: `mesh3d_test.rs`의 `Ctrl+S` 내보내기가 쓰는 씬 저장/
   불러오기 JSON 포맷(`MapScene`/`MapBoxData`) — 텍스처는 `TextureId`(런타임
   GPU 핸들)가 아니라 에셋 경로 문자열로 저장해두고, 불러오는 쪽이 실제로
@@ -291,6 +309,7 @@ src/
 src/bin/
 ├── director.rs          # 녹화용 게임 화면 창(별도 실행 파일)
 ├── director_panel.rs    # 그 옆의 조작 창(별도 실행 파일)
+├── doors.rs             # 메인 게임 DOORS — 메일 첨부 DOORS.exe 를 열면 뜨는 별도 실행 파일
 └── mesh3d_test.rs       # mesh3d.rs 만 따로 확인하는 최소 테스트 창(별도 실행 파일)
 ```
 
@@ -307,7 +326,8 @@ src/bin/
   검수하는" 라인(자동 도착 메일, HexTool, 사진 검수 도구)을 통째로 걷어냈다. 그 뒤에
   만들었던 "메일로 게임 설치 파일을 받아 팩맨류 게임을 플레이하는" 라인(메일 도착 →
   다운로드 → 설치 마법사 → 바탕화면 설치 → 레이캐스팅 미로/코인)도 미니게임 자체와
-  함께 다시 걷어냈다 — 메일은 지금 도착 타이밍/토스트 알림만 남고 내용은 비어있다.
+  함께 다시 걷어냈다 — 지금 메일에는 그 대신 메인 게임 `DOORS.exe`가 첨부된다
+  (위 "메일" 절 참고).
   그 미니게임이 쓰던 2D 레이캐스팅 엔진(`raycaster.rs`)도 진짜 3D 메쉬 파이프라인
   (`mesh3d.rs`)으로 완전히 대체하면서 함께 지웠다.
 - 게임류 창을 추가할 땐 따로 이야기 없으면 항상 리사이즈/최대화가 꺼진 고정 크기로

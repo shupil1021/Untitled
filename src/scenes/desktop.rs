@@ -6,11 +6,11 @@ use std::rc::Rc;
 
 use crate::apps::{
     explorer_app_for_folder, explorer_app_refreshed, mail_attachable_files, open, CreditsApp, ExplorerApp, ExplorerLocation, MailApp,
-    MoveDest, OfficialSiteApp, Opened, SettingsApp,
+    MoveDest, OfficialSiteApp, Opened, SettingsApp, FIRST_MAIL_FROM,
 };
 use crate::foundation::{
-    display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, MY_COMPUTER_NAME, OFFICIAL_SITE_URL,
-    RECYCLE_BIN_NAME,
+    display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, GAME_EXE_NAME, MY_COMPUTER_NAME,
+    OFFICIAL_SITE_URL, RECYCLE_BIN_NAME,
 };
 use crate::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
 use crate::strings::{common, credits, desktop as s, explorer, official_site, settings, t};
@@ -251,7 +251,7 @@ impl DesktopScene {
         // 저장 파일엔 FileSystem 전체가 있었던 그대로 스냅샷돼 있다 — 이름으로 하나하나
         // 다시 찾아 재구성하지 않고 그대로 복원하므로 복원 순서를 신경 쓸 필요가 없다.
         let save = crate::foundation::load();
-        let (fs, mut icon_pos, window_geometry) = match save {
+        let (mut fs, mut icon_pos, window_geometry) = match save {
             Some(save) => {
                 let wg = save
                     .window_geometry
@@ -272,6 +272,8 @@ impl DesktopScene {
             icon_pos.push(Self::grid_pos(icon_pos.len()));
         }
         icon_pos.truncate(fs.desktop.len());
+        // 게임 파일 첨부가 생기기 전의 예전 저장 파일이면 지금 채워 넣는다.
+        fs.ensure_game_attachment();
         // Photos.lock 이 풀려서 폴더로 바뀌었는지는 이제 별도 플래그 없이 fs 스냅샷
         // 자체(이름이 이미 "Photos" 로 바뀌어 있는지)로 판단한다.
         let unlocked = fs.find_by_name("Photos").is_some();
@@ -1016,10 +1018,28 @@ impl DesktopScene {
             self.open_folder_in_explorer(fid, settings, work);
             return;
         }
+        if self.launch_if_game(fid) {
+            return;
+        }
         let op = open(&self.fs, fid, settings);
         if self.wm.open(op, Some(fid), work) {
             self.apply_saved_geometry(fid, work);
         }
+    }
+
+    // 게임 파일(FileKind::Game)이면 OS 창을 여는 대신 실제 게임 실행 파일
+    // (GAME_EXE_NAME, 이 exe 와 같은 폴더)을 별도 프로세스로 띄우고 true —
+    // 게임 파일이 아니면 아무것도 안 하고 false(호출부가 평소처럼 창을 연다).
+    // 실행 파일을 못 찾는 등 띄우기에 실패하면 조용히 무시한다.
+    fn launch_if_game(&self, id: FileId) -> bool {
+        if !matches!(self.fs.get(id).kind, FileKind::Game) {
+            return false;
+        }
+        let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(GAME_EXE_NAME)));
+        if let Some(exe) = exe {
+            let _ = std::process::Command::new(exe).spawn();
+        }
+        true
     }
 
     // 일반 폴더는 항상 My Computer 창 안에서 드릴다운 탭으로 보여준다. 휴지통(이름이
@@ -1230,6 +1250,8 @@ impl Scene for DesktopScene {
                     // 휴지통만 예외 — 별개의 프로그램(RecycleBinApp)으로 독립된 창에 연다.
                     if self.is_drilldown_folder(id) {
                         self.open_folder_in_explorer(id, &f.settings, work);
+                    } else if self.launch_if_game(id) {
+                        // 게임은 OS 창이 아니라 별도 프로세스로 떴다.
                     } else {
                         let op = open(&self.fs, id, &f.settings);
                         if self.wm.open(op, Some(id), work) {
@@ -1457,9 +1479,9 @@ impl Scene for DesktopScene {
             if self.mail_timer >= MAIL_ARRIVAL_DELAY {
                 self.fs.mail_arrived = true;
                 self.refresh_mail_if_open(&f.settings);
-                // 메일이 도착했다고 우측 하단에 알려준다 — 제목은 지금 일부러 비워둔
-                // 그대로("빈 내용의 메일") 빈 줄로 보인다.
-                self.toast = Some(("system@mail.com".to_string(), String::new()));
+                // 메일이 도착했다고 우측 하단에 알려준다(보낸 사람 + 제목).
+                let lang = f.settings.borrow().language;
+                self.toast = Some((FIRST_MAIL_FROM.to_string(), t(lang, crate::strings::mail::GAME_MAIL_SUBJECT).to_string()));
                 self.toast_timer = TOAST_DURATION;
                 self.write_save(&f.settings);
             }

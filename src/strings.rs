@@ -91,6 +91,14 @@ pub mod video_player {
 pub mod mail {
     use super::S;
 
+    // 첫 메일 — 친구가 크랙 게임(DOORS.exe)을 첨부해서 보낸다(STORY.md 7-1절).
+    pub const GAME_MAIL_SUBJECT: S = S { en: "try this lol", ko: "야 이거 해봐 ㅋㅋ", ja: "これやってみて笑" };
+    pub const GAME_MAIL_BODY: S = S {
+        en: "Got a cracked copy of that game.\nNo install needed, just run it.\n\nIt's kind of weird though.\nTell me what you think after you play it.",
+        ko: "그 게임 크랙판 구했다.\n설치 필요 없고 그냥 실행하면 됨.\n\n근데 좀 이상한 게임이더라.\n해보고 어땠는지 말해줘.",
+        ja: "あのゲームのクラック版、手に入れたよ。\nインストール不要、そのまま起動すればいい。\n\nでも、ちょっと変なゲームなんだよね。\nやってみたら感想を教えて。",
+    };
+
     pub const FOLDER_INBOX: S = S { en: "Inbox", ko: "받은편지함", ja: "受信トレイ" };
     pub const FOLDER_SENT: S = S { en: "Sent Items", ko: "보낸편지함", ja: "送信済みアイテム" };
     pub const FOLDER_COMPOSE: S = S { en: "Write Mail", ko: "메일 쓰기", ja: "メール作成" };

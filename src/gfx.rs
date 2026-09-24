@@ -119,6 +119,7 @@ pub struct Assets {
     pub icon_envelope: TextureId, // Mail 앱 폴더 트리의 Inbox 아이콘
     pub icon_recycle_empty: TextureId, // 휴지통(비어있음)
     pub icon_recycle_full: TextureId,  // 휴지통(안에 파일이 있음)
+    pub icon_exe: TextureId,           // 실행 파일(메일로 받은 게임 DOORS.exe)
     // "팔라스 OS가 생성한 이미지" 로 바탕화면에 놓이는 실제 사진들 — FileKind::Img(idx) 의
     // idx 가 이 Vec 의 인덱스다. (텍스처, 원본 픽셀 폭, 원본 픽셀 높이) — 종횡비를 살려서
     // 레터박스로 그리려면 원본 크기가 필요해서 아이콘 텍스처들과 달리 크기도 같이 들고 있는다.
@@ -140,6 +141,7 @@ impl Assets {
             icon_envelope: load_texture(ctx, include_bytes!("../assets/icon_envelope.png")),
             icon_recycle_empty: load_texture(ctx, include_bytes!("../assets/icon_recycle_empty.png")),
             icon_recycle_full: load_texture(ctx, include_bytes!("../assets/icon_recycle_full.png")),
+            icon_exe: load_texture(ctx, include_bytes!("../assets/icon_exe.png")),
             // Photos.tar/photo01·02.jpg 플레이스홀더 스토리 콘텐츠를 걷어내면서
             // 비웠다 — FileKind::Img(usize)/ImageViewerApp 자체는 나중에 진짜
             // Chapter 1 사진이 생기면 그대로 다시 쓸 수 있게 남겨뒀다.
@@ -176,7 +178,8 @@ fn build_font_atlas(ctx: &mut dyn RenderingBackend) -> (TextureId, HashMap<char,
         "一上下不中了人仕他付以件任作使依保信個像元先入全公内再写凍出切初利削前力効動去収取受同名場変外契存完定宛容少属差帰常度式強当形彩影待復必意感態憶成戻所折択抽持接数整新日旧明時景更最有未本枚果権機次正残況注消添済然特状理用画異発登目真着知短確示空箱約終続置者背能自色荷行表複要見規観解言記設許認語読諾護負責起込返送逃進違選重量録長閉開間除音響項頼\
          事会似体例修傷処判別割加務勤危可合含告員問困囲在報安実害審対念提損撃攻料断映期査検業様歓殿活無物現生的皆直研社祈移究等範級結維覧討証該説調識象貴資迎近遂部閲険難題類\
          刻大小弊拡深縮致被覚際非\
-         圧書死奇妙押既";
+         圧書死奇妙押既\
+         笑版手想教";
     let ascii = (0x20u32..0x7F).filter_map(char::from_u32);
     let hangul = (0xAC00u32..=0xD7A3).filter_map(char::from_u32);
     let hangul_jamo = (0x1100u32..=0x11FFu32).filter_map(char::from_u32);

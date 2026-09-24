@@ -25,7 +25,10 @@ pub enum FileKind {
     #[serde(rename = "Email")]
     Mail { attachment: Option<FileId> },                // 메일 앱 (첨부파일 하나까지)
     Explorer,                                           // 바탕화면의 File Explorer (탭 있는 탐색기)
-    Deleted,                                             // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
+    // 실행하면 OS 창 안이 아니라 별도 프로세스(메인 게임 실행 파일, GAME_EXE_NAME)를
+    // 띄우는 파일 — 친구가 메일로 보낸 크랙 게임(STORY.md 7-1절).
+    Game,
+    Deleted,                                            // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
 }
 
 // 일부 fs 노드는 이름 자체가 "이건 특수 노드다"라는 표식으로 쓰인다(전용
@@ -36,6 +39,11 @@ pub enum FileKind {
 // 타이핑하면 오타 하나로 매칭이 조용히 깨질 수 있어 상수로 모아뒀다.
 pub const MY_COMPUTER_NAME: &str = "My Computer";
 pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
+// 첫 메일에 첨부돼 오는 게임 파일(FileKind::Game)의 fs 이름과, 그걸 열었을 때
+// 실제로 띄우는 실행 파일 이름(이 exe 와 같은 폴더에 있어야 한다 — cargo 로
+// 빌드하면 둘 다 target/<profile>/ 에 나란히 생긴다).
+pub const GAME_FILE_NAME: &str = "DOORS.exe";
+pub const GAME_EXE_NAME: &str = "doors.exe";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FileNode {
@@ -155,6 +163,7 @@ impl FileSystem {
         // 바탕화면엔 고정 아이콘들만 둔다 — 나머지 예제 파일들은 다 치웠다.
         let explorer = fs.add(MY_COMPUTER_NAME, FileKind::Explorer);
         let mail = fs.add("Mail", FileKind::Mail { attachment: None });
+        fs.ensure_game_attachment();
 
         // 휴지통도 그냥 이름이 "Recycle Bin"인 빈 Folder — 드래그로 파일을 옮기면
         // desktop_folder_drop_target_at 이 다른 폴더와 똑같이 인식하고, 더블클릭하면
@@ -165,6 +174,29 @@ impl FileSystem {
         fs.desktop = vec![recycle_bin, explorer, mail];
 
         fs
+    }
+
+    // Mail 노드의 첨부(첫 메일에 붙어오는 게임 파일)가 아직 없으면 만들어 붙인다 —
+    // 어디에도(바탕화면/Downloads/폴더) 안 넣고 노드만 만들어둔다(메일에서
+    // "다운로드"해야 Downloads 에 생긴다). 새 게임은 물론, 이 첨부가 생기기 전에
+    // 저장된 예전 저장 파일을 불러왔을 때도(desktop.rs 가 불러온 직후 호출) 그대로
+    // 채워 넣는다. 이미 있으면 아무것도 안 한다.
+    pub fn ensure_game_attachment(&mut self) {
+        let Some(mail) = self.find_by_name("Mail") else { return };
+        if matches!(self.nodes[mail].kind, FileKind::Mail { attachment: Some(_) }) {
+            return;
+        }
+        let game = self.add(GAME_FILE_NAME, FileKind::Game);
+        self.nodes[mail].kind = FileKind::Mail { attachment: Some(game) };
+    }
+
+    // Mail 에 붙은 첨부 파일 — 영구 삭제된 뒤엔(Deleted) 없는 것으로 친다.
+    pub fn mail_attachment(&self) -> Option<FileId> {
+        let mail = self.find_by_name("Mail")?;
+        match self.nodes[mail].kind {
+            FileKind::Mail { attachment: Some(id) } if !matches!(self.nodes[id].kind, FileKind::Deleted) => Some(id),
+            _ => None,
+        }
     }
 
     pub fn add(&mut self, name: &str, kind: FileKind) -> FileId {
