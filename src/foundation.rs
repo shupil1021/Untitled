@@ -25,8 +25,8 @@ pub enum FileKind {
     #[serde(rename = "Email")]
     Mail { attachment: Option<FileId> },                // 메일 앱 (첨부파일 하나까지)
     Explorer,                                           // 바탕화면의 File Explorer (탭 있는 탐색기)
-    // 실행하면 OS 창 안이 아니라 별도 프로세스(메인 게임 실행 파일, GAME_EXE_NAME)를
-    // 띄우는 파일 — 친구가 메일로 보낸 크랙 게임(STORY.md 7-1절).
+    // 메인 게임 실행 파일 — 친구가 메일로 보낸 크랙 게임(STORY.md 7-1절). 열면
+    // OS 안의 창 하나로 3D 게임(apps/doors_game.rs)이 돈다.
     Game,
     Deleted,                                            // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
 }
@@ -39,11 +39,8 @@ pub enum FileKind {
 // 타이핑하면 오타 하나로 매칭이 조용히 깨질 수 있어 상수로 모아뒀다.
 pub const MY_COMPUTER_NAME: &str = "My Computer";
 pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
-// 첫 메일에 첨부돼 오는 게임 파일(FileKind::Game)의 fs 이름과, 그걸 열었을 때
-// 실제로 띄우는 실행 파일 이름(이 exe 와 같은 폴더에 있어야 한다 — cargo 로
-// 빌드하면 둘 다 target/<profile>/ 에 나란히 생긴다).
+// 첫 메일에 첨부돼 오는 게임 파일(FileKind::Game)의 fs 이름.
 pub const GAME_FILE_NAME: &str = "DOORS.exe";
-pub const GAME_EXE_NAME: &str = "doors.exe";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FileNode {

@@ -45,6 +45,11 @@ pub struct Input {
     pub mouse_clicked: bool,
     pub right_clicked: bool, // 우클릭 순간 한 프레임만 true (컨텍스트 메뉴 열기용)
     pub wheel: f32,
+    // 마우스 시점(mouse look) 모드일 때 이번 프레임 동안 실제 마우스가 움직인 양
+    // (실제 화면 픽셀) — main.rs 가 request_mouse_look() 요청을 받은 프레임부터
+    // 커서를 화면 가운데에 계속 되돌려 놓으면서 여기에 쌓는다. 그 동안은
+    // mouse(가상 커서 위치)는 멈춰 있고 커서도 안 그린다.
+    pub look_delta: (f32, f32),
     pub typed: Vec<char>,
     just_pressed: Vec<KeyCode>,
     // 지금 눌려있는 키들 — OS 자동反복(repeat) 이벤트는 이미 걸러내므로(just_pressed
@@ -85,9 +90,26 @@ impl Input {
         self.mouse_clicked = false;
         self.right_clicked = false;
         self.wheel = 0.0;
+        self.look_delta = (0.0, 0.0);
         self.just_pressed.clear();
         self.typed.clear();
     }
+}
+
+// 창 안에서 도는 3D 게임(apps/doors_game.rs)이 "이번 프레임에도 마우스 시점 모드를
+// 유지해달라"고 main.rs 에 알리는 신호 — 앱이 매 프레임 다시 요청해야만 유지되고,
+// main.rs 가 프레임마다 읽으면서 지운다. 그래서 창을 닫거나 최소화하거나 다른
+// 창으로 포커스가 넘어가 앱이 요청을 멈추면 그 다음 프레임에 저절로 풀린다(따로
+// "해제" 신호를 보낼 필요가 없다).
+static MOUSE_LOOK_REQUEST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn request_mouse_look() {
+    MOUSE_LOOK_REQUEST.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+// main.rs 전용 — 이번 프레임에 요청이 있었는지 읽고 지운다.
+pub fn take_mouse_look_request() -> bool {
+    MOUSE_LOOK_REQUEST.swap(false, std::sync::atomic::Ordering::Relaxed)
 }
 
 pub enum Transition {

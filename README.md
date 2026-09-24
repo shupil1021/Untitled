@@ -20,8 +20,6 @@ cargo run
   기본 `opt-level=0`이면 영상 프레임 변환 같은 픽셀 루프가 매우 느려서다. 최고 성능이
   필요하면 `cargo run --release`.
 - `assets/movie.mp4`를 교체하면 재빌드 없이 반영된다(어떤 H.264 프로파일이든 재생 가능).
-- `cargo run --bin doors`로 메인 게임(DOORS — 메일로 받는 크랙 게임)만 따로
-  띄워볼 수 있다. OS 안에서 메일 첨부를 열면 이 실행 파일이 뜬다("메인 게임" 절).
 - `cargo run --bin mesh3d_test`로 진짜 3D 메쉬 렌더러(`mesh3d.rs`)만 따로
   띄워볼 수 있다 — 실제 게임과 무관한 독립 창(자세한 건 "진짜 3D 메쉬 엔진"
   절 참고).
@@ -78,9 +76,8 @@ cargo run
   새 게임은 물론 이 첨부가 생기기 전의 예전 저장 파일을 불러와도 그 자리에서 채워
   넣는다. "Download"를 누르면 평소처럼 Downloads 에 생기고(한 번 받은 적 있으면
   `ever_downloaded` 기준으로 창을 다시 열어도 "Downloaded" 그대로), 그걸
-  더블클릭하면 OS 창 대신 `desktop.rs::launch_if_game()`이 같은 폴더의 실제 게임
-  실행 파일(`GAME_EXE_NAME` = `doors.exe`, `src/bin/doors.rs`)을 **별도 프로세스로**
-  띄운다(못 찾으면 조용히 무시). 아이콘은 새로 그린 `assets/icon_exe.png`
+  더블클릭하면 다른 앱들처럼 **PalaceOS 안의 창 하나**로 게임(`apps/doors_game.rs`,
+  아래 "메인 게임" 절)이 뜬다. 아이콘은 새로 그린 `assets/icon_exe.png`
   (`IconType::Exe`, Win98풍 프로그램 창 + 문).
 - **Write Mail**: To/Subject/Body 실제 텍스트 입력(커서 클릭 이동 포함), Desktop/Downloads
   파일 첨부(다중), Send는 To·Body가 채워져야 활성화. 한글/일본어 IME 조합을 지원(백스페이스로
@@ -225,16 +222,24 @@ cargo run
   으로 남는다. 저장하면 화면 위쪽에 잠깐 "Saved ..." 토스트가 뜬다(대화창과
   달리 입력을 막지 않고 `SAVE_TOAST_DURATION`초 뒤 그냥 사라진다) — 아직 이
   파일을 다시 불러와 씬을 초기화하는 코드는 안 붙였다(내보내기까지만).
-- **`src/bin/doors.rs` — 메인 게임 "DOORS"**: 메일 첨부 `DOORS.exe`를 열면 뜨는
-  별도 실행 파일(고정 크기 640x480 창, CRT 셰이더 동일). 맵은 지금 가장 단순한
-  형태 하나 — 바닥/천장/벽 4면으로 사방이 막힌 방(`build_room()`)에 플레이어
-  정면(-Z) 벽 가운데 닫힌 문 하나(문간 좌우 벽 조각 + 문 위 상인방으로 빈틈 없이
-  막힘). 그 문이 도어즈 NPC라서 손잡이(`HANDLE_POS`)를 조준하고 `E`를 누르면
-  mesh3d_test.rs 프로토타입과 같은 부탁 → `[Y]/[N]` 선택지 → 꽃 퀘스트 스텁
-  (`Enter`로 클리어) 흐름이 그대로 이어지고, 꽃을 얻으면 왼쪽 위에 "보리지꽃 xN"이
-  뜬다. 대화/선택지 코드는 mesh3d_test.rs 에서 복사해 온 것이다(테스트 창의
-  경사로·아이템 확대·Ctrl+S 내보내기·점프는 뺐다) — 앞으로 게임 쪽 기능은 이
-  파일에서 키운다. 문은 아직 열리지 않는 장애물이다.
+- **`src/apps/doors_game.rs` — 메인 게임 "DOORS"**: 메일 첨부 `DOORS.exe`
+  (`FileKind::Game`)를 열면 OS 안의 창 하나로 뜨는 앱(`DoorsGameApp`, 별도 실행
+  파일이 아니다). 3D 장면은 `mesh3d.rs`로 640x480 오프스크린에 그려서 창 안에 4:3
+  으로 끼워 넣고(남는 곳은 검은 띠 — 그래서 창 크기 조절/최대화 자유), HUD/대화창도
+  같은 배율로 따라 커진다. CRT 는 바깥 OS 화면에 이미 걸려 있어 따로 안 입힌다.
+  `Mesh3D`는 닫을 때 GPU 자원을 지울 방법이 없어(App 에 Drop 시점 ctx 가 없음)
+  스레드 전역에 하나만 만들어 재사용한다.
+  **마우스 시점**: 게임 화면을 클릭하면 시점 모드 — 앱이 매 프레임
+  `scenes::request_mouse_look()`을 부르는 동안 main.rs 가 실제 커서를 화면
+  가운데로 계속 되돌리며 움직인 양만 `Input::look_delta`에 쌓아주고, 가상 커서는
+  멈춘 채 안 그린다. `Esc`/다른 창 포커스/창 닫기·최소화로 앱이 요청을 멈추면 다음
+  프레임에 저절로 풀린다. 이동 W/S/A/D, 상호작용 E(창이 포커스일 때만).
+  **맵**: 바닥/천장/벽 4면으로 사방이 막힌 방(`build_room()`), 플레이어 정면(-Z) 벽
+  가운데 닫힌 문 하나(문간 좌우 벽 조각 + 상인방으로 빈틈 없음). 그 문이 도어즈 NPC —
+  손잡이를 조준하고 `E`를 누르면 "보리지꽃을 줘." 한마디와 `[Y]/[N]` 선택지만
+  나온다. 수락하면 꽃 퀘스트 스텁(`Enter`로 클리어) → "보리지꽃을 손에 넣었다..."
+  → 왼쪽 위 "보리지꽃 xN", 그 뒤로는 더 말을 걸 수 없다. 거부하면 그냥 닫힌다.
+  창을 닫으면 게임 진행은 처음부터(아직 저장 안 함). 문은 열리지 않는다.
 - **`src/mapfile.rs`**: `mesh3d_test.rs`의 `Ctrl+S` 내보내기가 쓰는 씬 저장/
   불러오기 JSON 포맷(`MapScene`/`MapBoxData`) — 텍스처는 `TextureId`(런타임
   GPU 핸들)가 아니라 에셋 경로 문자열로 저장해두고, 불러오는 쪽이 실제로
@@ -301,6 +306,7 @@ src/
 ├── apps/               # 파일별 앱 — 새 앱은 파일 하나 + mod.rs 한 줄
 │   ├── mod.rs             # App 트레잇 / AppAction / Opened + open() 파일→앱 매칭
 │   ├── widgets.rs         # 여러 앱이 같이 쓰는 위젯(아이콘 격자/슬라이더/스크롤바)
+│   ├── doors_game.rs      # 메인 게임 DOORS(메일 첨부 DOORS.exe) — OS 창 안에서 도는 3D 게임
 │   ├── notepad.rs, video_player.rs, image_viewer.rs, mail.rs, explorer.rs,
 │   │   recycle_bin.rs, password.rs, credits.rs, settings.rs, official_site.rs
 └── scenes/              # 화면 전체를 차지하는 씬 — 새 씬은 파일 하나 + mod.rs 한 줄
@@ -309,7 +315,6 @@ src/
 src/bin/
 ├── director.rs          # 녹화용 게임 화면 창(별도 실행 파일)
 ├── director_panel.rs    # 그 옆의 조작 창(별도 실행 파일)
-├── doors.rs             # 메인 게임 DOORS — 메일 첨부 DOORS.exe 를 열면 뜨는 별도 실행 파일
 └── mesh3d_test.rs       # mesh3d.rs 만 따로 확인하는 최소 테스트 창(별도 실행 파일)
 ```
 

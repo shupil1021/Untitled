@@ -28,6 +28,12 @@ struct Stage {
     input: Input,
     settings: Rc<RefCell<Settings>>,
     crt_res: usize,
+    // 창 안 3D 게임이 마우스 시점 모드를 요청 중인지(scenes::request_mouse_look) —
+    // 켜져 있는 동안은 실제 커서를 화면 가운데에 계속 되돌려 두고 움직인 양만
+    // input.look_delta 에 쌓는다. look_skip 은 막 켜진 직후, 되돌리기 전에 이미
+    // 큐에 들어와 있던 이동 이벤트 하나를 버리는 용도(안 그러면 시점이 한 번 확 튄다).
+    mouse_look: bool,
+    look_skip: bool,
     start_time: f64,
     last_time: f64,
 }
@@ -72,6 +78,8 @@ impl Stage {
             input: Input::default(),
             settings: Rc::new(RefCell::new(settings)),
             crt_res: res_idx,
+            mouse_look: false,
+            look_skip: false,
             start_time: now,
             last_time: now,
         }
@@ -129,6 +137,14 @@ impl EventHandler for Stage {
             (quit, frame.cursor, frame.show_cursor)
         };
 
+        let want_look = crackhead::scenes::take_mouse_look_request();
+        if want_look && !self.mouse_look {
+            recenter_cursor();
+            self.look_skip = true;
+        }
+        self.mouse_look = want_look;
+        let show_cursor = show_cursor && !self.mouse_look;
+
         // 씬 위에 커서를 맨 마지막으로 그려서 항상 모든 UI 위에 보이게 한다.
         // (부팅 화면처럼 마우스가 필요 없는 씬은 show_cursor 를 꺼서 아예 안 그린다.)
         if show_cursor {
@@ -172,6 +188,23 @@ impl EventHandler for Stage {
     }
 
     fn mouse_motion_event(&mut self, x: f32, y: f32) {
+        if self.mouse_look {
+            // 마우스 시점 모드 — 가상 커서는 그 자리에 멈춰두고, 화면 가운데에서
+            // 벗어난 만큼만 look_delta 로 넘긴 뒤 다시 가운데로 되돌린다.
+            let (sw, sh) = window::screen_size();
+            let (dx, dy) = (x - sw / 2.0, y - sh / 2.0);
+            if dx.abs() < 0.01 && dy.abs() < 0.01 {
+                return;
+            }
+            if self.look_skip {
+                self.look_skip = false;
+            } else {
+                self.input.look_delta.0 += dx;
+                self.input.look_delta.1 += dy;
+            }
+            recenter_cursor();
+            return;
+        }
         self.input.mouse = self.to_virtual(x, y);
     }
 
@@ -206,6 +239,26 @@ impl EventHandler for Stage {
 
     fn char_event(&mut self, character: char, _mods: KeyMods, _repeat: bool) {
         self.input.on_char(character);
+    }
+}
+
+// 실제 커서를 이 창의 클라이언트 영역 정가운데로 되돌린다 — miniquad 0.4 엔 커서
+// 위치를 지정하는 API 가 없어서 Win32 를 직접 부른다(이 프로젝트는 Windows 전용).
+fn recenter_cursor() {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::ClientToScreen;
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow;
+    use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
+    let (sw, sh) = window::screen_size();
+    unsafe {
+        let hwnd = GetActiveWindow();
+        if hwnd.is_invalid() {
+            return;
+        }
+        let mut pt = POINT { x: (sw / 2.0) as i32, y: (sh / 2.0) as i32 };
+        if ClientToScreen(hwnd, &mut pt).as_bool() {
+            let _ = SetCursorPos(pt.x, pt.y);
+        }
     }
 }
 

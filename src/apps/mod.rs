@@ -4,6 +4,7 @@
 //! FileKind 에 해당하는 경우라면 open() 의 match 에 한 줄만 더하면 된다.
 
 mod credits;
+mod doors_game;
 mod explorer;
 mod image_viewer;
 mod mail;
@@ -16,6 +17,7 @@ mod video_player;
 mod widgets;
 
 pub use credits::CreditsApp;
+pub use doors_game::DoorsGameApp;
 pub use explorer::{ExplorerApp, ExplorerLocation};
 pub use image_viewer::ImageViewerApp;
 pub use mail::{MailApp, SentMailView, FIRST_MAIL_FROM};
@@ -264,7 +266,20 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (340.0, 260.0),
         },
-        FileKind::Game => unreachable!("게임 파일은 desktop.rs::launch_if_game 이 먼저 가로채서 별도 프로세스로 띄운다 — 창으로 열 일이 없다"),
+        // 메일로 받은 게임(DOORS.exe) — 별도 실행 파일이 아니라 이 OS 안의 창 하나로
+        // 돈다. 게임 화면은 창 안에 4:3 으로 맞춰 넣으므로(남는 곳은 검은 띠) 크기
+        // 조절/최대화도 그냥 허용한다. 기본 크기는 클라이언트 영역이 480x360(4:3)이
+        // 되게 테두리(3*2)/타이틀바(20)만큼 더했다.
+        FileKind::Game => Opened {
+            app: Box::new(DoorsGameApp::new()),
+            title: name,
+            size: (486.0, 386.0),
+            maximized: false,
+            resizable: true,
+            maximizable: true,
+            movable: true,
+            min_size: (246.0, 206.0),
+        },
         FileKind::Deleted => unreachable!("삭제된 파일은 그 무엇에서도 더는 참조되지 않아 열릴 일이 없다"),
     }
 }

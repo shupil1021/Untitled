@@ -9,7 +9,7 @@ use crate::apps::{
     MoveDest, OfficialSiteApp, Opened, SettingsApp, FIRST_MAIL_FROM,
 };
 use crate::foundation::{
-    display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, GAME_EXE_NAME, MY_COMPUTER_NAME,
+    display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, MY_COMPUTER_NAME,
     OFFICIAL_SITE_URL, RECYCLE_BIN_NAME,
 };
 use crate::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
@@ -1018,28 +1018,10 @@ impl DesktopScene {
             self.open_folder_in_explorer(fid, settings, work);
             return;
         }
-        if self.launch_if_game(fid) {
-            return;
-        }
         let op = open(&self.fs, fid, settings);
         if self.wm.open(op, Some(fid), work) {
             self.apply_saved_geometry(fid, work);
         }
-    }
-
-    // 게임 파일(FileKind::Game)이면 OS 창을 여는 대신 실제 게임 실행 파일
-    // (GAME_EXE_NAME, 이 exe 와 같은 폴더)을 별도 프로세스로 띄우고 true —
-    // 게임 파일이 아니면 아무것도 안 하고 false(호출부가 평소처럼 창을 연다).
-    // 실행 파일을 못 찾는 등 띄우기에 실패하면 조용히 무시한다.
-    fn launch_if_game(&self, id: FileId) -> bool {
-        if !matches!(self.fs.get(id).kind, FileKind::Game) {
-            return false;
-        }
-        let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(GAME_EXE_NAME)));
-        if let Some(exe) = exe {
-            let _ = std::process::Command::new(exe).spawn();
-        }
-        true
     }
 
     // 일반 폴더는 항상 My Computer 창 안에서 드릴다운 탭으로 보여준다. 휴지통(이름이
@@ -1250,8 +1232,6 @@ impl Scene for DesktopScene {
                     // 휴지통만 예외 — 별개의 프로그램(RecycleBinApp)으로 독립된 창에 연다.
                     if self.is_drilldown_folder(id) {
                         self.open_folder_in_explorer(id, &f.settings, work);
-                    } else if self.launch_if_game(id) {
-                        // 게임은 OS 창이 아니라 별도 프로세스로 떴다.
                     } else {
                         let op = open(&self.fs, id, &f.settings);
                         if self.wm.open(op, Some(id), work) {
