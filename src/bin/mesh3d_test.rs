@@ -21,12 +21,17 @@
 //! 있게 남겨뒀다).
 //!
 //! 문 손잡이에 조준선을 가까이 대면 "[E] Examine"이 뜨고, `E`를 누르면 화면
-//! 아래쪽에 짧은 대화창(지금은 "그냥 문고리다..." 고정 한 줄, `dialogue_lines`
-//! 참고 — 나중에 여러 줄로 늘어날 걸 대비한 구조)이 타자기처럼 한 글자씩
-//! (글자마다 살짝 무작위한 간격으로) 나타난다. 대화창이 떠 있는 동안은
-//! 이동·시점 회전이 전부 멈추고, 아무 키/마우스 버튼이나 누르면 지금 줄을
-//! 즉시 다 보여주거나(타이핑 중이었으면) 다음 줄로 넘어간다(더 없으면
-//! 닫힌다). 아이템에 조준선(화면 중앙)을 가까이 대면 그 옆에
+//! 아래쪽에 대화창(`dialogue_entries`, 타자기처럼 한 글자씩 나타난다)이
+//! 열려 도어즈(Doors, `DoorsNpc`)가 말을 건다 — 처음엔 부탁(보리지꽃을
+//! 가져다 달라는)을 하고 "[Y] 수락 [N] 거부" 선택지가 뜬다. 수락하면 반응
+//! 대사 뒤 화면 전체가 어두워지며 꽃 퀘스트 스텁(`GameOverlay::SubMinigameStub`
+//! — 진짜 미니게임은 아직 없고 `Enter`로 바로 "클리어 처리"하는 자리
+//! 표시자)이 뜨고, 클리어하면 보리지꽃을 얻었다는 대사와 함께 도어즈가
+//! 해결됨으로 표시된다(다시 말 걸면 "...고마워." 만 반복). 대화창이 떠
+//! 있는 동안은 이동·시점 회전이 전부 멈추고, 선택지가 아닌 평범한 줄은
+//! 아무 키/마우스 버튼이나 누르면 즉시 다 보여주거나(타이핑 중이었으면)
+//! 다음 줄로 넘어간다(더 없으면 닫힌다) — 선택지만 예외로 Y/N 전용이다.
+//! 아이템에 조준선(화면 중앙)을 가까이 대면 그 옆에
 //! "[E] Inspect 이름"이 뜬다 —
 //! `E` 를 누르면 화면 가운데에 그 아이템만 확대해서 보여주는 작은 창이 뜨고,
 //! 그 동안 플레이어는 멈추고 **마우스 오른쪽 버튼을 누른 채 드래그**하면 그
@@ -100,9 +105,6 @@ const DOOR_COLOR: [f32; 4] = [0.35, 0.24, 0.16, 1.0]; // 나무색
 const DOOR_OPEN_ANGLE: f32 = std::f32::consts::PI * 0.55; // 약 99도
 const DOOR_ANIM_SPEED: f32 = 2.2; // door_anim(0~1) 초당 변화량 — 완전히 열리는 데 ~0.45초
 
-// 손잡이 상호작용 — 일단은 문을 실제로 열지 않고 짧은 대화 문구만 띄운다.
-const DOORKNOB_MESSAGE: &str = "그냥 문고리다...";
-
 // 대화창 — 타자기처럼 한 글자씩, 글자마다 살짝 다른(무작위) 간격으로
 // 나타난다. 화면 맨 아래에 딱 붙이지 않고 위로 좀 띄우고 좌우/아래 여백을
 // 둔다. 대화창이 떠 있는 동안은 시점 회전·이동이 전부 멈추고, 아무 입력이나
@@ -123,6 +125,62 @@ const NOTE_TEXTURE_PATH: &str = "assets/icon_folder.png";
 // 코드에서 MapScene::load() 로 다시 불러올 수 있다.
 const SCENE_EXPORT_PATH: &str = "maps/mesh3d_test_scene.json";
 const SAVE_TOAST_DURATION: f64 = 2.5;
+
+// 대화 한 줄(Line)과 수락/거부 선택지(Choice) — 아이템 조사처럼 그냥 줄줄이
+// 넘어가는 대화는 Line 만 쓰고, 도어즈의 부탁처럼 선택이 갈리는 대화만 끝에
+// Choice 하나를 붙인다. Choice 는 자기 반응 대사(accept_lines/decline_lines)를
+// 직접 들고 있어서, 나중에 다른 선택형 대화가 생겨도 Stage 쪽에 "이건 도어즈
+// 전용" 같은 특수 분기를 안 둬도 된다.
+enum DialogueEntry {
+    Line(String),
+    Choice { prompt: String, accept_lines: Vec<String>, decline_lines: Vec<String>, on_accept: DialogueAction, on_decline: DialogueAction },
+}
+
+// Choice 를 골랐을 때 대화 시스템 밖에서 실제로 일어나는 일 — 지금은 꽃
+// 퀘스트를 여는 것 하나뿐이지만, 거부 쪽도 나중에 뭔가 반응하게 될 걸 대비해
+// 자리를 남겨둔다.
+#[derive(Clone, Copy, PartialEq)]
+enum DialogueAction {
+    None,
+    StartFlowerQuest,
+    MarkDoorsDeclined,
+}
+
+// 도어즈(Doors) NPC — Figma 스토리 스펙의 "문마다 성격이 다른 말하는 문"
+// 종족. 지금은 한 마리(문 하나)만 있다 — 나중에 두 번째 도어즈가 필요해지면
+// 이 구조체를 Vec<DoorsNpc>로 일반화하고 door_box/door_handle_pos 도 경첩
+// 좌표를 인자로 받게 고치면 된다(지금은 그 리팩터링을 일부러 안 했다).
+struct DoorsNpc {
+    request_lines: Vec<String>, // 도어즈의 부탁 — 선택지가 뜨기 전에 먼저 보여준다
+    accept_lines: Vec<String>,  // 수락을 골랐을 때의 반응
+    decline_lines: Vec<String>, // 거부를 골랐을 때의 반응(스펙 자체가 "미완성"이라 짧게)
+    fulfilled: bool,            // 꽃 퀘스트를 이미 클리어했는지 — 다시 말 걸면 다른 대사
+}
+
+fn build_doors() -> DoorsNpc {
+    DoorsNpc {
+        request_lines: vec!["...누구야.".to_string(), "나가고 싶은데 몸이 없어서 못 나가.".to_string(), "보리지꽃을 가져다 줄래?".to_string()],
+        accept_lines: vec!["...정말? 고마워.".to_string()],
+        decline_lines: vec!["...그래.".to_string()],
+        fulfilled: false,
+    }
+}
+
+// 꽃 퀘스트 등 "플레이어가 뭘 들고 있는지/뭘 끝냈는지" — 테스트 창이라
+// 딱 필요한 것만(보리지꽃 개수, 도어즈 클리어 여부).
+struct QuestState {
+    flowers: u32,
+    doors_fulfilled: bool,
+}
+
+// 꽃 퀘스트를 수락하면 뜨는 화면 — 진짜 미니게임(미로 등) 대신 자리만
+// 잡아두는 스텁이다. 도어즈 대화/선택지 배관을 먼저 끝까지 이어놓고, 나중에
+// 이 스텁 자리에 진짜 미니게임을 갈아 끼우면 된다(대화 쪽 코드는 안 건드리고).
+#[derive(PartialEq)]
+enum GameOverlay {
+    None,
+    SubMinigameStub,
+}
 
 fn move_toward(cur: f32, target: f32, max_delta: f32) -> f32 {
     if (target - cur).abs() <= max_delta {
@@ -554,11 +612,15 @@ struct Stage {
     door_open: bool,  // 목표 상태(열림/닫힘) — 실제 각도는 door_anim 이 서서히 따라간다
     door_anim: f32,   // 0=닫힘 ~ 1=열림
     door_aimed: bool, // 지금 조준선이 문 손잡이를 향하고 있는지
-    dialogue_lines: Vec<String>, // 지금 띄우는 대화의 전체 줄 목록(1줄이어도 그냥 이거)
-    dialogue_index: usize,       // 몇 번째 줄을 보여주는 중인지 — len 이면 대화 끝(안 뜸)
-    dialogue_visible_chars: usize, // 그 줄에서 지금까지 타자기로 드러낸 글자 수
+    dialogue_entries: Vec<DialogueEntry>, // 지금 띄우는 대화의 전체 줄/선택지 목록
+    dialogue_index: usize,       // 몇 번째 항목을 보여주는 중인지 — len 이면 대화 끝(안 뜸)
+    dialogue_visible_chars: usize, // 그 항목에서 지금까지 타자기로 드러낸 글자 수
     dialogue_next_char_at: f64,    // 다음 글자를 드러낼 시각(date::now() 기준)
     dialogue_rng: u64,             // 글자 간격을 흔드는 xorshift64 시드
+    pending_action: DialogueAction, // 선택지를 고른 뒤, 그 반응 대사까지 다 끝나면 실행할 동작
+    doors: DoorsNpc,
+    quest: QuestState,
+    overlay: GameOverlay,
     inspecting: Option<usize>,
     item_view_yaw: f32,
     item_view_pitch: f32,
@@ -606,11 +668,15 @@ impl Stage {
             door_open: false,
             door_anim: 0.0,
             door_aimed: false,
-            dialogue_lines: Vec::new(),
+            dialogue_entries: Vec::new(),
             dialogue_index: 0,
             dialogue_visible_chars: 0,
             dialogue_next_char_at: 0.0,
             dialogue_rng: 0x9E3779B97F4A7C15, // 아무 고정값(황금비 기반 상수) — 그냥 시작 시드
+            pending_action: DialogueAction::None,
+            doors: build_doors(),
+            quest: QuestState { flowers: 0, doors_fulfilled: false },
+            overlay: GameOverlay::None,
             inspecting: None,
             item_view_yaw: 0.0,
             item_view_pitch: 0.0,
@@ -632,31 +698,95 @@ impl Stage {
     }
 
     fn dialogue_active(&self) -> bool {
-        self.dialogue_index < self.dialogue_lines.len()
+        self.dialogue_index < self.dialogue_entries.len()
     }
 
-    // lines 를 새 대화로 시작한다(지금 보던 대화가 있었으면 덮어쓴다).
+    // 지금 보여주고 있는 항목의 표시용 텍스트(Line 이면 그 줄, Choice 면 그
+    // 질문 문구) — 타자기 효과/렌더링이 항목 종류를 안 가리고 이거 하나만
+    // 보면 되게 한다.
+    fn current_dialogue_text(&self) -> Option<&str> {
+        match self.dialogue_entries.get(self.dialogue_index) {
+            Some(DialogueEntry::Line(s)) => Some(s.as_str()),
+            Some(DialogueEntry::Choice { prompt, .. }) => Some(prompt.as_str()),
+            None => None,
+        }
+    }
+
+    // 지금 항목이 다 타이핑된 선택지인지 — 이때만 Y/N 이 의미가 있다(그 전엔
+    // 아무 입력이나 오면 그냥 문구를 마저 드러낼 뿐, 아직 고를 수 없다).
+    fn dialogue_choice_ready(&self) -> bool {
+        match self.dialogue_entries.get(self.dialogue_index) {
+            Some(DialogueEntry::Choice { prompt, .. }) => self.dialogue_visible_chars >= prompt.chars().count(),
+            _ => false,
+        }
+    }
+
+    // lines 를 새 대화(전부 평범한 줄)로 시작한다 — 기존 호출부(아이템 조사
+    // 등)는 이 시그니처 그대로 계속 쓴다.
     fn start_dialogue(&mut self, lines: Vec<String>) {
-        self.dialogue_lines = lines;
+        self.start_dialogue_entries(lines.into_iter().map(DialogueEntry::Line).collect());
+    }
+
+    // entries 를 새 대화로 시작한다(지금 보던 대화가 있었으면 덮어쓴다) — 선택지가
+    // 섞인 대화(도어즈의 부탁 등)는 이쪽을 쓴다.
+    fn start_dialogue_entries(&mut self, entries: Vec<DialogueEntry>) {
+        self.dialogue_entries = entries;
         self.dialogue_index = 0;
         self.dialogue_visible_chars = 0;
         self.dialogue_next_char_at = date::now();
     }
 
-    // "아무 입력"에 대응 — 아직 타이핑 중이면 그 줄을 즉시 다 보여주고, 이미
-    // 다 보여준 줄이면 다음 줄로(더 없으면 대화 자체가 끝나 dialogue_active()
-    // 가 false 가 된다).
+    // "아무 입력"에 대응 — 아직 타이핑 중이면 그 항목을 즉시 다 보여주고,
+    // 이미 다 보여준 평범한 줄이면 다음 항목으로(더 없으면 대화 자체가 끝나
+    // dialogue_active() 가 false 가 된다). 선택지는 다 보여준 뒤에도 절대
+    // 여기서 자동으로 안 넘어간다 — Y/N 전용 키로만 resolve_choice() 를 거쳐
+    // 넘어간다(key_down_event 참고).
     fn advance_dialogue(&mut self) {
         if !self.dialogue_active() {
             return;
         }
-        let full_len = self.dialogue_lines[self.dialogue_index].chars().count();
+        let full_len = self.current_dialogue_text().map(|s| s.chars().count()).unwrap_or(0);
         if self.dialogue_visible_chars < full_len {
             self.dialogue_visible_chars = full_len;
-        } else {
-            self.dialogue_index += 1;
-            self.dialogue_visible_chars = 0;
-            self.dialogue_next_char_at = date::now();
+            return;
+        }
+        if matches!(self.dialogue_entries[self.dialogue_index], DialogueEntry::Choice { .. }) {
+            return; // 선택지는 Y/N 으로만 넘어간다
+        }
+        self.dialogue_index += 1;
+        self.dialogue_visible_chars = 0;
+        self.dialogue_next_char_at = date::now();
+    }
+
+    // 선택지를 골랐을 때(accepted=true 면 수락) — 그 선택의 동작은 바로
+    // 실행하지 않고 pending_action 에 담아뒀다가, 반응 대사까지 다 끝나고
+    // 대화창이 완전히 닫힌 뒤에 실행한다(draw() 참고) — 그래야 "수락했더니
+    // 반응 대사랑 다음 화면(스텁)이 동시에 뜨는" 어색한 겹침이 안 생긴다.
+    fn resolve_choice(&mut self, accepted: bool) {
+        let Some(DialogueEntry::Choice { accept_lines, decline_lines, on_accept, on_decline, .. }) = self.dialogue_entries.get(self.dialogue_index) else {
+            return;
+        };
+        let (action, reaction_lines) = if accepted { (*on_accept, accept_lines.clone()) } else { (*on_decline, decline_lines.clone()) };
+        self.pending_action = action;
+        let insert_at = self.dialogue_index + 1;
+        for (i, line) in reaction_lines.into_iter().enumerate() {
+            self.dialogue_entries.insert(insert_at + i, DialogueEntry::Line(line));
+        }
+        self.dialogue_index += 1;
+        self.dialogue_visible_chars = 0;
+        self.dialogue_next_char_at = date::now();
+    }
+
+    // pending_action 을 실제로 실행한다 — draw() 가 대화창이 완전히 닫힌
+    // 다음 프레임에 한 번만 호출한다.
+    fn run_dialogue_action(&mut self, action: DialogueAction) {
+        match action {
+            DialogueAction::None => {}
+            DialogueAction::StartFlowerQuest => self.overlay = GameOverlay::SubMinigameStub,
+            // 거부 쪽은 지금 스펙 자체가 "미완성"이라 딱히 할 일이 없다 —
+            // 나중에 도어즈가 거부를 기억하고 다르게 반응하게 되면 여기서
+            // self.doors 에 플래그를 남기면 된다.
+            DialogueAction::MarkDoorsDeclined => {}
         }
     }
 
@@ -702,7 +832,7 @@ impl EventHandler for Stage {
         // 대화창 타자기 효과 — 시간이 됐으면 한 글자씩 드러낸다(느려진 프레임
         // 뒤에 한 번에 여러 칸 밀려도 되게 while 로 따라잡는다).
         if self.dialogue_active() {
-            let full_len = self.dialogue_lines[self.dialogue_index].chars().count();
+            let full_len = self.current_dialogue_text().map(|s| s.chars().count()).unwrap_or(0);
             while self.dialogue_visible_chars < full_len && now >= self.dialogue_next_char_at {
                 self.dialogue_visible_chars += 1;
                 let delay = DIALOGUE_CHAR_DELAY_MIN + rand01(&mut self.dialogue_rng) as f64 * (DIALOGUE_CHAR_DELAY_MAX - DIALOGUE_CHAR_DELAY_MIN);
@@ -710,13 +840,22 @@ impl EventHandler for Stage {
             }
         }
 
+        // 대화창이 완전히 닫힌(선택지 반응 대사까지 다 끝난) 다음 프레임에
+        // 딱 한 번 미뤄뒀던 동작(pending_action)을 실행한다 — resolve_choice()
+        // 참고. 대화가 아직 떠 있는 동안은 절대 실행하지 않는다.
+        if !self.dialogue_active() && self.pending_action != DialogueAction::None {
+            let action = self.pending_action;
+            self.pending_action = DialogueAction::None;
+            self.run_dialogue_action(action);
+        }
+
         // 문은 목표 상태(door_open)를 향해 서서히 회전한다 — 조사 창이 떠 있어도
         // 계속 진행시켜서(플레이어가 안 보고 있어도) 어색하게 멈춰있지 않게 한다.
         let door_target = if self.door_open { 1.0 } else { 0.0 };
         self.door_anim = move_toward(self.door_anim, door_target, DOOR_ANIM_SPEED * dt);
 
-        // 대화창이 떠 있는 동안은 이동/시점 회전/조준 갱신을 전부 멈춘다.
-        if self.inspecting.is_none() && !self.dialogue_active() {
+        // 대화창/스텁 화면이 떠 있는 동안은 이동/시점 회전/조준 갱신을 전부 멈춘다.
+        if self.inspecting.is_none() && !self.dialogue_active() && self.overlay == GameOverlay::None {
             // 문짝(지금 각도)도 같이 충돌 목록에 넣는다 — 닫혀 있으면 진짜로 막는다.
             let mut collision_boxes = self.boxes.clone();
             collision_boxes.push(door_box(self.door_anim));
@@ -786,10 +925,22 @@ impl EventHandler for Stage {
             && self.door_aimed
             && let Some((sx, sy)) = world_to_screen(&self.player.camera(), door_handle_pos(self.door_anim))
         {
-            let label = "[E] Examine";
+            let label = if self.doors.fulfilled { "[E] Doors" } else { "[E] Examine" };
             let tw = self.renderer.text_width(label, 0.7);
             self.renderer.rect(sx + 10.0, sy - 10.0, tw + 8.0, 16.0, [0.0, 0.0, 0.0, 0.6]);
             self.renderer.text(sx + 14.0, sy - 8.0, label, 0.7, [0.6, 0.9, 1.0, 1.0]);
+        }
+
+        // 꽃 퀘스트 스텁 — 진짜 미니게임 대신 자리만 잡아둔 화면. 아이템
+        // 확대 보기와 같은 전체 화면 딤(dim) 패턴을 재사용한다.
+        if self.overlay == GameOverlay::SubMinigameStub {
+            self.renderer.rect(0.0, 0.0, WIN_W, WIN_H, DIM_COLOR);
+            let msg = "[스텁] 보리지꽃 미니게임 자리";
+            let tw = self.renderer.text_width(msg, 0.9);
+            self.renderer.text((WIN_W - tw) / 2.0, WIN_H / 2.0 - 20.0, msg, 0.9, [1.0, 1.0, 1.0, 1.0]);
+            let hint = "Enter: 클리어 처리(테스트용)";
+            let hw = self.renderer.text_width(hint, 0.7);
+            self.renderer.text((WIN_W - hw) / 2.0, WIN_H / 2.0 + 10.0, hint, 0.7, [0.8, 0.9, 1.0, 1.0]);
         }
 
         // 아이템 확대 보기 — 박스형 창 대신 화면 전체를 어둡게 깔고 그 위에
@@ -827,16 +978,20 @@ impl EventHandler for Stage {
         // 무엇보다 위(맨 마지막에 그림)에 뜬다. 좌우/아래 여백을 두고 화면
         // 맨 밑에서 좀 띄워서(DIALOGUE_BOTTOM_MARGIN) 그린다.
         if self.dialogue_active() {
-            let line = &self.dialogue_lines[self.dialogue_index];
-            let shown: String = line.chars().take(self.dialogue_visible_chars).collect();
+            let full_text = self.current_dialogue_text().unwrap_or("");
+            let full_len = full_text.chars().count();
+            let shown: String = full_text.chars().take(self.dialogue_visible_chars).collect();
             let box_x = DIALOGUE_SIDE_MARGIN;
             let box_w = WIN_W - DIALOGUE_SIDE_MARGIN * 2.0;
             let box_y = WIN_H - DIALOGUE_BOTTOM_MARGIN - DIALOGUE_HEIGHT;
             self.renderer.rect(box_x, box_y, box_w, DIALOGUE_HEIGHT, [0.0, 0.0, 0.0, 0.82]);
             self.renderer.rect(box_x, box_y, box_w, 2.0, [0.6, 0.6, 0.65, 0.9]);
             self.renderer.text(box_x + 16.0, box_y + 18.0, &shown, DIALOGUE_TEXT_SCALE, [1.0, 1.0, 1.0, 1.0]);
-            // 다 타이핑됐으면 깜빡이는 화살표로 "아무 키나 눌러 계속" 신호를 준다.
-            if self.dialogue_visible_chars >= line.chars().count() && (now * 2.2).sin() > 0.0 {
+            if self.dialogue_choice_ready() {
+                // 선택지는 "아무 키나"가 아니라 Y/N 전용이라, 매번 그대로 안내를 띄워둔다.
+                self.renderer.text(box_x + 16.0, box_y + DIALOGUE_HEIGHT - 22.0, "[Y] 수락   [N] 거부", DIALOGUE_TEXT_SCALE, [1.0, 0.9, 0.5, 1.0]);
+            } else if self.dialogue_visible_chars >= full_len && (now * 2.2).sin() > 0.0 {
+                // 다 타이핑된 평범한 줄이면 깜빡이는 화살표로 "아무 키나 눌러 계속" 신호를 준다.
                 self.renderer.text(box_x + box_w - 22.0, box_y + DIALOGUE_HEIGHT - 20.0, "v", DIALOGUE_TEXT_SCALE, [0.8, 0.8, 0.85, 1.0]);
             }
         }
@@ -858,11 +1013,32 @@ impl EventHandler for Stage {
     }
 
     fn key_down_event(&mut self, keycode: KeyCode, mods: KeyMods, repeat: bool) {
-        // 대화창이 떠 있으면 "아무 입력"을 최우선으로 먹는다 — 다른 단축키는
-        // 전부 무시하고 대화만 진행시킨다(타이핑 중이면 그 줄 다 보여주기,
-        // 다 보여줬으면 다음 줄/닫기).
+        // 꽃 퀘스트 스텁 화면에서는 Enter 하나로 "클리어 처리"한다(진짜
+        // 미니게임이 생기기 전까지의 자리 표시자 — DialogueAction::StartFlowerQuest
+        // 참고). 대화창보다 먼저 검사한다(이 상태에선 대화창이 안 떠 있다).
+        if !repeat && self.overlay == GameOverlay::SubMinigameStub && matches!(keycode, KeyCode::Enter | KeyCode::KpEnter) {
+            self.quest.flowers += 1;
+            self.doors.fulfilled = true;
+            self.quest.doors_fulfilled = true;
+            self.overlay = GameOverlay::None;
+            self.start_dialogue(vec!["보리지꽃을 손에 넣었다...".to_string()]);
+            self.input.on_key_down(keycode, repeat);
+            return;
+        }
+        // 대화창이 떠 있으면 입력을 최우선으로 먹는다 — 다른 단축키는 전부
+        // 무시하고 대화만 진행시킨다. 선택지가 다 타이핑돼서 뜬 상태면 Y/N
+        // 전용으로 고르고, 그 외(평범한 줄, 아직 타이핑 중인 선택지)엔 "아무
+        // 입력"이 그대로 통한다(advance_dialogue 참고).
         if !repeat && self.dialogue_active() {
-            self.advance_dialogue();
+            if self.dialogue_choice_ready() {
+                if keycode == KeyCode::Y {
+                    self.resolve_choice(true);
+                } else if keycode == KeyCode::N {
+                    self.resolve_choice(false);
+                }
+            } else {
+                self.advance_dialogue();
+            }
             self.input.on_key_down(keycode, repeat);
             return;
         }
@@ -870,9 +1046,19 @@ impl EventHandler for Stage {
             if self.inspecting.is_some() {
                 self.close_inspect();
             } else if self.door_aimed {
-                // 일단은 문을 실제로 열지 않고 대화 문구만 띄운다(door_open 은
-                // 나중에 다른 계기로 열리게 될 걸 대비해 그대로 남겨둔다).
-                self.start_dialogue(vec![DOORKNOB_MESSAGE.to_string()]);
+                if self.doors.fulfilled {
+                    self.start_dialogue(vec!["...고마워.".to_string()]);
+                } else {
+                    let mut entries: Vec<DialogueEntry> = self.doors.request_lines.iter().cloned().map(DialogueEntry::Line).collect();
+                    entries.push(DialogueEntry::Choice {
+                        prompt: "부탁을 들어줄래?".to_string(),
+                        accept_lines: self.doors.accept_lines.clone(),
+                        decline_lines: self.doors.decline_lines.clone(),
+                        on_accept: DialogueAction::StartFlowerQuest,
+                        on_decline: DialogueAction::MarkDoorsDeclined,
+                    });
+                    self.start_dialogue_entries(entries);
+                }
             } else if let Some(i) = self.aimed_item {
                 self.inspecting = Some(i);
                 self.item_view_yaw = 0.0;
@@ -897,7 +1083,10 @@ impl EventHandler for Stage {
 
     fn mouse_button_down_event(&mut self, button: MouseButton, _x: f32, _y: f32) {
         if self.dialogue_active() {
-            self.advance_dialogue();
+            // 선택지가 떠 있는 동안은 Y/N 전용 키로만 고른다 — 마우스 클릭은 무시.
+            if !self.dialogue_choice_ready() {
+                self.advance_dialogue();
+            }
             return;
         }
         if button == MouseButton::Right {
@@ -942,9 +1131,9 @@ impl EventHandler for Stage {
                 self.item_view_yaw += dx * ITEM_ROTATE_SENS;
                 self.item_view_pitch = (self.item_view_pitch - dy * ITEM_ROTATE_SENS).clamp(-MAX_PITCH, MAX_PITCH);
             }
-        } else if !self.dialogue_active() {
-            // 대화창이 떠 있는 동안은 화면(시점)이 돌아가지 않는다 — 그래도
-            // 커서는 계속 중앙으로 되돌려서, 대화가 끝난 뒤 갑자기 큰 폭으로
+        } else if !self.dialogue_active() && self.overlay == GameOverlay::None {
+            // 대화창/스텁 화면이 떠 있는 동안은 화면(시점)이 돌아가지 않는다 —
+            // 그래도 커서는 계속 중앙으로 되돌려서, 닫힌 뒤 갑자기 큰 폭으로
             // 튀어 돌아가지 않게 한다.
             self.player.look(dx * MOUSE_SENS, -dy * MOUSE_SENS);
         }
