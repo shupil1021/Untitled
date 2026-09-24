@@ -71,7 +71,10 @@ const AIM_MAX_COS: f32 = 0.95;
 const DIALOGUE_SIDE_MARGIN: f32 = 24.0;
 const DIALOGUE_BOTTOM_MARGIN: f32 = 36.0;
 const DIALOGUE_HEIGHT: f32 = WIN_H / 3.0;
-const DIALOGUE_TEXT_SCALE: f32 = 0.95;
+const DIALOGUE_TEXT_SCALE: f32 = 1.4;
+// 글자 한 줄의 실제 높이 — 선택지 안내/계속 화살표를 대화창 아래쪽에 붙일 때,
+// 글자가 커져도 상자 밖으로 삐져나가지 않게 이 높이만큼 위로 올려 그린다.
+const DIALOGUE_LINE_H: f32 = crackhead::gfx::CELL_H * DIALOGUE_TEXT_SCALE;
 const DIALOGUE_CHAR_DELAY_MIN: f64 = 0.02;
 const DIALOGUE_CHAR_DELAY_MAX: f64 = 0.09;
 const DIM_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.6];
@@ -456,11 +459,11 @@ impl EventHandler for Stage {
             let box_y = WIN_H - DIALOGUE_BOTTOM_MARGIN - DIALOGUE_HEIGHT;
             self.renderer.rect(box_x, box_y, box_w, DIALOGUE_HEIGHT, [0.0, 0.0, 0.0, 0.82]);
             self.renderer.rect(box_x, box_y, box_w, 2.0, [0.6, 0.6, 0.65, 0.9]);
-            self.renderer.text(box_x + 16.0, box_y + 18.0, &shown, DIALOGUE_TEXT_SCALE, [1.0, 1.0, 1.0, 1.0]);
+            self.renderer.text(box_x + 16.0, box_y + 16.0, &shown, DIALOGUE_TEXT_SCALE, [1.0, 1.0, 1.0, 1.0]);
             if self.dialogue_choice_ready() {
-                self.renderer.text(box_x + 16.0, box_y + DIALOGUE_HEIGHT - 22.0, "[Y] 수락   [N] 거부", DIALOGUE_TEXT_SCALE, [1.0, 0.9, 0.5, 1.0]);
+                self.renderer.text(box_x + 16.0, box_y + DIALOGUE_HEIGHT - DIALOGUE_LINE_H - 10.0, "[Y] 수락   [N] 거부", DIALOGUE_TEXT_SCALE, [1.0, 0.9, 0.5, 1.0]);
             } else if self.dialogue_visible_chars >= full_len && (now * 2.2).sin() > 0.0 {
-                self.renderer.text(box_x + box_w - 22.0, box_y + DIALOGUE_HEIGHT - 20.0, "v", DIALOGUE_TEXT_SCALE, [0.8, 0.8, 0.85, 1.0]);
+                self.renderer.text(box_x + box_w - 30.0, box_y + DIALOGUE_HEIGHT - DIALOGUE_LINE_H - 10.0, "v", DIALOGUE_TEXT_SCALE, [0.8, 0.8, 0.85, 1.0]);
             }
         }
 
