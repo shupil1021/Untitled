@@ -8,10 +8,10 @@ use std::sync::mpsc::{channel, Receiver};
 use miniquad::{FilterMode, MipmapFilterMode, RenderingBackend, TextureId};
 
 use crate::foundation::Settings;
-use crate::gfx::{Assets, Color, Rect, Renderer, CELL_H};
+use crate::render::gfx::{Assets, Color, Rect, Renderer, CELL_H};
 use crate::strings::{t, video_player as s};
 use crate::ui::*;
-use crate::video::{Audio, Video};
+use crate::platform::video::{Audio, Video};
 
 use super::{App, AppAction, WinInput};
 

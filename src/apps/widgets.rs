@@ -3,7 +3,7 @@
 //! 달리, 여기 있는 건 "앱 안에서 쓰는" 좀 더 조립된 위젯이라 apps 밑에 뒀다.
 
 use crate::foundation::{display_name, FileId, Language};
-use crate::gfx::{Assets, Rect, Renderer, CELL_H};
+use crate::render::gfx::{Assets, Rect, Renderer, CELL_H};
 use crate::ui::*;
 
 use super::WinInput;

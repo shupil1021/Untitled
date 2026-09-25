@@ -12,7 +12,7 @@ use crate::foundation::{
     display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, GAME_FILE_NAME, MY_COMPUTER_NAME,
     OFFICIAL_SITE_URL, RECYCLE_BIN_NAME,
 };
-use crate::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
+use crate::render::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
 use crate::strings::{common, credits, desktop as s, explorer, official_site, settings, t};
 use crate::ui::*;
 use crate::window_manager::{DeskAction, Gui, WindowManager};

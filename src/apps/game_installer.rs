@@ -14,7 +14,7 @@ use std::rc::Rc;
 use miniquad::RenderingBackend;
 
 use crate::foundation::{Language, Settings};
-use crate::gfx::{Assets, Color, Rect, Renderer};
+use crate::render::gfx::{Assets, Color, Rect, Renderer};
 use crate::strings::{common, game_installer as s, t};
 use crate::ui::*;
 

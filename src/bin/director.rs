@@ -30,9 +30,9 @@ use miniquad::*;
 use windows::Win32::Media::Audio::*;
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED};
 
-use crackhead::crt::{viewport_4x3, warp};
+use crackhead::render::crt::{viewport_4x3, warp};
 use crackhead::foundation::{self, Settings, FPS_OPTS, RES_OPTS};
-use crackhead::gfx::{Assets, Renderer, VIRTUAL_H as VH, VIRTUAL_W as VW};
+use crackhead::render::gfx::{Assets, Renderer, VIRTUAL_H as VH, VIRTUAL_W as VW};
 use crackhead::scenes::{BlueScreenScene, BootScene, DesktopScene, EraseScene, Frame, Input, LobbyScene, Scene, SceneManager, ShutdownScene};
 use crackhead::ui;
 use crackhead::director_ipc;

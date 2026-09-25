@@ -9,15 +9,15 @@ use std::rc::Rc;
 use miniquad::{FilterMode, KeyCode, MipmapFilterMode, RenderingBackend, TextureId};
 
 use crate::foundation::Settings;
-use crate::gfx::{Assets, Rect, Renderer};
+use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::strings::{official_site as s, t};
 use crate::ui::*;
-use crate::webview::WebviewInput;
+use crate::platform::webview::WebviewInput;
 
 use super::{App, AppAction, WinInput};
 
 pub struct OfficialSiteApp {
-    webview: crate::webview::WebviewHandle,
+    webview: crate::platform::webview::WebviewHandle,
     tex: Option<TextureId>,
     cw: u32,
     ch: u32,
@@ -28,7 +28,7 @@ pub struct OfficialSiteApp {
 impl OfficialSiteApp {
     pub fn new(url: &str, cw: u32, ch: u32, settings: Rc<RefCell<Settings>>) -> OfficialSiteApp {
         OfficialSiteApp {
-            webview: crate::webview::WebviewHandle::open(url.to_string(), cw, ch),
+            webview: crate::platform::webview::WebviewHandle::open(url.to_string(), cw, ch),
             tex: None,
             cw,
             ch,

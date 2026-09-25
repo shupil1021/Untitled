@@ -4,7 +4,7 @@
 //! 게임 흐름에도 연결하면 된다) — 화면 자체와 "아무 키나 누르면 재부팅"
 //! 동작만 먼저 만들어둔다.
 
-use crate::gfx::{ADVANCE, CELL_H, SCREEN_H, SCREEN_W};
+use crate::render::gfx::{ADVANCE, CELL_H, SCREEN_H, SCREEN_W};
 use crate::ui::border;
 
 use super::{BootScene, Frame, Scene, Transition};

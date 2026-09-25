@@ -15,7 +15,7 @@
 use miniquad::*;
 
 use crackhead::director_ipc::{self, DirectorState};
-use crackhead::gfx::Renderer;
+use crackhead::render::gfx::Renderer;
 use crackhead::scenes::Input;
 use crackhead::ui;
 

@@ -22,7 +22,7 @@ pub use doors_game::DoorsGameApp;
 pub use game_installer::GameInstallerApp;
 pub use explorer::{ExplorerApp, ExplorerLocation};
 pub use image_viewer::ImageViewerApp;
-pub use mail::{MailApp, SentMailView, FIRST_MAIL_FROM};
+pub use mail::{MailApp, MailAttachment, SentMailView, FIRST_MAIL_FROM};
 pub use notepad::NotepadApp;
 pub use official_site::OfficialSiteApp;
 pub use password::PasswordApp;
@@ -37,7 +37,7 @@ use std::rc::Rc;
 use miniquad::RenderingBackend;
 
 use crate::foundation::{display_name, FileId, FileKind, FileSystem, Settings};
-use crate::gfx::{Assets, Rect, Renderer};
+use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::scenes::Input;
 use crate::ui::{icon_of, IconType};
 
@@ -241,7 +241,12 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
                 .collect();
             // 첫 메일의 첨부(게임 파일) — 아이콘까지 미리 구해서 넘긴다. 이미 한 번
             // 받은 적 있으면(ever_downloaded) 다시 "Download" 버튼이 안 뜨게 표시.
-            let game_attachment = fs.mail_attachment().map(|aid| (aid, fs.get(aid).name.clone(), icon_of(fs.get(aid)), fs.ever_downloaded.contains(&aid)));
+            let game_attachment = fs.mail_attachment().map(|aid| MailAttachment {
+                id: aid,
+                name: fs.get(aid).name.clone(),
+                icon: icon_of(fs.get(aid)),
+                downloaded: fs.ever_downloaded.contains(&aid),
+            });
             Opened {
                 app: Box::new(MailApp::new(fs.mail_arrived, &fs.mail_read, game_attachment, attachable, sent, settings.clone())),
                 title: name,

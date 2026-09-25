@@ -1,6 +1,6 @@
 //! 부팅 화면 — BIOS POST 흉내 → 화면 정리 → 로고/Welcome/로딩 바, 끝나면 DesktopScene 으로.
 
-use crate::gfx::{ADVANCE, CELL_H, SCREEN_H, SCREEN_W};
+use crate::render::gfx::{ADVANCE, CELL_H, SCREEN_H, SCREEN_W};
 use crate::strings::{boot as s, t};
 use crate::ui::BLACK;
 

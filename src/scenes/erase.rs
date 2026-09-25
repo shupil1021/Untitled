@@ -8,7 +8,7 @@
 //! (화면에 안 들어가는 오래된 줄은 위로 밀려 사라진다), 다 쏟아진 뒤에 마무리 메시지
 //! 몇 줄이 천천히 찍히면서 정리되는 두 단계 구성이다.
 
-use crate::gfx::{CELL_H, SCREEN_H, SCREEN_W};
+use crate::render::gfx::{CELL_H, SCREEN_H, SCREEN_W};
 use crate::ui::BLACK;
 
 use super::{Frame, LobbyScene, Scene, Transition};

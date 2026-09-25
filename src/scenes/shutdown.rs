@@ -4,7 +4,7 @@
 //! 끝나면 Transition::Quit 을 반환해서 진짜로 종료시킨다(Stage::draw() 가 그걸 보고
 //! 웹뷰 정리 + window::order_quit() 을 부른다).
 
-use crate::gfx::{SCREEN_H, SCREEN_W};
+use crate::render::gfx::{SCREEN_H, SCREEN_W};
 use crate::ui::BLACK;
 
 use super::{Frame, Scene, Transition};

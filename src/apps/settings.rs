@@ -6,7 +6,7 @@ use std::rc::Rc;
 use miniquad::RenderingBackend;
 
 use crate::foundation::{Language, Settings, BG_COLORS, FPS_OPTS, RES_OPTS, TABS};
-use crate::gfx::{Assets, Rect, Renderer, CELL_H};
+use crate::render::gfx::{Assets, Rect, Renderer, CELL_H};
 use crate::strings::{common, settings as s, t};
 use crate::ui::*;
 

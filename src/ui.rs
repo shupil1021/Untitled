@@ -4,7 +4,7 @@ use miniquad::TextureId;
 
 use crate::apps::WinInput;
 use crate::foundation::{FileKind, FileNode};
-use crate::gfx::{Assets, Color, Renderer, CELL_H};
+use crate::render::gfx::{Assets, Color, Renderer, CELL_H};
 
 // Windows 9x 팔레트
 pub const TEAL: Color = [0.0, 0.5, 0.5, 1.0]; // 기본 바탕화면 색

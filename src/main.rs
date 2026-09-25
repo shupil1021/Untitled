@@ -9,10 +9,10 @@ use std::rc::Rc;
 
 use miniquad::*;
 
-use crackhead::crt::{viewport_4x3, warp, Crt};
+use crackhead::render::crt::{viewport_4x3, warp, Crt};
 use crackhead::foundation;
 use crackhead::foundation::{Settings, FPS_OPTS, RES_OPTS};
-use crackhead::gfx::{Assets, Renderer, VIRTUAL_H as VH, VIRTUAL_W as VW};
+use crackhead::render::gfx::{Assets, Renderer, VIRTUAL_H as VH, VIRTUAL_W as VW};
 use crackhead::scenes::{lobby::LobbyScene, Frame, Input, SceneManager};
 use crackhead::ui::draw_cursor;
 
@@ -182,7 +182,7 @@ impl EventHandler for Stage {
         if quit {
             // 열려있는 웹뷰가 있으면 여기서 멈추라는 신호를 보내고 실제로 다 끝날
             // 때까지 기다린 뒤 지운다 — Official Site 를 켜둔 채로 꺼도 확실히 지워진다.
-            crackhead::webview::shutdown_all_and_cleanup();
+            crackhead::platform::webview::shutdown_all_and_cleanup();
             window::order_quit();
         }
     }

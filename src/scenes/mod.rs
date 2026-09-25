@@ -22,7 +22,7 @@ use std::rc::Rc;
 use miniquad::KeyCode;
 
 use crate::foundation::Settings;
-use crate::gfx::{Assets, Renderer};
+use crate::render::gfx::{Assets, Renderer};
 use crate::ui::CursorKind;
 
 // 한 프레임 동안 씬이 참조하는 것들 묶음.

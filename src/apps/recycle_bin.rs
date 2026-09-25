@@ -16,7 +16,7 @@ use std::rc::Rc;
 use miniquad::RenderingBackend;
 
 use crate::foundation::{display_name, FileId, Language, Settings, MY_COMPUTER_NAME, RECYCLE_BIN_NAME};
-use crate::gfx::{Assets, Color, Rect, Renderer, CELL_H};
+use crate::render::gfx::{Assets, Color, Rect, Renderer, CELL_H};
 use crate::strings::{common, recycle_bin as s, t};
 use crate::ui::*;
 

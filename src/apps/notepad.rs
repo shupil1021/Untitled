@@ -6,7 +6,7 @@ use std::rc::Rc;
 use miniquad::{KeyCode, RenderingBackend};
 
 use crate::foundation::Settings;
-use crate::gfx::{Assets, Rect, Renderer};
+use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::ui::*;
 
 use super::widgets::{ease_scroll, scrollbar};

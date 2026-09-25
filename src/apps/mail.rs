@@ -10,7 +10,7 @@ use std::rc::Rc;
 use miniquad::{KeyCode, RenderingBackend};
 
 use crate::foundation::{display_name, FileId, Language, Settings};
-use crate::gfx::{Assets, Color, Rect, Renderer, CELL_H};
+use crate::render::gfx::{Assets, Color, Rect, Renderer, CELL_H};
 use crate::strings::{mail as s, t};
 use crate::ui::*;
 
@@ -34,6 +34,16 @@ pub struct SentMailView {
     pub subject: String,
     pub body: String,
     pub attachments: Vec<(FileId, String, IconType)>,
+}
+
+// 첫 메일에 붙는 첨부(게임 설치 파일) — apps/mod.rs::open() 이 fs 에서 구해 넘긴다.
+// downloaded 는 "이미 한 번 받은 적 있는지"(fs.ever_downloaded) — 창을 새로 열어도
+// 다시 "Download" 버튼이 뜨지 않게 초기 표시 상태로 쓴다.
+pub struct MailAttachment {
+    pub id: FileId,
+    pub name: String,
+    pub icon: IconType,
+    pub downloaded: bool,
 }
 
 // 첫 메일을 보낸 사람 — 도착 토스트(desktop.rs)에서도 같은 주소를 보여줘야 해서 공개.
@@ -229,16 +239,14 @@ impl MailApp {
     pub(super) fn new(
         arrived: bool,
         read_indices: &[usize],
-        game_attachment: Option<(FileId, String, IconType, bool)>,
+        game_attachment: Option<MailAttachment>,
         attachable: Vec<(FileId, String, IconType)>,
         sent: Vec<SentMailView>,
         settings: Rc<RefCell<Settings>>,
     ) -> MailApp {
         let lang = settings.borrow().language;
-        // 마지막 bool 은 "이미 한 번 받은 적 있는지"(fs.ever_downloaded) — 창을 새로
-        // 열어도 다시 "Download" 버튼이 뜨지 않게 downloaded 초기값으로 쓴다.
-        let already_downloaded = game_attachment.as_ref().is_some_and(|a| a.3);
-        let messages = seed_messages(arrived, lang, game_attachment.map(|(id, name, icon, _)| (id, name, icon)));
+        let already_downloaded = game_attachment.as_ref().is_some_and(|a| a.downloaded);
+        let messages = seed_messages(arrived, lang, game_attachment.map(|a| (a.id, a.name, a.icon)));
         let read = (0..messages.len()).map(|i| read_indices.contains(&i)).collect();
         let downloaded = messages.iter().map(|m| m.attachment.is_some() && already_downloaded).collect();
         let downloading = vec![None; messages.len()];
@@ -1040,7 +1048,7 @@ impl MailApp {
         // 조합 중인(아직 확정 안 된) 문자열을 캐럿 위치에 끼워넣어서만 화면에
         // 보여준다 — self.new_mail.* 자체(저장/전송에 실제 쓰이는 값)는 여전히
         // char_event 로 확정된 문자만으로 채워지고 이 값의 영향을 전혀 안 받는다.
-        let preview = if active && win.focused { crate::ime::composition_preview() } else { None };
+        let preview = if active && win.focused { crate::platform::ime::composition_preview() } else { None };
         let display = match &preview {
             Some(p) if !p.is_empty() => format!("{}{}{}", &value[..byte_idx], p, &value[byte_idx..]),
             _ => value.to_string(),
@@ -1056,10 +1064,10 @@ impl MailApp {
                 // 그래서 아예 화면 밖으로 치워서 안 보이게 한다. 조합/확정 자체는
                 // 이 팝업 위치와 무관하게 그대로 잘 되고, 조합 중인 내용은 위에서
                 // 이미 우리가 직접 그려서 보여준다.
-                crate::ime::set_composition_pos(OFFSCREEN, OFFSCREEN);
+                crate::platform::ime::set_composition_pos(OFFSCREEN, OFFSCREEN);
                 // 그래도 남는 네 번째 팝업(최신 IME 의 CiceroUIWndFrame 언어
                 // 표시줄)은 저 API 들로 못 옮기므로 통째로 숨긴다.
-                crate::ime::hide_cicero_windows();
+                crate::platform::ime::hide_cicero_windows();
             }
             if (win.time % 1.0) < 0.5 {
                 r.rect(cursor_vx + 1.0, ty, 2.0, CELL_H * 0.8, BLACK);
@@ -1157,11 +1165,11 @@ impl MailApp {
             // 넣는 건 안 먹히므로, 조합을 취소하고(`ime::cancel_composition`) 그
             // 값을 평범한 확정 문자로 직접 밀어넣는다. 짧게 한 번 누른 경우만
             // 처리한다(`pressed()` — 꾹 누르는 건 원래도 문제없었다).
-            let cur_composition = crate::ime::composition_preview().unwrap_or_default();
+            let cur_composition = crate::platform::ime::composition_preview().unwrap_or_default();
             if win.input.pressed(KeyCode::Backspace) && !self.composition_history.is_empty() {
                 let target =
                     if self.composition_history.len() >= 2 { self.composition_history[self.composition_history.len() - 2].clone() } else { String::new() };
-                crate::ime::cancel_composition();
+                crate::platform::ime::cancel_composition();
                 if !target.is_empty() {
                     let field: &mut String = match *active {
                         ComposeField::To => &mut *to,
@@ -1182,7 +1190,7 @@ impl MailApp {
             } else if self.composition_history.last() != Some(&cur_composition) {
                 self.composition_history.push(cur_composition.clone());
             }
-            let composing = crate::ime::composition_preview().is_some_and(|p| !p.is_empty());
+            let composing = crate::platform::ime::composition_preview().is_some_and(|p| !p.is_empty());
             let key_down = win.input.is_down(KeyCode::Backspace);
             if !key_down {
                 self.backspace_hold = 0.0;
@@ -1333,7 +1341,7 @@ impl MailApp {
         // 이 미리보기 뒤(effective_cursor)로 같이 옮겨서, 지금 막 조합 중인
         // 글자 바로 뒤에 캐럿이 있는 것처럼 보이게 한다.
         let body_preview =
-            if self.new_mail.active == ComposeField::Body && win.focused { crate::ime::composition_preview() } else { None };
+            if self.new_mail.active == ComposeField::Body && win.focused { crate::platform::ime::composition_preview() } else { None };
         let (display_body, effective_cursor) = match &body_preview {
             Some(p) if !p.is_empty() => {
                 let byte_idx =
@@ -1394,8 +1402,8 @@ impl MailApp {
                 let cursor_x = text_area.x + r.text_width(&line_text[..byte_idx], 1.0);
                 // IME 팝업들은 화면 밖으로 치운다 — To/Subject 필드와 같은 이유
                 // (draw_editable_field 참고).
-                crate::ime::set_composition_pos(OFFSCREEN, OFFSCREEN);
-                crate::ime::hide_cicero_windows();
+                crate::platform::ime::set_composition_pos(OFFSCREEN, OFFSCREEN);
+                crate::platform::ime::hide_cicero_windows();
                 if (win.time % 1.0) < 0.5 {
                     r.rect(cursor_x + 1.0, ty + 1.0, 2.0, CELL_H - 4.0, BLACK);
                 }

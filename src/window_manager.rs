@@ -4,7 +4,7 @@ use miniquad::RenderingBackend;
 
 use crate::apps::{App, AppAction, DragGhost, MoveDest, Opened, WinInput};
 use crate::foundation::FileId;
-use crate::gfx::{Assets, Rect, Renderer};
+use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::scenes::Input;
 use crate::ui::*;
 

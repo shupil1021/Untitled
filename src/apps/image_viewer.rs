@@ -3,7 +3,7 @@
 
 use miniquad::RenderingBackend;
 
-use crate::gfx::{Assets, Rect, Renderer};
+use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::ui::WHITE;
 
 use super::{App, AppAction, WinInput};

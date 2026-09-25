@@ -6,7 +6,7 @@ use std::rc::Rc;
 use miniquad::{KeyCode, RenderingBackend};
 
 use crate::foundation::{FileId, Settings};
-use crate::gfx::{ADVANCE, Assets, Rect, Renderer};
+use crate::render::gfx::{ADVANCE, Assets, Rect, Renderer};
 use crate::strings::{common, password as s, t};
 use crate::ui::*;
 

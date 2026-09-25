@@ -3,7 +3,7 @@
 
 use crate::apps::{App, AppAction, SettingsApp, WinInput};
 use crate::foundation::Language;
-use crate::gfx::{Rect, Renderer, ADVANCE, CELL_H, SCREEN_H, SCREEN_W};
+use crate::render::gfx::{Rect, Renderer, ADVANCE, CELL_H, SCREEN_H, SCREEN_W};
 use crate::strings::{common, lobby as s, settings, t};
 use crate::ui::*;
 use crate::window_manager::draw_x;

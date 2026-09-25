@@ -7,19 +7,14 @@
 //! 분리 이전과 동작이 완전히 같다(그냥 `mod X;` 선언들이 여기로 옮겨온 것뿐).
 
 pub mod apps;
-pub mod crt;
 // director/director_panel(연출·영상 제작용 별개 실행 파일 두 개) 끼리만 쓰는
 // 작은 파일 기반 통신 — 실제 게임(crackhead.exe)은 이 모듈을 참조하지 않는다.
 pub mod director_ipc;
 pub mod foundation;
-pub mod gfx;
-pub mod ime;
-pub mod mapfile;
-pub mod mesh3d;
+pub mod platform;
+pub mod render;
 pub mod scenes;
 pub mod secrets;
 pub mod strings;
 pub mod ui;
-pub mod video;
-pub mod webview;
 pub mod window_manager;

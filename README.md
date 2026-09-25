@@ -20,9 +20,6 @@ cargo run
   기본 `opt-level=0`이면 영상 프레임 변환 같은 픽셀 루프가 매우 느려서다. 최고 성능이
   필요하면 `cargo run --release`.
 - `assets/movie.mp4`를 교체하면 재빌드 없이 반영된다(어떤 H.264 프로파일이든 재생 가능).
-- `cargo run --bin mesh3d_test`로 진짜 3D 메쉬 렌더러(`mesh3d.rs`)만 따로
-  띄워볼 수 있다 — 실제 게임과 무관한 독립 창(자세한 건 "진짜 3D 메쉬 엔진"
-  절 참고).
 
 ## 기능
 
@@ -84,7 +81,7 @@ cargo run
   `fs.game_installed`를 켜고 `add_desktop_icon()`으로 바탕화면 빈 칸에 게임 아이콘
   `test.exe`(`FileKind::Game`)를 만든다. 이미 설치된 뒤 Setup 을 다시 열면 곧장
   "이미 설치됨" 페이지만 뜬다(아이콘 중복 방지). 바탕화면의 `test.exe`를 열면
-  **PalaceOS 안의 창 하나**로 게임(`apps/doors_game.rs`, 아래 "메인 게임" 절)이
+  **PalaceOS 안의 창 하나**로 게임(`apps/doors_game/`, 아래 "메인 게임" 절)이
   뜬다. 아이콘은 새로 그린 `assets/icon_setup.png`(`IconType::Setup`, 상자+디스크+
   화살표)와 `assets/icon_exe.png`(`IconType::Exe`, 프로그램 창 + 문).
 - **Write Mail**: To/Subject/Body 실제 텍스트 입력(커서 클릭 이동 포함), Desktop/Downloads
@@ -106,7 +103,7 @@ cargo run
   CRT 파이프라인을 그대로 통과시킨다 — 실제 클릭/스크롤/타이핑 가능), **비밀번호 대화상자**
   (`.lock` 파일용).
 
-### 진짜 3D 메쉬 엔진 (`mesh3d.rs`) + 맵 에디터
+### 진짜 3D 메쉬 엔진 (`render/mesh3d.rs`) + 메인 게임
 
 예전엔 컬럼 하나당 광선 하나, 카메라 피치도 없는 2D 그리드 기반 레이캐스팅
 엔진(`raycaster.rs`)이 있었는데, 그 구조로는 바닥 높낮이나 기울어진 벽을
@@ -140,97 +137,8 @@ cargo run
   옆으로 밀려나지 않는다. `walkable`(바닥/경사로로 쓰이는지)과 `solid`(수평
   충돌에 끼는지)를 상자마다 따로 켤 수 있어서, 밟고 지나가야 하는 얇은 경사로는
   `solid=false`로, 위로 못 올라가야 하는 장식 벽은 `walkable=false`로 둔다.
-- `src/bin/mesh3d_test.rs`: 이 엔진만 확인하는 테스트 창(`cargo run --bin
-  mesh3d_test`) — 평평한 바닥 → 기울어진 경사로(pitch 회전) → 높은 발판 →
-  옆으로 기운 벽(roll 회전)을 한 장면에 두고 W/S 전후진, A/D 좌우 이동
-  (strafe), Space 로 점프하며 확인한다. 시점 회전은 **마우스**로 한다 —
-  창이 뜨면 커서를 숨기고 창 안에 가둔다(`window::show_mouse(false)`+
-  `set_cursor_grab(true)`). 회전은 miniquad 의 `raw_mouse_motion`(원시 입력)
-  대신 평범한 `mouse_motion_event`(WM_MOUSEMOVE)로 처리한다 — raw_mouse_motion
-  이 일부 컴퓨터(마우스/터치패드 드라이버, 가상 머신 등)에서 아예 안 들어오는
-  문제가 있어서다. 그 대신 마우스 커서를 매 프레임 화면 정중앙(조준선/에임
-  포인트 자리)으로 Win32 `SetCursorPos`(`recenter_cursor()`)로 강제 고정해두고,
-  그 중심에서 벗어난 만큼만 회전에 반영한 뒤 즉시 되돌리는 고전적인 FPS
-  마우스룩 방식을 쓴다(창에 커서가 다시 들어올 때도 즉시 재고정). ↑/↓ 키보드
-  피치 회전도 그대로 남아있다.
-  스폰 지점은 쓰레기 무더기(색만 다른 `Box3D` 더미)가 쌓인 방 안이다
-  (`build_room`) — 북쪽 벽에 문간이 하나 뚫려있고, 문(`door_box`/
-  `door_handle_pos`)이 그 자리를 막고 있다. 문은 `Box3D` 하나를 경첩(문간
-  서쪽 가장자리를 지나는 수직축) 기준으로 매 프레임 회전시켜서 만든다 —
-  문짝의 중심 위치와 손잡이 위치 둘 다 그 경첩 회전 공식(`hinge_rotate`)으로
-  다시 계산하기 때문에 문이 미끄러지지 않고 실제로 경첩을 축으로 도는 것처럼
-  보인다(지금은 항상 닫힌 채고, `door_box(door_anim)`이 매 프레임 충돌
-  목록에도 들어가서 진짜로 막는 장애물이다) — `door_open`/`door_anim`/문
-  여닫는 애니메이션 코드 자체는 나중에 다른 계기로 문이 실제로 열리게 될 걸
-  대비해 그대로 남겨뒀다(지금은 항상 닫힌 채). 문 손잡이에 조준선을 가까이
-  대면 "[E] Examine"이 뜨고, `E`를 누르면 화면 아래쪽에 대화창이 열려
-  도어즈(Doors — Figma 스토리 스펙의 "문마다 성격이 다른 말하는 문" NPC,
-  `DoorsNpc`/`build_doors()`)가 말을 건다. 대화는 `dialogue_entries:
-  Vec<DialogueEntry>`(`Line`/`Choice` 두 종류)로 표현한다 — 아이템 조사
-  같은 평범한 대화는 전부 `Line`뿐이고, 도어즈처럼 선택이 갈리는 대화만
-  끝에 `Choice` 하나가 붙는다. 문구는 타자기처럼 한 글자씩, 글자마다
-  `rand01`(외부 크레이트 없는 아주 작은 xorshift64 PRNG)로 살짝 무작위한
-  간격을 두고 나타난다. 대화창은 화면 맨 밑에 딱 붙지 않고
-  `DIALOGUE_BOTTOM_MARGIN`만큼 띄우고 좌우로도 `DIALOGUE_SIDE_MARGIN`만큼
-  여백을 둔다. 세로 크기(`DIALOGUE_HEIGHT`)는 `WIN_H / 3.0`(화면 세로의
-  대략 1/3)로 잡아서 아래쪽을 꽤 크게 덮는다. **떠 있는 동안은 이동도 시점
-  회전(마우스/키보드 전부)도 멈춘다** — `mouse_motion_event`도 그동안은
-  카메라에 반영하지 않고 커서만 계속 중앙으로 되돌린다(끝난 뒤 갑자기 크게
-  튀지 않게). 평범한 `Line`은 아무 키나 마우스 버튼이나 누르면
-  (`advance_dialogue`) 아직 타이핑 중이던 줄은 즉시 다 보여주고, 이미 다
-  보여준 줄이면 다음 항목으로 넘어간다(더 없으면 대화창이 닫힌다). `Choice`
-  는 다르다 — 문구가 다 타이핑되면 "아무 입력"으로는 절대 안 넘어가고
-  `[Y] 수락  [N] 거부` 두 키로만 고를 수 있다(`dialogue_choice_ready`가
-  그 상태를 판정하고, `key_down_event`가 Y/N 만 `resolve_choice`로 넘긴다).
-  도어즈에게 처음 말을 걸면 부탁(보리지꽃을 가져다 달라는) 대사 뒤에 이
-  선택지가 뜬다 — 고른 반응 대사(`accept_lines`/`decline_lines`)가 이어서
-  재생되고, 그 대화가 완전히 닫힌 다음 프레임에야(`pending_action`,
-  대화와 다음 화면이 동시에 안 겹치게) 수락 쪽이면 `GameOverlay::
-  SubMinigameStub`(화면 전체를 어둡게 깔고 "[스텁] 보리지꽃 미니게임 자리
-  — Enter로 클리어 처리"만 보여주는 자리 표시자 — 진짜 미니게임은 아직
-  없다)로 전환된다. 그 스텁 화면에서 `Enter`를 누르면 `quest.flowers`가
-  늘고 `doors.fulfilled = true`가 되며 "보리지꽃을 손에 넣었다..." 대사가
-  뜬다 — 그 뒤로 도어즈에게 다시 말을 걸면 "...고마워."만 반복한다. 이
-  전체(도어즈 성격/부탁/보리지꽃 퀘스트/한노현 설정)는 Figma "Team R-18"
-  디자인 문서(시스템 플로우/스토리 플로우)를 옮긴 것 — 자세한 스토리
-  맥락은 [STORY.md](STORY.md) 7-1절 참고. 도어즈는 지금 한 마리뿐이고
-  (`Stage.doors: DoorsNpc`, `Vec` 아님), 문/경첩 좌표(`DOOR_HINGE_X` 등)도
-  아직 상수 하나뿐이다 — 두 번째 도어즈가 필요해지면 그때 일반화한다.
-  바닥엔 이 프로젝트 디자인 그대로(새 에셋 없이 `Box3D` 하나로 표현한) 작은
-  아이템 세 개(Key/Note/Flashlight)를 뒀다 — Note 는 텍스처 테스트용으로
-  `assets/icon_folder.png`(기존 데스크톱 폴더 아이콘)를 입혀뒀다. `BoxTexture`
-  는 상자 6면을 가로 4칸×세로 3칸 전개도 하나로 매핑하는데, 32x32 아이콘
-  하나만으로는 그 전개도를 채울 수 없어서 `load_note_texture()`가 그 아이콘을
-  전개도 칸마다(6면 전부) 복제해 채운 텍스처를 만들어 올린다 — 어느 면을
-  보든 같은 아이콘이 그대로 보인다. 화면 중앙 조준선을 아이템 쪽으로
-  가까이·일정 거리 안으로 가져가면 그 옆에 "[E] Inspect 이름" 안내가 뜨고, `E`
-  를 누르면 화면 전체가 어두워지며(박스형 창 없이 전체 화면 딤(dim)) 그
-  아이템만 밝게 확대해서(자체 오프스크린 `Mesh3D` 인스턴스로 별도 렌더, 배경은
-  투명 클리어) 보여준다. 이 창이 떠 있는 동안 플레이어는 멈추고, **마우스
-  오른쪽 버튼을 누른 채 드래그**하면 아이템을 그 자리에서 돌려가며 볼 수
-  있고(같은 `mouse_motion_event`를 이때만 카메라 대신 아이템 회전에 씀), **마우스
-  휠**로 화면에 그려지는 크기 자체를 완만하게(최소 200×150 ~ CRT 화면
-  640×480 가득, 둘 다 같은 4:3 비율이라 안 찌그러진다) 조절할 수 있다.
-  `E`나 `Esc`로 닫힌다 — `Esc`로 창 전체를 끄는 단축키는 없다(닫기 전용).
-  `crt.rs`(main.rs 가 쓰는 것과 완전히 같은 모듈)를 그대로 가져다 써서 CRT
-  곡률/스캔라인/새도마스크/비네팅 + 색수차까지 씌운다 — `mesh3d.render()`로 3D 장면을 그
-  자신의 오프스크린 타깃에 그리고, 그 결과 + HUD(+ 아이템 확대 창) 를 2D
-  렌더러로 합성한 뒤 그 합성본 전체를 `Crt`의 오프스크린 타깃으로 한 번 더
-  흘려보내 마지막에 `crt.present()`가 왜곡을 입힌다(main.rs::draw() 와 같은
-  순서). 색수차/CRT 강도는 실제 게임 기본값(0.5/1.0) 그대로 고정해뒀다(조절
-  UI는 없다).
-  **`Ctrl+S`로 씬 내보내기**: 지금 코드에 박아 넣은 씬(방 벽/쓰레기 더미 +
-  아이템 + 문·손잡이 스냅샷)을 `mapfile.rs::MapScene`/`MapBoxData` JSON
-  포맷으로 `maps/mesh3d_test_scene.json`에 저장한다(`export_scene()`) — 그
-  파일은 코드에서 `MapScene::load()`로 다시 불러올 수 있다. 아이템처럼
-  텍스처가 있는 오브젝트는 텍스처의 실제 GPU 핸들 대신 그 경로 문자열
-  (`Item::texture_path`)을 저장해서(맵 파일 포맷 자체가 항상 경로 기반이라)
-  다시 불러올 때 그 경로로 텍스처를 새로 만들면 된다. 문/손잡이는 매 프레임
-  경첩 회전으로 다시 계산되는 동적 오브젝트라 저장 시점의 각도 하나만 스냅샷
-  으로 남는다. 저장하면 화면 위쪽에 잠깐 "Saved ..." 토스트가 뜬다(대화창과
-  달리 입력을 막지 않고 `SAVE_TOAST_DURATION`초 뒤 그냥 사라진다) — 아직 이
-  파일을 다시 불러와 씬을 초기화하는 코드는 안 붙였다(내보내기까지만).
-- **`src/apps/doors_game.rs` — 메인 게임 "DOORS"**: 메일 첨부 `test Setup.exe`로
+- **`src/apps/doors_game/` — 메인 게임 "DOORS"**(`mod.rs` = 창 앱/HUD/입력,
+  `world.rs` = 맵·플레이어 이동/충돌·조준, `dialogue.rs` = 타자기 대화창·Y/N 선택지): 메일 첨부 `test Setup.exe`로
   설치해 바탕화면에 생긴 `test.exe`(`FileKind::Game`)를 열면 OS 안의 창 하나로 뜨는 앱(`DoorsGameApp`, 별도 실행
   파일이 아니다). 3D 장면은 `mesh3d.rs`로 640x480 오프스크린에 그려서 창 안에 4:3
   으로 끼워 넣고(남는 곳은 검은 띠 — 그래서 창 크기 조절/최대화 자유), HUD/대화창도
@@ -249,13 +157,9 @@ cargo run
   미니게임/보상은 아직 없다) 그 뒤로는 더 말을 걸 수 없다. 거부하면 그냥 닫히고 다시
   말을 걸 수 있다.
   창을 닫으면 게임 진행은 처음부터(아직 저장 안 함). 문은 열리지 않는다.
-- **`src/mapfile.rs`**: `mesh3d_test.rs`의 `Ctrl+S` 내보내기가 쓰는 씬 저장/
-  불러오기 JSON 포맷(`MapScene`/`MapBoxData`) — 텍스처는 `TextureId`(런타임
-  GPU 핸들)가 아니라 에셋 경로 문자열로 저장해두고, 불러오는 쪽이 실제로
-  이미지를 읽어 텍스처를 만든 뒤 `to_box3d()`에 그 결과를 넘겨준다.
-  `name`/`parent`(부모 상자의 인덱스) 필드도 들고 있다 — `Box3D`/게임
-  런타임엔 없는, 씬 편집용 메타데이터다(예전에 있던 `map_editor.rs` 전용
-  맵 에디터는 지웠다 — 지금은 이 포맷을 내보내는 코드만 남아있다).
+  예전엔 이 엔진만 따로 띄워보던 테스트 창(`src/bin/mesh3d_test.rs`, 쓰레기 방/아이템
+  확대 보기/경사로 데모)과 그 창의 `Ctrl+S` 씬 내보내기 포맷(`src/mapfile.rs`)이
+  있었는데, 게임이 이 앱으로 옮겨오면서 둘 다 지웠다(필요하면 git 기록에 있다).
 
 ### 로컬라이제이션
 
@@ -300,22 +204,23 @@ src/
 ├── main.rs             # 진입점: Stage(EventHandler) + 프레임 루프
 ├── lib.rs              # bin/*.rs(director/director_panel)가 공유하는 라이브러리 진입점
 ├── foundation.rs       # 가짜 파일 시스템(FileSystem/FileId/FileKind) + Settings + 저장/불러오기
-├── gfx.rs              # 2D 배칭 렌더러 + 비트맵 폰트 아틀라스 + 에셋 로딩
-├── crt.rs              # 오프스크린 렌더 타깃 + CRT 셰이더(곡률/스캔라인/색수차) + 4:3 필러박스
 ├── ui.rs               # 9x 위젯(베벨/버튼/체크박스/아코디언/아이콘) + 커서
 ├── strings.rs          # 다국어(en/ko/ja) 문자열 테이블
 ├── secrets.rs          # 스토리 스포일러 상수(따로 분리)
-├── video.rs            # mp4 디코딩(Media Foundation) + 오디오 재생(WASAPI) + Weathering
-├── webview.rs          # Official Site: WebView2 오프스크린 렌더 + 주기적 캡처 → 텍스처
-├── ime.rs              # 한/일 IME 조합 타이밍/팝업 위치 우회(Win32 IMM32)
 ├── window_manager.rs   # 창 관리자 (z순서, 드래그, 크기조절, 타이틀바 버튼)
 ├── director_ipc.rs     # director/director_panel 간 JSON IPC (게임은 안 씀)
-├── mesh3d.rs           # 진짜 3D 메쉬 렌더러(GPU 깊이테스트) + Box3D + 충돌/바닥높이
-├── mapfile.rs          # mesh3d 장면(Box3D들) JSON 저장/불러오기 포맷 — mesh3d_test(저장)/게임(로드) 공유
+├── render/             # 그리기
+│   ├── gfx.rs             # 2D 배칭 렌더러 + 비트맵 폰트 아틀라스 + 에셋 로딩
+│   ├── crt.rs             # 오프스크린 렌더 타깃 + CRT 셰이더(곡률/스캔라인/색수차) + 4:3 필러박스
+│   └── mesh3d.rs          # 진짜 3D 메쉬 렌더러(GPU 깊이테스트) + Box3D/OBJ 메시 + 충돌/바닥높이
+├── platform/           # Windows 전용 기능 래퍼
+│   ├── video.rs           # mp4 디코딩(Media Foundation) + 오디오 재생(WASAPI) + Weathering
+│   ├── webview.rs         # Official Site: WebView2 오프스크린 렌더 + 주기적 캡처 → 텍스처
+│   └── ime.rs             # 한/일 IME 조합 타이밍/팝업 위치 우회(Win32 IMM32)
 ├── apps/               # 파일별 앱 — 새 앱은 파일 하나 + mod.rs 한 줄
 │   ├── mod.rs             # App 트레잇 / AppAction / Opened + open() 파일→앱 매칭
 │   ├── widgets.rs         # 여러 앱이 같이 쓰는 위젯(아이콘 격자/슬라이더/스크롤바)
-│   ├── doors_game.rs      # 메인 게임 DOORS — OS 창 안에서 도는 3D 게임
+│   ├── doors_game/        # 메인 게임 DOORS — OS 창 안에서 도는 3D 게임(mod/world/dialogue)
 │   ├── game_installer.rs  # 메일 첨부 test Setup.exe 설치 마법사 → 바탕화면에 test.exe
 │   ├── notepad.rs, video_player.rs, image_viewer.rs, mail.rs, explorer.rs,
 │   │   recycle_bin.rs, password.rs, credits.rs, settings.rs, official_site.rs
@@ -324,11 +229,10 @@ src/
     ├── lobby.rs, boot.rs, desktop.rs, shutdown.rs, erase.rs, bluescreen.rs
 src/bin/
 ├── director.rs          # 녹화용 게임 화면 창(별도 실행 파일)
-├── director_panel.rs    # 그 옆의 조작 창(별도 실행 파일)
-└── mesh3d_test.rs       # mesh3d.rs 만 따로 확인하는 최소 테스트 창(별도 실행 파일)
+└── director_panel.rs    # 그 옆의 조작 창(별도 실행 파일)
 ```
 
-의존 방향: `gfx`/`crt`/`foundation`/`video`/`strings`/`secrets`는 서로 독립적인 기반
+의존 방향: `render`/`platform`/`foundation`/`strings`/`secrets`는 서로 독립적인 기반
 레이어이고, `ui` → `apps` → `window_manager`/`scenes` → `main` 순으로 위 계층이 아래를
 참조한다.
 
