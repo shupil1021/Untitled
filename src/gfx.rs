@@ -119,8 +119,8 @@ pub struct Assets {
     pub icon_envelope: TextureId, // Mail 앱 폴더 트리의 Inbox 아이콘
     pub icon_recycle_empty: TextureId, // 휴지통(비어있음)
     pub icon_recycle_full: TextureId,  // 휴지통(안에 파일이 있음)
-    pub icon_exe: TextureId,           // 실행 파일(설치된 게임 DOORS.exe)
-    pub icon_setup: TextureId,         // 설치 파일(메일로 받은 DOORS Setup.exe)
+    pub icon_exe: TextureId,           // 실행 파일(설치된 게임 test.exe)
+    pub icon_setup: TextureId,         // 설치 파일(메일로 받은 test Setup.exe)
     // "팔라스 OS가 생성한 이미지" 로 바탕화면에 놓이는 실제 사진들 — FileKind::Img(idx) 의
     // idx 가 이 Vec 의 인덱스다. (텍스처, 원본 픽셀 폭, 원본 픽셀 높이) — 종횡비를 살려서
     // 레터박스로 그리려면 원본 크기가 필요해서 아이콘 텍스처들과 달리 크기도 같이 들고 있는다.

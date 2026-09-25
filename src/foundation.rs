@@ -25,10 +25,10 @@ pub enum FileKind {
     #[serde(rename = "Email")]
     Mail { attachment: Option<FileId> },                // 메일 앱 (첨부파일 하나까지)
     Explorer,                                           // 바탕화면의 File Explorer (탭 있는 탐색기)
-    // 메일로 받는 게임 설치 파일("DOORS Setup.exe") — 열면 설치 마법사
+    // 메일로 받는 게임 설치 파일("test Setup.exe") — 열면 설치 마법사
     // (apps/game_installer.rs)가 뜬다. 메일로 오는 게임은 항상 이 Setup 파일로 온다.
     GameSetup,
-    // 설치 마법사가 끝나면 바탕화면에 생기는 게임 아이콘("DOORS.exe") — 친구가 메일로
+    // 설치 마법사가 끝나면 바탕화면에 생기는 게임 아이콘("test.exe") — 친구가 메일로
     // 보낸 크랙 게임(STORY.md 7-1절). 열면 OS 안의 창 하나로 3D 게임
     // (apps/doors_game.rs)이 돈다.
     Game,
@@ -45,8 +45,8 @@ pub const MY_COMPUTER_NAME: &str = "My Computer";
 pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
 // 첫 메일에 첨부돼 오는 게임 설치 파일(FileKind::GameSetup)과, 설치가 끝나면
 // 바탕화면에 생기는 게임 아이콘(FileKind::Game)의 fs 이름.
-pub const GAME_SETUP_NAME: &str = "DOORS Setup.exe";
-pub const GAME_FILE_NAME: &str = "DOORS.exe";
+pub const GAME_SETUP_NAME: &str = "test Setup.exe";
+pub const GAME_FILE_NAME: &str = "test.exe";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FileNode {
@@ -196,12 +196,20 @@ impl FileSystem {
             FileKind::Mail { attachment: Some(id) } => {
                 if matches!(self.nodes[id].kind, FileKind::Game) {
                     self.nodes[id].kind = FileKind::GameSetup;
-                    self.nodes[id].name = GAME_SETUP_NAME.to_string();
                 }
             }
             _ => {
                 let setup = self.add(GAME_SETUP_NAME, FileKind::GameSetup);
                 self.nodes[mail].kind = FileKind::Mail { attachment: Some(setup) };
+            }
+        }
+        // 게임 이름이 바뀐 적이 있어서(DOORS → test) 예전 저장 파일에 남은 설치
+        // 파일/게임 아이콘 이름도 지금 이름으로 맞춘다.
+        for node in self.nodes.iter_mut() {
+            match node.kind {
+                FileKind::GameSetup => node.name = GAME_SETUP_NAME.to_string(),
+                FileKind::Game => node.name = GAME_FILE_NAME.to_string(),
+                _ => {}
             }
         }
     }

@@ -71,7 +71,7 @@ pub enum AppAction {
     // 첨부는 여러 개를 붙일 수 있어서 Vec(순서대로 붙인 순서).
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
     // 설치 마법사의 진행바가 다 참 — fs.game_installed 를 켜고 바탕화면에 게임
-    // 아이콘(DOORS.exe)을 만들어달라는 요청. 마법사 창은 그대로 둔다(Finish 로 닫음).
+    // 아이콘(test.exe)을 만들어달라는 요청. 마법사 창은 그대로 둔다(Finish 로 닫음).
     InstallComplete,
 }
 
@@ -271,7 +271,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (340.0, 260.0),
         },
-        // 메일로 받은 "DOORS Setup.exe" — 설치 마법사. 이미 설치됐으면 곧장 "이미
+        // 메일로 받은 "test Setup.exe" — 설치 마법사. 이미 설치됐으면 곧장 "이미
         // 설치됨" 페이지로 연다. 대화상자라 크기 고정.
         FileKind::GameSetup => Opened {
             app: Box::new(GameInstallerApp::new(fs.game_installed, settings.clone())),
@@ -283,7 +283,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             movable: true,
             min_size: (360.0, 220.0),
         },
-        // 설치가 끝나 바탕화면에 생긴 게임(DOORS.exe) — 별도 실행 파일이 아니라 이 OS 안의 창 하나로
+        // 설치가 끝나 바탕화면에 생긴 게임(test.exe) — 별도 실행 파일이 아니라 이 OS 안의 창 하나로
         // 돈다. 게임 화면은 창 안에 4:3 으로 맞춰 넣으므로(남는 곳은 검은 띠) 크기
         // 조절/최대화도 그냥 허용한다. 기본 크기는 클라이언트 영역이 480x360(4:3)이
         // 되게 테두리(3*2)/타이틀바(20)만큼 더했다.

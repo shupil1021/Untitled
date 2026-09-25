@@ -1,14 +1,15 @@
 //! 메인 게임 "DOORS" — 친구가 메일로 보낸 크랙 게임(STORY.md 7-1절). 메일 첨부
-//! `DOORS Setup.exe`로 설치(apps/game_installer.rs)하면 바탕화면에 생기는
-//! `DOORS.exe`(FileKind::Game)를 열었을 때 다른 앱들처럼 PalaceOS 안의 창 하나로
+//! `test Setup.exe`로 설치(apps/game_installer.rs)하면 바탕화면에 생기는
+//! `test.exe`(FileKind::Game)를 열었을 때 다른 앱들처럼 PalaceOS 안의 창 하나로
 //! 뜬다(별도 실행 파일/OS 창이 아니다). 3D 장면은 `mesh3d.rs` 로 오프스크린에 그린
 //! 뒤, 그 결과를 창 안에 4:3 비율로 끼워 넣는다(남는 곳은 검은 띠). CRT 효과는
 //! 바깥 OS 화면 전체에 이미 걸려 있어서 따로 안 입힌다.
 //!
 //! 맵은 지금 가장 단순한 형태 하나: 사방(+바닥/천장)이 막힌 방, 플레이어 정면 벽에
 //! 닫힌 문 하나. 그 문이 도어즈(Doors, 말하는 문 NPC)다 — 손잡이를 조준하고 `E`를
-//! 누르면 보리지꽃을 달라고 하고 `[Y] 수락 / [N] 거부` 선택지가 뜬다. 수락하면 꽃
-//! 퀘스트 스텁 화면(진짜 미니게임은 아직 없음, `Enter`로 클리어 처리)이 뜬다.
+//! 누르면 보리지꽃을 달라고 하고 `[Y] 수락 / [N] 거부` 선택지가 뜬다. 지금은 수락하면
+//! 퀘스트가 "수락됨"으로 기록되기만 한다(꽃을 구하는 미니게임/보상은 아직 없다) —
+//! 수락한 뒤로는 문에 더 말을 걸 수 없고, 거부하면 다시 말을 걸 수 있다.
 //!
 //! 조작: 게임 화면을 클릭하면 마우스 시점 모드(커서가 사라지고 마우스로 시점이
 //! 돈다 — main.rs 가 scenes::request_mouse_look() 요청을 받아 처리), `Esc` 나 다른
@@ -75,7 +76,6 @@ const DIALOGUE_TEXT_SCALE: f32 = 1.4;
 const DIALOGUE_LINE_H: f32 = CELL_H * DIALOGUE_TEXT_SCALE;
 const DIALOGUE_CHAR_DELAY_MIN: f32 = 0.02;
 const DIALOGUE_CHAR_DELAY_MAX: f32 = 0.09;
-const DIM_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.6];
 
 // Mesh3D(오프스크린 타깃 + 셰이더/파이프라인)는 창을 열 때마다 새로 만들면 닫을
 // 때 지울 방법이 없어(App 은 Drop 에서 ctx 를 못 받는다) GPU 자원이 계속 쌓인다 —
@@ -87,21 +87,10 @@ thread_local! {
 
 // 대화 한 줄(Line)과 수락/거부 선택지(Choice).
 enum DialogueEntry {
+    // 지금 도어즈는 선택지 한 줄만 말하지만, 평범한 대사/안내 줄도 곧 다시 쓸 자리라 남겨둔다.
+    #[allow(dead_code)]
     Line(String),
-    Choice { prompt: String, on_accept: DialogueAction },
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum DialogueAction {
-    None,
-    StartFlowerQuest,
-}
-
-// 꽃 퀘스트를 수락하면 뜨는 화면 — 진짜 미니게임 대신 자리만 잡아둔 스텁.
-#[derive(PartialEq)]
-enum GameOverlay {
-    None,
-    SubMinigameStub,
+    Choice { prompt: String },
 }
 
 fn rand01(seed: &mut u64) -> f32 {
@@ -236,10 +225,7 @@ pub struct DoorsGameApp {
     dialogue_visible_chars: usize,
     dialogue_next_char_in: f32, // 다음 글자를 드러내기까지 남은 시간(초)
     dialogue_rng: u64,
-    pending_action: DialogueAction,
-    doors_fulfilled: bool, // 보리지꽃을 이미 건넸는지 — 그 뒤론 더 말을 걸 수 없다
-    flowers: u32,
-    overlay: GameOverlay,
+    quest_accepted: bool, // 도어즈의 부탁(보리지꽃)을 수락했는지 — 그 뒤론 더 말을 걸 수 없다
 }
 
 impl DoorsGameApp {
@@ -254,10 +240,7 @@ impl DoorsGameApp {
             dialogue_visible_chars: 0,
             dialogue_next_char_in: 0.0,
             dialogue_rng: 0x9E3779B97F4A7C15,
-            pending_action: DialogueAction::None,
-            doors_fulfilled: false,
-            flowers: 0,
-            overlay: GameOverlay::None,
+            quest_accepted: false,
         }
     }
 
@@ -303,17 +286,17 @@ impl DoorsGameApp {
         self.dialogue_next_char_in = 0.0;
     }
 
-    // 고른 결과의 동작은 대화창이 닫힌 뒤(update() 에서) 실행한다.
+    // 선택지를 고르면 대화를 닫는다 — 수락이면 퀘스트 수락만 기록한다.
     fn resolve_choice(&mut self, accepted: bool) {
-        if let Some(DialogueEntry::Choice { on_accept, .. }) = self.dialogue_entries.get(self.dialogue_index) {
-            self.pending_action = if accepted { *on_accept } else { DialogueAction::None };
+        if matches!(self.dialogue_entries.get(self.dialogue_index), Some(DialogueEntry::Choice { .. })) {
+            self.quest_accepted |= accepted;
             self.dialogue_index += 1;
         }
     }
 
     // 도어즈는 보리지꽃을 달라는 말만 한다.
     fn talk_to_doors(&mut self) {
-        self.start_dialogue(vec![DialogueEntry::Choice { prompt: "보리지꽃을 줘.".to_string(), on_accept: DialogueAction::StartFlowerQuest }]);
+        self.start_dialogue(vec![DialogueEntry::Choice { prompt: "보리지꽃을 줘.".to_string() }]);
     }
 
     fn handle_input(&mut self, win: &WinInput, in_view: bool) {
@@ -331,15 +314,6 @@ impl DoorsGameApp {
             return;
         }
 
-        if self.overlay == GameOverlay::SubMinigameStub {
-            if input.pressed(KeyCode::Enter) || input.pressed(KeyCode::KpEnter) {
-                self.flowers += 1;
-                self.doors_fulfilled = true;
-                self.overlay = GameOverlay::None;
-                self.start_dialogue(vec![DialogueEntry::Line("보리지꽃을 손에 넣었다...".to_string())]);
-            }
-            return;
-        }
         if self.dialogue_active() {
             if self.dialogue_choice_ready() {
                 if input.pressed(KeyCode::Y) {
@@ -352,7 +326,7 @@ impl DoorsGameApp {
             }
             return;
         }
-        if input.pressed(KeyCode::E) && self.door_aimed && !self.doors_fulfilled {
+        if input.pressed(KeyCode::E) && self.door_aimed && !self.quest_accepted {
             self.talk_to_doors();
         }
     }
@@ -384,15 +358,9 @@ impl App for DoorsGameApp {
                 self.dialogue_next_char_in += DIALOGUE_CHAR_DELAY_MIN + rand01(&mut self.dialogue_rng) * (DIALOGUE_CHAR_DELAY_MAX - DIALOGUE_CHAR_DELAY_MIN);
             }
         }
-        if !self.dialogue_active() && self.pending_action != DialogueAction::None {
-            if self.pending_action == DialogueAction::StartFlowerQuest {
-                self.overlay = GameOverlay::SubMinigameStub;
-            }
-            self.pending_action = DialogueAction::None;
-        }
 
-        // 대화창/스텁 화면이 떠 있는 동안은 이동·시점·조준을 멈춘다.
-        let frozen = self.dialogue_active() || self.overlay != GameOverlay::None;
+        // 대화창이 떠 있는 동안은 이동·시점·조준을 멈춘다.
+        let frozen = self.dialogue_active();
         if !frozen {
             if self.captured {
                 let (dx, dy) = win.input.look_delta;
@@ -422,7 +390,7 @@ impl App for DoorsGameApp {
 
         if self.door_aimed
             && !frozen
-            && !self.doors_fulfilled
+            && !self.quest_accepted
             && let Some((sx, sy)) = world_to_view(&cam, HANDLE_POS)
         {
             let label = "[E] Examine";
@@ -431,25 +399,12 @@ impl App for DoorsGameApp {
             r.text(px(sx + 14.0), py(sy - 8.0), label, 0.7 * s, [0.6, 0.9, 1.0, 1.0]);
         }
 
-        if self.flowers > 0 {
-            r.text(px(10.0), py(10.0), &format!("보리지꽃 x{}", self.flowers), 0.8 * s, [0.75, 0.8, 1.0, 1.0]);
-        }
 
         if !self.captured && !frozen {
             let hint = "클릭해서 시점 조작 (Esc: 해제)";
             let tw = r.text_width(hint, 0.7 * s);
             r.rect(px(VIEW_W / 2.0) - tw / 2.0 - 6.0 * s, py(VIEW_H - 30.0), tw + 12.0 * s, 20.0 * s, [0.0, 0.0, 0.0, 0.6]);
             r.text(px(VIEW_W / 2.0) - tw / 2.0, py(VIEW_H - 27.0), hint, 0.7 * s, [0.9, 0.9, 0.9, 1.0]);
-        }
-
-        if self.overlay == GameOverlay::SubMinigameStub {
-            r.rect(view.x, view.y, view.w, view.h, DIM_COLOR);
-            let msg = "[스텁] 보리지꽃 미니게임 자리";
-            let tw = r.text_width(msg, 0.9 * s);
-            r.text(px(VIEW_W / 2.0) - tw / 2.0, py(VIEW_H / 2.0 - 20.0), msg, 0.9 * s, [1.0, 1.0, 1.0, 1.0]);
-            let hint = "Enter: 클리어 처리(테스트용)";
-            let hw = r.text_width(hint, 0.7 * s);
-            r.text(px(VIEW_W / 2.0) - hw / 2.0, py(VIEW_H / 2.0 + 10.0), hint, 0.7 * s, [0.8, 0.9, 1.0, 1.0]);
         }
 
         if self.dialogue_active() {

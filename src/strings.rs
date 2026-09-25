@@ -87,7 +87,7 @@ pub mod video_player {
     pub const PUT_VIDEO_AT: S = S { en: "Put a video at", ko: "다음 경로에 동영상을 넣으세요:", ja: "動画を次の場所に置いてください:" };
 }
 
-// apps/game_installer.rs — 메일 첨부 "DOORS Setup.exe"를 열면 뜨는 설치 마법사.
+// apps/game_installer.rs — 메일 첨부 "test Setup.exe"를 열면 뜨는 설치 마법사.
 pub mod game_installer {
     use super::S;
     pub const INSTALL: S = S { en: "Install", ko: "설치", ja: "インストール" };
@@ -95,28 +95,28 @@ pub mod game_installer {
 
     pub const PAGE_ALREADY_INSTALLED: S = S { en: "Already Installed", ko: "이미 설치됨", ja: "インストール済み" };
     pub const ALREADY_INSTALLED_MSG: S =
-        S { en: "DOORS is already installed on this computer.", ko: "이 컴퓨터에는 DOORS가 이미 설치되어 있습니다.", ja: "このコンピューターにはDOORSが既にインストールされています。" };
+        S { en: "test is already installed on this computer.", ko: "이 컴퓨터에는 test가 이미 설치되어 있습니다.", ja: "このコンピューターにはtestが既にインストールされています。" };
 
     pub const PAGE_WELCOME: S = S { en: "Welcome", ko: "환영합니다", ja: "ようこそ" };
     pub const WELCOME_MSG: S = S {
-        en: "This wizard will install DOORS on your computer.",
-        ko: "이 마법사는 이 컴퓨터에 DOORS를 설치합니다.",
-        ja: "このウィザードは、このコンピューターにDOORSをインストールします。",
+        en: "This wizard will install test on your computer.",
+        ko: "이 마법사는 이 컴퓨터에 test를 설치합니다.",
+        ja: "このウィザードは、このコンピューターにtestをインストールします。",
     };
     pub const CLICK_INSTALL_OR_CANCEL: S =
         S { en: "Click Install to continue, or Cancel to exit.", ko: "계속하려면 설치를, 종료하려면 취소를 누르세요.", ja: "続けるにはインストール、終了するにはキャンセルを押してください。" };
 
     pub const PAGE_INSTALLING: S = S { en: "Installing", ko: "설치 중", ja: "インストール中" };
-    pub const INSTALLING_MSG: S = S { en: "Please wait while DOORS is installed.", ko: "DOORS를 설치하는 동안 잠시 기다려 주세요.", ja: "DOORSのインストール中です。お待ちください。" };
+    pub const INSTALLING_MSG: S = S { en: "Please wait while test is installed.", ko: "test를 설치하는 동안 잠시 기다려 주세요.", ja: "testのインストール中です。お待ちください。" };
     pub const STEP_COPYING: S = S { en: "Copying files...", ko: "파일 복사 중...", ja: "ファイルをコピー中..." };
-    pub const STEP_REGISTERING: S = S { en: "Registering doors.dll...", ko: "doors.dll 등록 중...", ja: "doors.dllを登録中..." };
+    pub const STEP_REGISTERING: S = S { en: "Registering test.dll...", ko: "test.dll 등록 중...", ja: "test.dllを登録中..." };
     pub const STEP_UPDATING: S = S { en: "Updating configuration...", ko: "설정 업데이트 중...", ja: "設定を更新中..." };
     pub const STEP_VERIFYING: S = S { en: "Verifying installation...", ko: "설치 확인 중...", ja: "インストールを確認中..." };
     pub const STEP_FINALIZING: S = S { en: "Finalizing...", ko: "마무리 중...", ja: "仕上げ中..." };
     pub const DONE: S = S { en: "Done.", ko: "완료.", ja: "完了。" };
 
     pub const PAGE_FINISH: S = S { en: "Setup Complete", ko: "설치 완료", ja: "セットアップ完了" };
-    pub const FINISH_MSG: S = S { en: "Setup has finished installing DOORS on your computer.", ko: "DOORS 설치가 완료되었습니다.", ja: "DOORSのインストールが完了しました。" };
+    pub const FINISH_MSG: S = S { en: "Setup has finished installing test on your computer.", ko: "test 설치가 완료되었습니다.", ja: "testのインストールが完了しました。" };
     pub const CLICK_FINISH_TO_CLOSE: S = S { en: "Click Finish to close this wizard.", ko: "마법사를 닫으려면 마침을 누르세요.", ja: "ウィザードを閉じるには完了を押してください。" };
 }
 
@@ -124,7 +124,7 @@ pub mod game_installer {
 pub mod mail {
     use super::S;
 
-    // 첫 메일 — 친구가 크랙 게임 설치 파일(DOORS Setup.exe)을 첨부해서 보낸다(STORY.md 7-1절).
+    // 첫 메일 — 친구가 크랙 게임 설치 파일(test Setup.exe)을 첨부해서 보낸다(STORY.md 7-1절).
     pub const GAME_MAIL_SUBJECT: S = S { en: "try this lol", ko: "야 이거 해봐 ㅋㅋ", ja: "これやってみて笑" };
     pub const GAME_MAIL_BODY: S = S {
         en: "Got a cracked copy of that game.\nJust run the setup and install it.\n\nIt's kind of weird though.\nTell me what you think after you play it.",

@@ -1,8 +1,8 @@
-//! 메일로 받은 "DOORS Setup.exe"(FileKind::GameSetup)를 열면 뜨는 설치 마법사 —
+//! 메일로 받은 "test Setup.exe"(FileKind::GameSetup)를 열면 뜨는 설치 마법사 —
 //! 진짜 설치할 건 없지만(가짜 설치) Welcome → Installing(들쭉날쭉한 진행바) →
 //! Finish 세 페이지를 넘어간다. 진행바가 다 차는 순간 AppAction::InstallComplete 를
 //! 한 번 돌려주는데, desktop.rs 가 받아서 fs.game_installed 를 켜고 바탕화면에
-//! 게임 아이콘(DOORS.exe, FileKind::Game)을 만든다 — 그 아이콘을 열면 게임
+//! 게임 아이콘(test.exe, FileKind::Game)을 만든다 — 그 아이콘을 열면 게임
 //! (apps/doors_game.rs)이 OS 창 안에서 뜬다. 이미 설치된 뒤 Setup.exe 를 다시
 //! 열면 Welcome 부터 다시 태우지 않고 곧장 AlreadyInstalled 페이지로 연다 —
 //! 중복으로 InstallComplete 를 보내 바탕화면에 아이콘이 두 개 생기는 걸 막는다.
