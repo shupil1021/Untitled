@@ -353,15 +353,10 @@ impl Renderer {
         self.clip
     }
 
-    fn push_quad(
-        &mut self,
-        tex: TextureId,
-        x: f32, y: f32, w: f32, h: f32,
-        u0: f32, v0: f32, u1: f32, v1: f32,
-        color: Color,
-    ) {
-        let (mut x, mut y, mut w, mut h) = (x, y, w, h);
-        let (mut u0, mut v0, mut u1, mut v1) = (u0, v0, u1, v1);
+    // dst 는 화면 사각형, uv 는 텍스처 안의 [u0, v0, u1, v1] 사각형.
+    fn push_quad(&mut self, tex: TextureId, dst: Rect, uv: [f32; 4], color: Color) {
+        let Rect { mut x, mut y, mut w, mut h } = dst;
+        let [mut u0, mut v0, mut u1, mut v1] = uv;
         if let Some(c) = self.clip {
             let x0 = x.max(c.x);
             let y0 = y.max(c.y);
@@ -411,17 +406,17 @@ impl Renderer {
 
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
         let white = self.white;
-        self.push_quad(white, x, y, w, h, 0.0, 0.0, 1.0, 1.0, color);
+        self.push_quad(white, Rect::new(x, y, w, h), [0.0, 0.0, 1.0, 1.0], color);
     }
 
     pub fn sprite(&mut self, tex: TextureId, x: f32, y: f32, w: f32, h: f32, color: Color) {
-        self.push_quad(tex, x, y, w, h, 0.0, 0.0, 1.0, 1.0, color);
+        self.push_quad(tex, Rect::new(x, y, w, h), [0.0, 0.0, 1.0, 1.0], color);
     }
 
     // 스프라이트 시트에서 (u0,v0)-(u1,v1) 부분만 잘라서 그린다.
     #[allow(clippy::too_many_arguments)]
     pub fn sprite_uv(&mut self, tex: TextureId, x: f32, y: f32, w: f32, h: f32, u0: f32, v0: f32, u1: f32, v1: f32, color: Color) {
-        self.push_quad(tex, x, y, w, h, u0, v0, u1, v1, color);
+        self.push_quad(tex, Rect::new(x, y, w, h), [u0, v0, u1, v1], color);
     }
 
     // 글자 하나의 다음 펜 위치까지의 이동폭(FONT_PX 기준 → scale 곱해서 실제 픽셀로).
@@ -452,7 +447,7 @@ impl Renderer {
         let baseline = y + ascent * scale;
         let gx = x + xmin * scale;
         let gy = baseline - (ymin + h) * scale;
-        self.push_quad(font, gx, gy, w * scale, h * scale, u0, v0, u1, v1, color);
+        self.push_quad(font, Rect::new(gx, gy, w * scale, h * scale), [u0, v0, u1, v1], color);
     }
 
     // 아틀라스에 없는 글자 대신 그리는 "깨진 글자" 자리표시자 — 지원 안 되는

@@ -14,7 +14,7 @@ use crate::render::gfx::{Assets, Color, Rect, Renderer, CELL_H};
 use crate::strings::{mail as s, t};
 use crate::ui::*;
 
-use super::widgets::{ease_scroll, scrollbar};
+use super::widgets::{ease_scroll, scrollbar, Scrollbar};
 use super::{App, AppAction, WinInput};
 
 struct MailMsg {
@@ -671,7 +671,7 @@ impl MailApp {
             if max_list_scroll > 0.0 {
                 let sb_x = pane.x + pane.w - 8.0;
                 let frac = (list_area.h / total_h).min(1.0);
-                scrollbar(r, win, sb_x, list_area.y, 8.0, list_area.h, frac, self.list_scroll_disp, &mut self.list_scroll, max_list_scroll, &mut self.list_sb_drag);
+                scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, list_area.y, 8.0, list_area.h), visible_frac: frac, disp: self.list_scroll_disp, max_scroll: max_list_scroll }, &mut self.list_scroll, &mut self.list_sb_drag);
             }
             // 예전엔 여기서 헤더+목록만 따로 한 번 더 회색 테두리로 감쌌는데, 이제
             // update() 가 트리+내용 전체를 이미 한 번 감싸므로 이중 테두리가 되어
@@ -840,7 +840,7 @@ impl MailApp {
         if max_body_scroll > 0.0 {
             let sb_x = body_area.x + body_area.w - SB_W - 8.0;
             let frac = visible as f32 / total_lines;
-            scrollbar(r, win, sb_x, body_area.y + 2.0, SB_W, body_area.h - 4.0, frac, self.body_scroll_disp, &mut self.body_scroll, max_body_scroll, &mut self.body_sb_drag);
+            scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, body_area.y + 2.0, SB_W, body_area.h - 4.0), visible_frac: frac, disp: self.body_scroll_disp, max_scroll: max_body_scroll }, &mut self.body_scroll, &mut self.body_sb_drag);
         }
 
         if let Some(id) = finished_download {
@@ -925,7 +925,7 @@ impl MailApp {
             if max_list_scroll > 0.0 {
                 let sb_x = pane.x + pane.w - 8.0;
                 let frac = (list_area.h / total_h).min(1.0);
-                scrollbar(r, win, sb_x, list_area.y, 8.0, list_area.h, frac, self.list_scroll_disp, &mut self.list_scroll, max_list_scroll, &mut self.list_sb_drag);
+                scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, list_area.y, 8.0, list_area.h), visible_frac: frac, disp: self.list_scroll_disp, max_scroll: max_list_scroll }, &mut self.list_scroll, &mut self.list_sb_drag);
             }
             return AppAction::None;
         };
@@ -1019,7 +1019,7 @@ impl MailApp {
         if max_body_scroll > 0.0 {
             let sb_x = body_area.x + body_area.w - SB_W - 8.0;
             let frac = visible as f32 / total_lines;
-            scrollbar(r, win, sb_x, body_area.y + 2.0, SB_W, body_area.h - 4.0, frac, self.body_scroll_disp, &mut self.body_scroll, max_body_scroll, &mut self.body_sb_drag);
+            scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, body_area.y + 2.0, SB_W, body_area.h - 4.0), visible_frac: frac, disp: self.body_scroll_disp, max_scroll: max_body_scroll }, &mut self.body_scroll, &mut self.body_sb_drag);
         }
 
         AppAction::None
@@ -1440,7 +1440,7 @@ impl MailApp {
         if max_body_scroll > 0.0 {
             let sb_x = body_area.x + body_area.w - SB_W - 6.0;
             let frac = (visible as f32 / total_lines).min(1.0);
-            scrollbar(r, win, sb_x, body_area.y + 4.0, SB_W, body_area.h - 8.0, frac, self.body_scroll_disp, &mut self.body_scroll, max_body_scroll, &mut self.body_sb_drag);
+            scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, body_area.y + 4.0, SB_W, body_area.h - 8.0), visible_frac: frac, disp: self.body_scroll_disp, max_scroll: max_body_scroll }, &mut self.body_scroll, &mut self.body_sb_drag);
         }
 
         self.draw_new_compose_buttons(r, area, win, lang)

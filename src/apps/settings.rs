@@ -10,7 +10,7 @@ use crate::render::gfx::{Assets, Rect, Renderer, CELL_H};
 use crate::strings::{common, settings as s, t};
 use crate::ui::*;
 
-use super::widgets::{accordion_list, draw_slider, ease_scroll, scrollbar};
+use super::widgets::{accordion_list, draw_slider, ease_scroll, scrollbar, Scrollbar};
 use super::{App, AppAction, WinInput};
 
 // TABS(foundation.rs) 의 한국어/일본어 번역 — TABS 는 순전히 표시용 상수라 다른
@@ -285,10 +285,7 @@ impl App for SettingsApp {
                 if max_scroll > 0.0 {
                     let sb_x = cx + list_w + BOX_PAD * 2.0 + 4.0;
                     let frac = viewport_h / total_h;
-                    scrollbar(
-                        r, win, sb_x, viewport_top, 8.0, viewport_h, frac,
-                        self.graphics_scroll_disp, &mut self.graphics_scroll, max_scroll, &mut self.graphics_sb_drag,
-                    );
+                    scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, viewport_top, 8.0, viewport_h), visible_frac: frac, disp: self.graphics_scroll_disp, max_scroll }, &mut self.graphics_scroll, &mut self.graphics_sb_drag);
                 }
             }
             1 => {
@@ -371,7 +368,7 @@ impl App for SettingsApp {
                 if max_scroll > 0.0 {
                     let sb_x = area.x + area.w - 14.0;
                     let frac = viewport_h / total_h;
-                    scrollbar(r, win, sb_x, viewport_top, 8.0, viewport_h, frac, self.video_scroll_disp, &mut self.video_scroll, max_scroll, &mut self.video_sb_drag);
+                    scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, viewport_top, 8.0, viewport_h), visible_frac: frac, disp: self.video_scroll_disp, max_scroll }, &mut self.video_scroll, &mut self.video_sb_drag);
                 }
             }
             2 => {
@@ -510,10 +507,7 @@ impl App for SettingsApp {
                 if max_scroll > 0.0 {
                     let sb_x = cx + list_w + BOX_PAD * 2.0 + 4.0;
                     let frac = viewport_h / total_h;
-                    scrollbar(
-                        r, win, sb_x, viewport_top, 8.0, viewport_h, frac,
-                        self.interface_scroll_disp, &mut self.interface_scroll, max_scroll, &mut self.interface_sb_drag,
-                    );
+                    scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, viewport_top, 8.0, viewport_h), visible_frac: frac, disp: self.interface_scroll_disp, max_scroll }, &mut self.interface_scroll, &mut self.interface_sb_drag);
                 }
             }
             _ => {}

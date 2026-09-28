@@ -14,6 +14,7 @@ use std::rc::Rc;
 use miniquad::RenderingBackend;
 
 use crate::foundation::{Language, Settings};
+use crate::random::{LoadCurve, Rng};
 use crate::render::gfx::{Assets, Color, Rect, Renderer};
 use crate::strings::{common, game_installer as s, t};
 use crate::ui::*;
@@ -24,64 +25,6 @@ const INSTALL_DURATION: f32 = 2.6; // 진행바가 다 차는 데 걸리는 시�
 const FINISH_HOLD: f32 = 0.6; // 진행바가 100% 를 찍은 뒤 "Done." 을 잠깐 보여주는 시간(초)
 const BTN_W: f32 = 74.0;
 const BTN_H: f32 = 24.0;
-
-// apps/installer.rs(옛 HexTool 마법사)와 같은 용도의 아주 단순한 xorshift64
-// 의사난수 — 로딩 바를 들쭉날쭉하게 만드는 waypoint 생성에만 쓴다.
-struct Rng(u64);
-impl Rng {
-    fn new(seed: u64) -> Rng {
-        Rng(seed | 1)
-    }
-    fn next_u32(&mut self) -> u32 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        (self.0 >> 16) as u32
-    }
-    fn range_f32(&mut self, min: f32, max: f32) -> f32 {
-        min + (self.next_u32() % 1_000_000) as f32 / 1_000_000.0 * (max - min)
-    }
-}
-
-fn build_load_waypoints(rng: &mut Rng) -> Vec<(f32, f32)> {
-    const SEGMENTS: usize = 7;
-    let mut xd: Vec<f32> = (0..SEGMENTS).map(|_| rng.range_f32(0.4, 1.6)).collect();
-    let xsum: f32 = xd.iter().sum();
-    for v in xd.iter_mut() {
-        *v /= xsum;
-    }
-    let mut yd: Vec<f32> = (0..SEGMENTS).map(|_| rng.range_f32(0.05, 1.0).powf(2.0)).collect();
-    let ysum: f32 = yd.iter().sum();
-    for v in yd.iter_mut() {
-        *v /= ysum;
-    }
-    let mut x = 0.0;
-    let mut y = 0.0;
-    let mut out = vec![(0.0, 0.0)];
-    for i in 0..SEGMENTS {
-        x += xd[i];
-        y += yd[i];
-        out.push((x, y));
-    }
-    // 부동소수점 누적 오차로 마지막 점이 (1.0, 1.0) 에 살짝 못 미치면 progress 가
-    // 영영 1.0 을 못 찍어 진행바가 99% 근처에서 멈춘다 — 강제로 맞춰준다.
-    if let Some(last) = out.last_mut() {
-        *last = (1.0, 1.0);
-    }
-    out
-}
-
-fn sample_load(waypoints: &[(f32, f32)], t: f32) -> f32 {
-    for w in waypoints.windows(2) {
-        let (x0, y0) = w[0];
-        let (x1, y1) = w[1];
-        if t <= x1 {
-            let seg_t = if x1 > x0 { ((t - x0) / (x1 - x0)).clamp(0.0, 1.0) } else { 1.0 };
-            return y0 + (y1 - y0) * seg_t;
-        }
-    }
-    1.0
-}
 
 fn status_steps(lang: Language) -> [&'static str; 5] {
     [t(lang, s::STEP_COPYING), t(lang, s::STEP_REGISTERING), t(lang, s::STEP_UPDATING), t(lang, s::STEP_VERIFYING), t(lang, s::STEP_FINALIZING)]
@@ -100,7 +43,7 @@ pub struct GameInstallerApp {
     progress: f32,
     finish_hold: f32,
     sent_complete: bool,
-    load_waypoints: Vec<(f32, f32)>,
+    load_curve: LoadCurve,
     settings: Rc<RefCell<Settings>>,
 }
 
@@ -108,14 +51,13 @@ impl GameInstallerApp {
     // already_installed 면(fs.game_installed 가 이미 true) Welcome 부터 다시 태우지
     // 않고 바로 AlreadyInstalled 페이지로 연다.
     pub(super) fn new(already_installed: bool, settings: Rc<RefCell<Settings>>) -> GameInstallerApp {
-        let mut rng = Rng::new((miniquad::date::now() * 1e6) as u64);
-        GameInstallerApp {
+                GameInstallerApp {
             page: if already_installed { Page::AlreadyInstalled } else { Page::Welcome },
             elapsed: 0.0,
             progress: 0.0,
             finish_hold: 0.0,
             sent_complete: false,
-            load_waypoints: build_load_waypoints(&mut rng),
+            load_curve: LoadCurve::random(&mut Rng::from_time()),
             settings,
         }
     }
@@ -224,7 +166,7 @@ impl App for GameInstallerApp {
                 if !done {
                     self.elapsed += win.dt;
                     let t_frac = (self.elapsed / INSTALL_DURATION).min(1.0);
-                    self.progress = sample_load(&self.load_waypoints, t_frac);
+                    self.progress = self.load_curve.sample(t_frac);
                 } else {
                     if !self.sent_complete {
                         // 게이지가 다 찬 이 순간 딱 한 번만 설치 완료를 알린다 — 창은

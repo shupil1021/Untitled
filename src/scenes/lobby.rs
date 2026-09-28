@@ -3,6 +3,7 @@
 
 use crate::apps::{App, AppAction, SettingsApp, WinInput};
 use crate::foundation::Language;
+use crate::random::Rng;
 use crate::render::gfx::{Rect, Renderer, ADVANCE, CELL_H, SCREEN_H, SCREEN_W};
 use crate::strings::{common, lobby as s, settings, t};
 use crate::ui::*;
@@ -11,24 +12,6 @@ use crate::window_manager::draw_x;
 use super::boot::{LOGO, LOGO_SCALE};
 use super::{BootScene, Frame, Scene, ShutdownScene, Transition};
 
-// 아주 단순한 xorshift64 의사난수 — boot.rs 의 Rng 와 같은 용도지만, 씬마다 쓰는
-// 자리가 달라서(부팅 화면은 로딩 웨이포인트, 여긴 정전기/글리치) 굳이 공유 모듈로
-// 안 뽑고 각자 작게 둔다.
-struct Rng(u64);
-impl Rng {
-    fn new(seed: u64) -> Rng {
-        Rng(seed | 1)
-    }
-    fn next_u32(&mut self) -> u32 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        (self.0 >> 16) as u32
-    }
-    fn range_f32(&mut self, min: f32, max: f32) -> f32 {
-        min + (self.next_u32() % 1_000_000) as f32 / 1_000_000.0 * (max - min)
-    }
-}
 
 const NOISE_COUNT: usize = 220; // 프레임마다 새로 뿌리는 정전기 알갱이 개수
 const GLITCH_BURST: f32 = 0.14; // 글리치가 지속되는 시간(초)
@@ -79,7 +62,7 @@ impl LobbyScene {
     // 이 화면 고유의 연출을 건드리는 대신 자기가 화면 위에 따로 덧그리는
     // 오버레이로 글리치/노이즈를 흉내 낸다(src/bin/director.rs 참고).
     pub fn new() -> LobbyScene {
-        let mut rng = Rng::new((miniquad::date::now() * 1e6) as u64);
+        let mut rng = Rng::from_time();
         let glitch_timer = rng.range_f32(GLITCH_GAP_MIN, GLITCH_GAP_MAX);
         LobbyScene {
             t: 0.0,

@@ -20,7 +20,7 @@ use crate::render::gfx::{Assets, Color, Rect, Renderer, CELL_H};
 use crate::strings::{common, recycle_bin as s, t};
 use crate::ui::*;
 
-use super::widgets::{ease_scroll, icon_grid, scrollbar};
+use super::widgets::{ease_scroll, icon_grid, scrollbar, Scrollbar};
 use super::{App, AppAction, WinInput};
 
 type Items = Vec<(FileId, String, IconType)>;
@@ -32,7 +32,7 @@ const LEFT_W: f32 = 140.0;
 const ICON_S: f32 = 48.0;
 const LEFT_TEXT_SCALE: f32 = 0.75;
 const SEL_BTN_W: f32 = 66.0;
-// ui::button()/raw_button() 은 라벨을 항상 scale 1.0 으로 그려서 "Restore"(7글자,
+// ui::button() 은 라벨을 항상 scale 1.0 으로 그려서 "Restore"(7글자,
 // 77px)가 이 버튼 폭 안에 안 들어가고 테두리 밖으로 삐져나왔다 — 그래서 이 버튼만
 // 공용 button() 을 안 쓰고 직접 그리며 scale 을 낮췄다(상태바/주소창과 같은 0.8).
 const SEL_BTN_SCALE: f32 = 0.8;
@@ -48,7 +48,7 @@ fn sel_button(r: &mut Renderer, btn: Rect, label: &str, enabled: bool, win: &Win
     } else {
         raised(r, btn.x, btn.y, btn.w, btn.h);
     }
-    // ui.rs::raw_button() 과 같은 이유 — 번역 문구가 SEL_BTN_W 보다 넓어지면
+    // ui.rs::button() 과 같은 이유 — 번역 문구가 SEL_BTN_W 보다 넓어지면
     // (예: "Restore" → 일본어 "元に戻す") 가운데 정렬 텍스트가 버튼 밖으로 새어
     // 옆 항목과 겹쳐 보이므로, 안 들어갈 땐 왼쪽으로 당기고 잘라서 최소한 버튼
     // 안에만 그리게 한다.
@@ -193,7 +193,7 @@ impl RecycleBinApp {
         if max_scroll > 0.0 {
             let sb_x = area.x + area.w - 9.0;
             let frac = (area.h / content_h).min(1.0);
-            scrollbar(r, win, sb_x, area.y, 8.0, area.h, frac, scroll_px, &mut self.left_scroll, max_scroll, &mut self.left_sb_drag);
+            scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, area.y, 8.0, area.h), visible_frac: frac, disp: scroll_px, max_scroll }, &mut self.left_scroll, &mut self.left_sb_drag);
         }
         r.rect(area.x + area.w - 1.0, area.y, 1.0, area.h, GRAY);
         clicked

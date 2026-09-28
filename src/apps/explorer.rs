@@ -15,7 +15,7 @@ use crate::render::gfx::{Assets, Color, Rect, Renderer, CELL_H};
 use crate::strings::{common, explorer as s, t};
 use crate::ui::*;
 
-use super::widgets::{ease_scroll, icon_grid, scrollbar};
+use super::widgets::{ease_scroll, icon_grid, scrollbar, Scrollbar};
 use super::{App, AppAction, DragGhost, MoveDest, WinInput};
 
 type Items = Vec<(FileId, String, IconType)>;
@@ -197,7 +197,7 @@ fn draw_list_view(
     if max_scroll > 0.0 {
         let sb_x = area.x + area.w - 8.0;
         let frac = (list_h / total_h).min(1.0);
-        scrollbar(r, win, sb_x, list_top, 8.0, list_h, frac, *scroll_disp, scroll, max_scroll, sb_drag);
+        scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, list_top, 8.0, list_h), visible_frac: frac, disp: *scroll_disp, max_scroll }, scroll, sb_drag);
     }
     clicked
 }

@@ -2,6 +2,7 @@
 //! 대사 줄(Line)과 `[Y] 수락 / [N] 거부` 선택지(Choice). 좌표/크기는 전부 게임 화면
 //! 기준 해상도(VIEW_W x VIEW_H) 값이고, 그릴 때 배율을 곱한다.
 
+use crate::random::Rng;
 use crate::render::gfx::{Renderer, CELL_H};
 
 use super::{VIEW_H, VIEW_W};
@@ -26,22 +27,12 @@ pub struct Dialogue {
     index: usize,         // 몇 번째 항목을 보여주는 중인지 — len 이면 대화 끝(안 뜸)
     visible_chars: usize, // 그 항목에서 지금까지 드러낸 글자 수
     next_char_in: f32,    // 다음 글자를 드러내기까지 남은 시간(초)
-    rng: u64,             // 글자 간격을 흔드는 xorshift64 시드
-}
-
-// 아주 작은 xorshift64 PRNG — 글자 간격을 살짝씩 흔드는 용도라 이 정도로 충분하다.
-fn rand01(seed: &mut u64) -> f32 {
-    let mut x = *seed;
-    x ^= x << 13;
-    x ^= x >> 7;
-    x ^= x << 17;
-    *seed = x;
-    (x % 1_000_000) as f32 / 1_000_000.0
+    rng: Rng,             // 글자 간격을 흔드는 난수
 }
 
 impl Dialogue {
     pub fn new() -> Dialogue {
-        Dialogue { entries: Vec::new(), index: 0, visible_chars: 0, next_char_in: 0.0, rng: 0x9E3779B97F4A7C15 }
+        Dialogue { entries: Vec::new(), index: 0, visible_chars: 0, next_char_in: 0.0, rng: Rng::from_time() }
     }
 
     pub fn active(&self) -> bool {
@@ -103,7 +94,7 @@ impl Dialogue {
         self.next_char_in -= dt;
         while self.visible_chars < full_len && self.next_char_in <= 0.0 {
             self.visible_chars += 1;
-            self.next_char_in += CHAR_DELAY_MIN + rand01(&mut self.rng) * (CHAR_DELAY_MAX - CHAR_DELAY_MIN);
+            self.next_char_in += CHAR_DELAY_MIN + self.rng.unit() * (CHAR_DELAY_MAX - CHAR_DELAY_MIN);
         }
     }
 

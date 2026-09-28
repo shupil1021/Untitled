@@ -12,6 +12,7 @@ pub mod apps;
 pub mod director_ipc;
 pub mod foundation;
 pub mod platform;
+pub mod random;
 pub mod render;
 pub mod scenes;
 pub mod secrets;

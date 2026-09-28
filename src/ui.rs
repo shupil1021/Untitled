@@ -4,7 +4,7 @@ use miniquad::TextureId;
 
 use crate::apps::WinInput;
 use crate::foundation::{FileKind, FileNode};
-use crate::render::gfx::{Assets, Color, Renderer, CELL_H};
+use crate::render::gfx::{Assets, Color, Rect, Renderer, CELL_H};
 
 // Windows 9x 팔레트
 pub const TEAL: Color = [0.0, 0.5, 0.5, 1.0]; // 기본 바탕화면 색
@@ -294,18 +294,8 @@ pub fn group_box(r: &mut Renderer, x: f32, y: f32, w: f32, h: f32, label: &str) 
 
 // 창 안 앱에서 쓰는 버튼: 마우스 상태를 WinInput 에서 바로 가져온다. 클릭되면 true.
 pub fn button(r: &mut Renderer, x: f32, y: f32, w: f32, h: f32, label: &str, win: &WinInput) -> bool {
-    raw_button(r, x, y, w, h, label, win.mouse.0, win.mouse.1, win.mouse_down, win.mouse_clicked)
-}
-
-fn raw_button(
-    r: &mut Renderer,
-    x: f32, y: f32, w: f32, h: f32,
-    label: &str,
-    mx: f32, my: f32,
-    down: bool, clicked: bool,
-) -> bool {
-    let hover = mx >= x && mx < x + w && my >= y && my < y + h;
-    let pressed = hover && down;
+    let hover = Rect::new(x, y, w, h).contains(win.mouse.0, win.mouse.1);
+    let pressed = hover && win.mouse_down;
 
     if pressed {
         sunken(r, x, y, w, h);
@@ -328,7 +318,7 @@ fn raw_button(
     let off = if pressed { 1.0 } else { 0.0 };
     r.text_clipped(tx + off, ty + off, label, 1.0, BLACK, avail);
 
-    hover && clicked
+    hover && win.mouse_clicked
 }
 
 // 체크박스: 라벨을 왼쪽에, 박스를 라벨 오른쪽에 그리고, 클릭되면 checked 를 토글한다.
@@ -375,6 +365,7 @@ pub const ACCORDION_LIST_PAD: f32 = 3.0;
 // 땐 보통 버튼처럼 돌출된 느낌. 클릭되면 true (호출부에서 펼침/접힘을 토글).
 // 진짜 Win9x 콤보박스 느낌으로: 왼쪽은 읽기전용 텍스트 필드(sunken), 오른쪽에
 // 따로 떨어진 정사각형 버튼(raised/펼쳤을 땐 sunken)에 ▼ 화살표.
+#[allow(clippy::too_many_arguments)]
 pub fn accordion_header(r: &mut Renderer, win: &WinInput, x: f32, y: f32, w: f32, label: &str, current: &str, expanded: bool) -> bool {
     let h = ACCORDION_HEADER_H;
     const BTN_W: f32 = 20.0;

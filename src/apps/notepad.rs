@@ -9,7 +9,7 @@ use crate::foundation::Settings;
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::ui::*;
 
-use super::widgets::{ease_scroll, scrollbar};
+use super::widgets::{ease_scroll, scrollbar, Scrollbar};
 use super::{App, AppAction, WinInput};
 
 pub struct NotepadApp {
@@ -100,7 +100,7 @@ impl App for NotepadApp {
         if max_scroll > 0.0 {
             let sb_x = area.x + area.w - SB_W;
             let frac = visible as f32 / lines.len() as f32;
-            scrollbar(r, win, sb_x, area.y, SB_W, area.h, frac, self.scroll_disp, &mut self.scroll, max_scroll, &mut self.sb_drag);
+            scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, area.y, SB_W, area.h), visible_frac: frac, disp: self.scroll_disp, max_scroll }, &mut self.scroll, &mut self.sb_drag);
         }
         AppAction::None
     }

@@ -30,6 +30,7 @@ use miniquad::*;
 use windows::Win32::Media::Audio::*;
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED};
 
+use crackhead::random::Rng;
 use crackhead::render::crt::{viewport_4x3, warp};
 use crackhead::foundation::{self, Settings, FPS_OPTS, RES_OPTS};
 use crackhead::render::gfx::{Assets, Renderer, VIRTUAL_H as VH, VIRTUAL_W as VW};
@@ -56,23 +57,6 @@ fn make_scene(name: &str) -> Box<dyn Scene> {
     }
 }
 
-// 아주 단순한 xorshift64 의사난수 — scenes/lobby.rs, scenes/boot.rs 와 같은
-// 이유로 공유 모듈로 안 뽑고 여기서도 작게 따로 둔다.
-struct Rng(u64);
-impl Rng {
-    fn new(seed: u64) -> Rng {
-        Rng(seed | 1)
-    }
-    fn next_u32(&mut self) -> u32 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        (self.0 >> 16) as u32
-    }
-    fn range_f32(&mut self, min: f32, max: f32) -> f32 {
-        min + (self.next_u32() % 1_000_000) as f32 / 1_000_000.0 * (max - min)
-    }
-}
 
 // director 전용 CRT — src/crt.rs::Crt 를 복사해서 글리치 줄무늬 셰이더를
 // 얹은 것이다. 처음엔 crt.rs 자체(=실제 게임과 공유하는 코드)에 이 기능을

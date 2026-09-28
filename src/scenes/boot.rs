@@ -1,5 +1,6 @@
 //! 부팅 화면 — BIOS POST 흉내 → 화면 정리 → 로고/Welcome/로딩 바, 끝나면 DesktopScene 으로.
 
+use crate::random::{LoadCurve, Rng};
 use crate::render::gfx::{ADVANCE, CELL_H, SCREEN_H, SCREEN_W};
 use crate::strings::{boot as s, t};
 use crate::ui::BLACK;
@@ -9,7 +10,7 @@ use super::{DesktopScene, Frame, Scene, Transition};
 pub struct BootScene {
     t: f32,
     welcome_delay: f32,               // 로고가 뜬 뒤 Welcome 문구가 나오기까지의 랜덤 대기(초)
-    load_waypoints: Vec<(f32, f32)>,  // 로딩 바가 (경과비율, 진행비율)을 들쭉날쭉하게 지나가는 지점들
+    load_curve: LoadCurve,            // 로딩 바가 들쭉날쭉하게 차는 곡선
 }
 
 impl Default for BootScene {
@@ -20,57 +21,13 @@ impl Default for BootScene {
 
 impl BootScene {
     pub fn new() -> BootScene {
-        let mut rng = Rng::new((miniquad::date::now() * 1e6) as u64);
+        let mut rng = Rng::from_time();
         BootScene {
             t: 0.0,
             welcome_delay: rng.range_f32(0.3, 0.9),
-            load_waypoints: build_load_waypoints(&mut rng),
+            load_curve: LoadCurve::random(&mut rng),
         }
     }
-}
-
-// 로딩 바가 일정한 속도로 차지 않고 멈칫거리다 훅 튀도록, (경과비율, 진행비율) 웨이포인트를
-// 랜덤하게 생성한다. (0,0) 에서 시작해 (1,1) 로 끝나며 사이 구간마다 속도가 들쭉날쭉하다.
-fn build_load_waypoints(rng: &mut Rng) -> Vec<(f32, f32)> {
-    const SEGMENTS: usize = 7;
-    let mut xd: Vec<f32> = (0..SEGMENTS).map(|_| rng.range_f32(0.4, 1.6)).collect();
-    let xsum: f32 = xd.iter().sum();
-    for v in xd.iter_mut() {
-        *v /= xsum;
-    }
-    // 진행량은 제곱을 줘서 절반은 거의 멈춘 듯 조금씩, 절반은 훅 튀도록 편차를 크게 만든다.
-    let mut yd: Vec<f32> = (0..SEGMENTS).map(|_| rng.range_f32(0.05, 1.0).powf(2.0)).collect();
-    let ysum: f32 = yd.iter().sum();
-    for v in yd.iter_mut() {
-        *v /= ysum;
-    }
-    let mut x = 0.0;
-    let mut y = 0.0;
-    let mut out = vec![(0.0, 0.0)];
-    for i in 0..SEGMENTS {
-        x += xd[i];
-        y += yd[i];
-        out.push((x, y));
-    }
-    // 부동소수점 누적 오차로 마지막 점이 (1.0, 1.0) 에 딱 안 맞을 수 있어 강제로 맞춘다
-    // (installer.rs 의 같은 함수에서 이 오차가 진행바를 99%에 멈추게 하는 버그가 있었다).
-    if let Some(last) = out.last_mut() {
-        *last = (1.0, 1.0);
-    }
-    out
-}
-
-// waypoints 사이를 선형보간해 경과비율 t(0..1) 에서의 진행비율을 구한다.
-fn sample_load(waypoints: &[(f32, f32)], t: f32) -> f32 {
-    for w in waypoints.windows(2) {
-        let (x0, y0) = w[0];
-        let (x1, y1) = w[1];
-        if t <= x1 {
-            let seg_t = if x1 > x0 { ((t - x0) / (x1 - x0)).clamp(0.0, 1.0) } else { 1.0 };
-            return y0 + (y1 - y0) * seg_t;
-        }
-    }
-    1.0
 }
 
 // BIOS POST 화면에 고정 딜레이로 하나씩 나타나는 줄들 (메모리 테스트 줄은 별도 애니메이션).
@@ -95,27 +52,6 @@ const POST_LINE_INTERVAL: f32 = 0.09; // POST 줄이 하나씩 나타나는 간�
 const MEM_TOTAL: u32 = 65536; // 가짜 메모리 테스트 총량(KB)
 const MEM_TEST_DURATION: f32 = 0.6; // 메모리 카운터가 0→MEM_TOTAL 로 올라가는 시간
 const POST_HOLD: f32 = 0.35; // 마지막 POST 줄이 뜬 뒤 잠깐 멈춤
-
-// 아주 단순한 xorshift64 의사난수. 암호학적 품질은 필요 없고, 매 부팅마다 다른
-// 헥스덤프/대기시간을 만들어내는 연출용이라 이 정도면 충분하다.
-struct Rng(u64);
-impl Rng {
-    fn new(seed: u64) -> Rng {
-        Rng(seed | 1)
-    }
-    fn next_u32(&mut self) -> u32 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        (self.0 >> 16) as u32
-    }
-    fn range(&mut self, max: u32) -> u32 {
-        self.next_u32() % max
-    }
-    fn range_f32(&mut self, min: f32, max: f32) -> f32 {
-        min + (self.range(1_000_000) as f32 / 1_000_000.0) * (max - min)
-    }
-}
 
 // "PalaceOS" 피겨렛 로고. (7줄) — LobbyScene 도 같은 로고를 쓰므로 pub(super).
 pub(super) const LOGO: [&str; 7] = [
@@ -193,7 +129,7 @@ impl Scene for BootScene {
             if self.t >= load_start {
                 const BAR_CHARS: usize = 24;
                 let t_frac = ((self.t - load_start) / LOAD_DURATION).min(1.0);
-                let frac = sample_load(&self.load_waypoints, t_frac);
+                let frac = self.load_curve.sample(t_frac);
                 let filled = ((frac * BAR_CHARS as f32).round() as usize).min(BAR_CHARS);
                 let bar = format!(
                     "[{}{}] {:>3}%",

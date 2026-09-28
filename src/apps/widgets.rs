@@ -22,11 +22,15 @@ pub(crate) fn ease_scroll(disp: &mut f32, target: f32, dt: f32, smooth: bool) {
 // 스크롤할 수 있게 한다. scroll/max_scroll 은 픽셀이든 행(row) 단위든 상관없이 그
 // 비율만으로 동작한다 (호출부마다 단위가 달라도 됨). 핸들은 disp(부드럽게 따라가는
 // 화면표시용 값) 기준으로 그리고, 드래그하면 scroll(목표값)을 갱신한다.
-pub(crate) fn scrollbar(
-    r: &mut Renderer, win: &WinInput,
-    x: f32, y: f32, w: f32, h: f32,
-    visible_frac: f32, disp: f32, scroll: &mut f32, max_scroll: f32, dragging: &mut bool,
-) {
+pub(crate) struct Scrollbar {
+    pub track: Rect,       // 트랙(스크롤바 전체) 위치/크기
+    pub visible_frac: f32, // 전체 내용 중 한 화면에 보이는 비율 — 핸들 길이
+    pub disp: f32,         // 핸들을 그릴 위치(부드럽게 따라가는 화면표시용 스크롤 값)
+    pub max_scroll: f32,
+}
+
+pub(crate) fn scrollbar(r: &mut Renderer, win: &WinInput, sb: Scrollbar, scroll: &mut f32, dragging: &mut bool) {
+    let Scrollbar { track: Rect { x, y, w, h }, visible_frac, disp, max_scroll } = sb;
     sunken(r, x, y, w, h);
     let thumb_h = (h * visible_frac).clamp(12.0, h);
     let travel = (h - thumb_h).max(1.0);
@@ -46,6 +50,8 @@ pub(crate) fn scrollbar(
     }
 }
 
+// 즉시 모드 위젯이라 위치·라벨·상태를 전부 인자로 받는다(다른 위젯들과 같은 모양).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_slider(r: &mut Renderer, win: &WinInput, x: f32, y: f32, w: f32, name: &str, idx: i32, value: &mut f32, active: &mut i32) {
     label(r, x, y, name, BLACK);
     // 라벨 글자 높이(CELL_H=22)만큼 아래로 확실히 띄워야 트랙/핸들과 안 겹친다.
@@ -197,7 +203,7 @@ pub(crate) fn icon_grid(
     if max_scroll > 0.0 {
         let sb_x = area.x + area.w - 8.0;
         let frac = vis_rows as f32 / total_rows as f32;
-        scrollbar(r, win, sb_x, area.y, 8.0, area.h, frac, *scroll_disp, scroll, max_scroll, sb_drag);
+        scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, area.y, 8.0, area.h), visible_frac: frac, disp: *scroll_disp, max_scroll }, scroll, sb_drag);
     }
     clicked
 }
@@ -266,7 +272,7 @@ pub(crate) fn accordion_list(
     if has_sb {
         let sb_x = x + w - pad - 8.0;
         let frac = visible_rows as f32 / options.len() as f32;
-        scrollbar(r, win, sb_x, y + pad, 8.0, content_h, frac, *scroll_disp, scroll, max_scroll, sb_drag);
+        scrollbar(r, win, Scrollbar { track: Rect::new(sb_x, y + pad, 8.0, content_h), visible_frac: frac, disp: *scroll_disp, max_scroll }, scroll, sb_drag);
     }
     (clicked, panel_h, wheel_consumed)
 }
