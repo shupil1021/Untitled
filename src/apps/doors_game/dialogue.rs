@@ -16,8 +16,6 @@ const CHAR_DELAY_MIN: f32 = 0.02;
 const CHAR_DELAY_MAX: f32 = 0.09;
 
 pub enum Entry {
-    // 지금 도어즈는 선택지 한 줄만 말하지만, 평범한 대사/안내 줄도 곧 다시 쓸 자리라 남겨둔다.
-    #[allow(dead_code)]
     Line(String),
     Choice(String),
 }

@@ -28,7 +28,7 @@ use crate::render::mesh3d::{v_dot, v_sub, Box3D, Camera, Mesh3D};
 
 use super::{App, AppAction, WinInput};
 use dialogue::{Dialogue, Entry};
-use world::{aimed_at, build_room, Player, HANDLE_POS};
+use world::{aimed_target, build_room, Player, Target, PROPS};
 
 // 3D 오프스크린 해상도 — 이 크기(4:3) 기준으로 HUD 좌표도 잡고, 실제 창 크기에
 // 맞춰 통째로 배율(view.w / VIEW_W)을 곱해서 그린다.
@@ -64,9 +64,12 @@ pub struct DoorsGameApp {
     boxes: Vec<Box3D>,
     player: Player,
     captured: bool, // 마우스 시점 모드인지(게임 화면을 클릭하면 켜지고 Esc/포커스 잃으면 꺼진다)
-    door_aimed: bool,
+    aimed: Option<Target>, // 지금 조준선이 향한 대상(문 손잡이/방 안 물건)
     dialogue: Dialogue,
     quest_accepted: bool, // 도어즈의 부탁(보리지꽃)을 수락했는지 — 그 뒤론 더 말을 걸 수 없다
+    // 수락한 뒤 방 물건을 조사해서 "방에 꽃이 없다"는 걸 확인했는지 — 다음 이벤트(꽃 있는
+    // 곳을 안다는 두 번째 메일)의 조건이다.
+    flower_absence_checked: bool,
 }
 
 impl DoorsGameApp {
@@ -75,9 +78,10 @@ impl DoorsGameApp {
             boxes: build_room(),
             player: Player::spawn(),
             captured: false,
-            door_aimed: false,
+            aimed: None,
             dialogue: Dialogue::new(),
             quest_accepted: false,
+            flower_absence_checked: false,
         }
     }
 
@@ -110,9 +114,29 @@ impl DoorsGameApp {
             }
             return;
         }
-        if input.pressed(KeyCode::E) && self.door_aimed && !self.quest_accepted {
-            // 도어즈는 보리지꽃을 달라는 말만 한다.
-            self.dialogue.start(vec![Entry::Choice("보리지꽃을 줘.".to_string())]);
+        if input.pressed(KeyCode::E) {
+            self.interact();
+        }
+    }
+
+    // E — 조준 중인 대상을 조사한다.
+    fn interact(&mut self) {
+        match self.aimed {
+            // 도어즈는 보리지꽃을 달라는 말만 한다. 수락한 뒤로는 더 말을 걸 수 없다.
+            Some(Target::Door) if !self.quest_accepted => {
+                self.dialogue.start(vec![Entry::Choice("보리지꽃을 줘.".to_string())]);
+            }
+            // 방 물건은 그 물건의 한 줄을 보여준다. 부탁을 수락한 뒤 처음 조사하면 이어서
+            // 방에 꽃이 없다는 걸 깨닫는다.
+            Some(Target::Prop(i)) => {
+                let mut lines = vec![Entry::Line(PROPS[i].text.to_string())];
+                if self.quest_accepted && !self.flower_absence_checked {
+                    self.flower_absence_checked = true;
+                    lines.push(Entry::Line("방에는 꽃이 없는 것 같다...".to_string()));
+                }
+                self.dialogue.start(lines);
+            }
+            _ => {}
         }
     }
 }
@@ -143,7 +167,7 @@ impl App for DoorsGameApp {
                 self.player.look(dx * MOUSE_SENS, -dy * MOUSE_SENS);
             }
             self.player.update(win.input, win.focused, win.dt, &self.boxes);
-            self.door_aimed = aimed_at(&self.player.camera(), HANDLE_POS);
+            self.aimed = aimed_target(&self.player.camera()).filter(|t| !(*t == Target::Door && self.quest_accepted));
         }
 
         let cam = self.player.camera();
@@ -164,15 +188,17 @@ impl App for DoorsGameApp {
 
         r.rect(px(VIEW_W / 2.0 - 1.5), py(VIEW_H / 2.0 - 1.5), 3.0 * s, 3.0 * s, [1.0, 1.0, 1.0, 0.7]);
 
-        if self.door_aimed
+        if let Some(target) = self.aimed
             && !frozen
-            && !self.quest_accepted
-            && let Some((sx, sy)) = world_to_view(&cam, HANDLE_POS)
+            && let Some((sx, sy)) = world_to_view(&cam, target.pos())
         {
-            let label = "[E] Examine";
-            let tw = r.text_width(label, 0.7 * s);
+            let label = match target {
+                Target::Door => "[E] Examine".to_string(),
+                Target::Prop(i) => format!("[E] Examine {}", PROPS[i].name),
+            };
+            let tw = r.text_width(&label, 0.7 * s);
             r.rect(px(sx + 10.0), py(sy - 10.0), tw + 8.0 * s, 16.0 * s, [0.0, 0.0, 0.0, 0.6]);
-            r.text(px(sx + 14.0), py(sy - 8.0), label, 0.7 * s, [0.6, 0.9, 1.0, 1.0]);
+            r.text(px(sx + 14.0), py(sy - 8.0), &label, 0.7 * s, [0.6, 0.9, 1.0, 1.0]);
         }
 
         if !self.captured && !frozen {

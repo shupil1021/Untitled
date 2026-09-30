@@ -41,6 +41,40 @@ pub const HANDLE_POS: [f32; 3] = [DOOR_MIN_X + DOOR_WIDTH - 0.15, DOOR_HALF_H - 
 const AIM_MAX_DIST: f32 = 3.0;
 const AIM_MAX_COS: f32 = 0.95;
 
+// 방 안의 조사할 수 있는 물건 — 상자 하나로 표현하고(Box3D, 충돌 있음), 조준 판정은
+// 상자 중심을 기준으로 한다. text 는 조사했을 때 나오는 한 줄.
+pub struct Prop {
+    pub name: &'static str,
+    pub center: [f32; 3],
+    pub half: [f32; 3],
+    pub color: [f32; 4],
+    pub text: &'static str,
+}
+
+// 벽 쪽에 붙여서 스폰↔문 사이 통로는 비워둔다.
+pub const PROPS: [Prop; 4] = [
+    Prop { name: "Desk", center: [-2.3, 0.4, -1.5], half: [0.5, 0.4, 0.3], color: [0.38, 0.28, 0.18, 1.0], text: "낡은 책상이다. 서랍은 텅 비어 있다." },
+    Prop { name: "Crate", center: [2.3, 0.3, -2.5], half: [0.3, 0.3, 0.3], color: [0.45, 0.35, 0.2, 1.0], text: "먼지 쌓인 나무 상자다. 뚜껑이 못으로 박혀 있다." },
+    Prop { name: "Shelf", center: [2.6, 0.9, 0.5], half: [0.25, 0.9, 0.6], color: [0.3, 0.25, 0.2, 1.0], text: "빈 선반이다. 먼지 자국만 남아 있다." },
+    Prop { name: "Trash", center: [-2.4, 0.15, 1.6], half: [0.4, 0.15, 0.4], color: [0.3, 0.32, 0.22, 1.0], text: "구겨진 종이와 쓰레기가 쌓여 있다." },
+];
+
+// 조준선이 가리킬 수 있는 대상 — 문 손잡이 또는 방 안의 물건 하나.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Target {
+    Door,
+    Prop(usize),
+}
+
+impl Target {
+    pub fn pos(self) -> [f32; 3] {
+        match self {
+            Target::Door => HANDLE_POS,
+            Target::Prop(i) => PROPS[i].center,
+        }
+    }
+}
+
 fn solid(center: [f32; 3], half: [f32; 3], color: [f32; 4], walkable: bool) -> Box3D {
     Box3D { center, half, yaw: 0.0, pitch: 0.0, roll: 0.0, color, texture: None, walkable, solid: true }
 }
@@ -72,14 +106,24 @@ pub fn build_room() -> Vec<Box3D> {
 
     boxes.push(solid([DOOR_MIN_X + DOOR_WIDTH / 2.0, DOOR_HALF_H, ROOM_MIN_Z], [DOOR_WIDTH / 2.0, DOOR_HALF_H, DOOR_HALF_T], DOOR_COLOR, false));
     boxes.push(Box3D { center: HANDLE_POS, half: HANDLE_HALF, yaw: 0.0, pitch: 0.0, roll: 0.0, color: HANDLE_COLOR, texture: None, walkable: false, solid: false });
+    for p in &PROPS {
+        boxes.push(solid(p.center, p.half, p.color, false));
+    }
     boxes
 }
 
-// 화면 중앙 조준선이 target 을 향하고 있는지(거리 + 각도만 본다 — 벽에 가려져도 판정된다).
-pub fn aimed_at(cam: &Camera, target: [f32; 3]) -> bool {
-    let to = v_sub(target, cam.pos);
-    let dist = v_len(to);
-    (0.05..=AIM_MAX_DIST).contains(&dist) && v_dot(v_scale(to, 1.0 / dist), cam.forward()) > AIM_MAX_COS
+// 조준선(화면 중앙)이 향한 대상 중 가장 가까운 것 — 거리 + 각도만 본다(벽에 가려져도 판정된다).
+pub fn aimed_target(cam: &Camera) -> Option<Target> {
+    let candidates = std::iter::once(Target::Door).chain((0..PROPS.len()).map(Target::Prop));
+    candidates
+        .filter_map(|t| {
+            let to = v_sub(t.pos(), cam.pos);
+            let dist = v_len(to);
+            let aimed = (0.05..=AIM_MAX_DIST).contains(&dist) && v_dot(v_scale(to, 1.0 / dist), cam.forward()) > AIM_MAX_COS;
+            aimed.then_some((t, dist))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(t, _)| t)
 }
 
 pub struct Player {
