@@ -132,6 +132,15 @@ pub mod mail {
         ja: "あのゲームのクラック版、手に入れたよ。\nセットアップを実行してインストールすればいい。\n\nでも、ちょっと変なゲームなんだよね。\nやってみたら感想を教えて。",
     };
 
+    // 두 번째 메일 — 깨진 이름의 발신자가 꽃을 구할 수 있는 곳을 안다고 한다.
+    pub const FLOWER_MAIL_SUBJECT: S =
+        S { en: "I know where you can get a flower", ko: "내가 꽃을 구할 수 있는 곳을 알고 있어", ja: "花を手に入れられる場所を知っている" };
+    pub const FLOWER_MAIL_BODY: S = S {
+        en: "I know where you can get a flower.",
+        ko: "내가 꽃을 구할 수 있는 곳을 알고 있어.",
+        ja: "花を手に入れられる場所を知っている。",
+    };
+
     pub const FOLDER_INBOX: S = S { en: "Inbox", ko: "받은편지함", ja: "受信トレイ" };
     pub const FOLDER_SENT: S = S { en: "Sent Items", ko: "보낸편지함", ja: "送信済みアイテム" };
     pub const FOLDER_COMPOSE: S = S { en: "Write Mail", ko: "메일 쓰기", ja: "メール作成" };

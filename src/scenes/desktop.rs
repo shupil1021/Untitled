@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use crate::apps::{
     explorer_app_for_folder, explorer_app_refreshed, mail_attachable_files, open, CreditsApp, ExplorerApp, ExplorerLocation, MailApp,
-    MoveDest, OfficialSiteApp, Opened, SettingsApp, FIRST_MAIL_FROM,
+    MoveDest, OfficialSiteApp, Opened, SettingsApp, FIRST_MAIL_FROM, SECOND_MAIL_FROM,
 };
 use crate::foundation::{
     display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, GAME_FILE_NAME, MY_COMPUTER_NAME,
@@ -1250,6 +1250,18 @@ impl Scene for DesktopScene {
                     }
                 }
                 DeskAction::RequestErase => self.erase_confirm = true,
+                // 게임 안에서 방에 꽃이 없다는 걸 확인함 — 두 번째 메일을 한 번만 도착시키고
+                // 첫 메일 때처럼 토스트로 알린다.
+                DeskAction::FlowerAbsenceChecked => {
+                    if !self.fs.mail2_arrived {
+                        self.fs.mail2_arrived = true;
+                        self.refresh_mail_if_open(&f.settings);
+                        let lang = f.settings.borrow().language;
+                        self.toast = Some((SECOND_MAIL_FROM.to_string(), t(lang, crate::strings::mail::FLOWER_MAIL_SUBJECT).to_string()));
+                        self.toast_timer = TOAST_DURATION;
+                        self.write_save(&f.settings);
+                    }
+                }
                 // 설치 마법사 진행바가 다 찬 순간 한 번 온다 — 설치 완료를 기록하고
                 // 바탕화면에 게임 아이콘을 만든다(마법사 창은 Finish 로 사용자가 닫는다).
                 DeskAction::InstallComplete => {

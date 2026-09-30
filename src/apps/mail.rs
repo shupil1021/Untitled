@@ -49,25 +49,38 @@ pub struct MailAttachment {
 // 첫 메일을 보낸 사람 — 도착 토스트(desktop.rs)에서도 같은 주소를 보여줘야 해서 공개.
 pub const FIRST_MAIL_FROM: &str = "old.friend@mail.com";
 
-// 새 게임을 시작하면 MAIL_ARRIVAL_DELAY 초 뒤에 도착하는 첫(그리고 지금은 유일한)
-// 메일 — 친구가 크랙한 게임의 설치 파일(test Setup.exe, FileKind::GameSetup)을
-// 첨부해서 보낸다
-// (STORY.md 7-1절). arrived 가 false 면(아직 도착 전) 받은편지함이 비어있다 —
-// DesktopScene 이 타이머로 도착시킨다. from/to 는 이메일 주소라 언어와 무관하게
-// 그대로 두고, subject/body 는 지금 언어로 고른다. attachment 는 fs 의 Mail
-// 노드에 붙은 첨부(apps/mod.rs::open() 이 fs.mail_attachment() 로 구해 넘긴다).
-fn seed_messages(arrived: bool, lang: Language, attachment: Option<(FileId, String, IconType)>) -> Vec<MailMsg> {
-    if !arrived {
-        return Vec::new();
-    }
-    vec![MailMsg {
-        from: FIRST_MAIL_FROM,
-        to: "you@mail.com",
-        cc: "",
-        subject: t(lang, s::GAME_MAIL_SUBJECT),
-        body: t(lang, s::GAME_MAIL_BODY),
-        attachment,
-    }]
+// 두 번째 메일을 보낸 사람 — 이름이 깨져 있다(시트의 "깨져있는 이름의 이메일"). 폰트에
+// 없는 글자(U+FFFD)는 렌더러가 깨진 글자(마름모) 자리표시자로 그려서 그대로 깨져 보인다.
+pub const SECOND_MAIL_FROM: &str = "\u{FFFD}\u{FFFD}\u{FFFD}@mail.com";
+
+// 받은편지함의 메일들 — 도착 순서대로: (1) 새 게임을 시작하고 MAIL_ARRIVAL_DELAY 초 뒤
+// 도착하는 친구의 메일(크랙 게임 설치 파일 test Setup.exe 첨부, STORY.md 7-1절),
+// (2) 게임 안에서 방에 꽃이 없다는 걸 확인하면 오는 깨진 이름의 메일("내가 꽃을 구할 수
+// 있는 곳을 알고 있어"). arrived_count 만큼만 앞에서부터 보여준다 — 0 이면 받은편지함이
+// 비어있다(DesktopScene 이 도착시킨다). from/to 는 이메일 주소라 언어와 무관하게
+// 그대로 두고, subject/body 는 지금 언어로 고른다. attachment 는 첫 메일에만 붙는다
+// (fs 의 Mail 노드에 붙은 첨부 — apps/mod.rs::open() 이 fs.mail_attachment() 로 구해 넘긴다).
+fn seed_messages(arrived_count: usize, lang: Language, attachment: Option<(FileId, String, IconType)>) -> Vec<MailMsg> {
+    let mut messages = vec![
+        MailMsg {
+            from: FIRST_MAIL_FROM,
+            to: "you@mail.com",
+            cc: "",
+            subject: t(lang, s::GAME_MAIL_SUBJECT),
+            body: t(lang, s::GAME_MAIL_BODY),
+            attachment,
+        },
+        MailMsg {
+            from: SECOND_MAIL_FROM,
+            to: "you@mail.com",
+            cc: "",
+            subject: t(lang, s::FLOWER_MAIL_SUBJECT),
+            body: t(lang, s::FLOWER_MAIL_BODY),
+            attachment: None,
+        },
+    ];
+    messages.truncate(arrived_count);
+    messages
 }
 
 // 왼쪽 폴더 트리 항목 — Deleted Items/Drafts 는 삭제/임시보관 기능 자체가 아직
@@ -237,7 +250,7 @@ pub struct MailApp {
 
 impl MailApp {
     pub(super) fn new(
-        arrived: bool,
+        arrived_count: usize,
         read_indices: &[usize],
         game_attachment: Option<MailAttachment>,
         attachable: Vec<(FileId, String, IconType)>,
@@ -246,7 +259,7 @@ impl MailApp {
     ) -> MailApp {
         let lang = settings.borrow().language;
         let already_downloaded = game_attachment.as_ref().is_some_and(|a| a.downloaded);
-        let messages = seed_messages(arrived, lang, game_attachment.map(|a| (a.id, a.name, a.icon)));
+        let messages = seed_messages(arrived_count, lang, game_attachment.map(|a| (a.id, a.name, a.icon)));
         let read = (0..messages.len()).map(|i| read_indices.contains(&i)).collect();
         let downloaded = messages.iter().map(|m| m.attachment.is_some() && already_downloaded).collect();
         let downloading = vec![None; messages.len()];

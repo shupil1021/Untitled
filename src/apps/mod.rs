@@ -22,7 +22,7 @@ pub use doors_game::DoorsGameApp;
 pub use game_installer::GameInstallerApp;
 pub use explorer::{ExplorerApp, ExplorerLocation};
 pub use image_viewer::ImageViewerApp;
-pub use mail::{MailApp, MailAttachment, SentMailView, FIRST_MAIL_FROM};
+pub use mail::{MailApp, MailAttachment, SentMailView, FIRST_MAIL_FROM, SECOND_MAIL_FROM};
 pub use notepad::NotepadApp;
 pub use official_site::OfficialSiteApp;
 pub use password::PasswordApp;
@@ -73,6 +73,9 @@ pub enum AppAction {
     // 설치 마법사의 진행바가 다 참 — fs.game_installed 를 켜고 바탕화면에 게임
     // 아이콘(test.exe)을 만들어달라는 요청. 마법사 창은 그대로 둔다(Finish 로 닫음).
     InstallComplete,
+    // 게임 안에서 방에 꽃이 없다는 걸 확인함 — 두 번째 메일(꽃을 구할 수 있는 곳을 안다는)을
+    // 도착시켜달라는 요청. 여러 번 와도 한 번만 도착한다.
+    FlowerAbsenceChecked,
 }
 
 // File Explorer 사이드바 드래그로 파일을 옮길 수 있는 대상 — Desktop/Downloads 는
@@ -248,7 +251,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
                 downloaded: fs.ever_downloaded.contains(&aid),
             });
             Opened {
-                app: Box::new(MailApp::new(fs.mail_arrived, &fs.mail_read, game_attachment, attachable, sent, settings.clone())),
+                app: Box::new(MailApp::new(fs.mail_arrived_count(), &fs.mail_read, game_attachment, attachable, sent, settings.clone())),
                 title: name,
                 // Outlook Express/Exchange 참고 레이아웃 — 메뉴바 + 폴더 트리(150) +
                 // 상태바(20)까지 들어가야 해서 기존보다 좌우/위아래로 넉넉해야 한다.

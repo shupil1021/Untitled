@@ -77,6 +77,11 @@ pub struct FileSystem {
     // 여부를 여기(저장 파일에 실리는 fs)에 둬야 새로고침은 물론 게임을 종료했다
     // 재시작해도 유지된다. #[serde(default)] 는 이 필드가 없던 예전 저장 파일도
     // (그냥 다 안 읽은 것으로) 계속 불러올 수 있게 해준다.
+    // 두 번째 메일(방에 꽃이 없다는 걸 확인하면 오는, 꽃을 구할 수 있는 곳을 안다는 메일)이
+    // 도착했는지 — 첫 메일과 달리 타이머가 아니라 게임 안 이벤트(AppAction::
+    // FlowerAbsenceChecked)로 도착한다.
+    #[serde(default)]
+    pub mail2_arrived: bool,
     #[serde(default, rename = "email_read")]
     pub mail_read: Vec<usize>,
     // Mail 의 "Write Mail" 탭에서 실제로 보낸 메일들 — Mail 앱의 "Sent Items" 탭에
@@ -162,6 +167,7 @@ impl FileSystem {
             downloads: Vec::new(),
             ever_downloaded: Vec::new(),
             mail_arrived: false,
+            mail2_arrived: false,
             mail_read: Vec::new(),
             sent_mail: Vec::new(),
             trash_origin: Vec::new(),
@@ -182,6 +188,11 @@ impl FileSystem {
         fs.desktop = vec![recycle_bin, explorer, mail];
 
         fs
+    }
+
+    // 지금까지 도착한 메일 개수(도착 순서대로 앞에서부터) — MailApp 이 그만큼만 보여준다.
+    pub fn mail_arrived_count(&self) -> usize {
+        self.mail_arrived as usize + self.mail2_arrived as usize
     }
 
     // Mail 노드의 첨부(첫 메일에 붙어오는 게임 설치 파일)가 아직 없으면 만들어

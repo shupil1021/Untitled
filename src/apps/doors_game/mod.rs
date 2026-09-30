@@ -70,6 +70,7 @@ pub struct DoorsGameApp {
     // 수락한 뒤 방 물건을 조사해서 "방에 꽃이 없다"는 걸 확인했는지 — 다음 이벤트(꽃 있는
     // 곳을 안다는 두 번째 메일)의 조건이다.
     flower_absence_checked: bool,
+    second_mail_sent: bool, // 그 확인을 OS 에 알려서 두 번째 메일을 요청했는지(한 번만)
 }
 
 impl DoorsGameApp {
@@ -82,6 +83,7 @@ impl DoorsGameApp {
             dialogue: Dialogue::new(),
             quest_accepted: false,
             flower_absence_checked: false,
+            second_mail_sent: false,
         }
     }
 
@@ -210,6 +212,11 @@ impl App for DoorsGameApp {
 
         self.dialogue.draw(r, view.x, view.y, s, win.time);
 
+        // 방에 꽃이 없다는 걸 확인했으면(대화가 다 끝난 뒤) OS 에 두 번째 메일을 요청한다.
+        if self.flower_absence_checked && !self.second_mail_sent && !frozen {
+            self.second_mail_sent = true;
+            return AppAction::FlowerAbsenceChecked;
+        }
         AppAction::None
     }
 }
