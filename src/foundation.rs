@@ -28,6 +28,9 @@ pub enum FileKind {
     // 메일로 받는 게임 설치 파일("test Setup.exe") — 열면 설치 마법사
     // (apps/game_installer.rs)가 뜬다. 메일로 오는 게임은 항상 이 Setup 파일로 온다.
     GameSetup,
+    // 두 번째 메일 뒤 "다운로드 완료" 알림과 함께 바탕화면에 생기는 서브 게임 아이콘
+    // ("test2.exe") — 열면 미로 게임(apps/maze_game)이 OS 창 안에서 뜬다.
+    SubGame,
     // 설치 마법사가 끝나면 바탕화면에 생기는 게임 아이콘("test.exe") — 친구가 메일로
     // 보낸 크랙 게임(STORY.md 7-1절). 열면 OS 안의 창 하나로 3D 게임
     // (apps/doors_game.rs)이 돈다.
@@ -47,6 +50,7 @@ pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
 // 바탕화면에 생기는 게임 아이콘(FileKind::Game)의 fs 이름.
 pub const GAME_SETUP_NAME: &str = "test Setup.exe";
 pub const GAME_FILE_NAME: &str = "test.exe";
+pub const SUB_GAME_NAME: &str = "test2.exe";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FileNode {
@@ -98,6 +102,10 @@ pub struct FileSystem {
     // 열어도 마법사 없이 "이미 설치됨" 페이지로 연다(바탕화면 아이콘 중복 방지).
     #[serde(default)]
     pub game_installed: bool,
+    // 서브 게임(test2.exe)이 바탕화면에 이미 생겼는지 — 두 번째 메일이 온 뒤 잠깐 있다가
+    // "다운로드 완료" 알림과 함께 한 번만 생긴다.
+    #[serde(default)]
+    pub sub_game_ready: bool,
 }
 
 // Mail 의 "Write Mail" 탭에서 보낸 메일 한 통 — fs.sent_mail 에 쌓인다. 첨부는
@@ -172,6 +180,7 @@ impl FileSystem {
             sent_mail: Vec::new(),
             trash_origin: Vec::new(),
             game_installed: false,
+            sub_game_ready: false,
         };
 
         // 바탕화면엔 고정 아이콘들만 둔다 — 나머지 예제 파일들은 다 치웠다.

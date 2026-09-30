@@ -2,9 +2,12 @@
 //! 대사 줄(Line)과 `[Y] 수락 / [N] 거부` 선택지(Choice). 좌표/크기는 전부 게임 화면
 //! 기준 해상도(VIEW_W x VIEW_H) 값이고, 그릴 때 배율을 곱한다.
 
+use miniquad::KeyCode;
+
 use crate::random::Rng;
 use crate::render::gfx::{Renderer, CELL_H};
 
+use super::super::WinInput;
 use super::{VIEW_H, VIEW_W};
 
 const SIDE_MARGIN: f32 = 24.0;
@@ -51,6 +54,32 @@ impl Dialogue {
     // 지금 항목이 다 타이핑된 선택지인지 — 이때만 Y/N 이 먹는다.
     pub fn choice_ready(&self) -> bool {
         matches!(self.entries.get(self.index), Some(Entry::Choice(_))) && self.fully_typed()
+    }
+
+    // 대화가 떠 있는 동안의 입력 처리(선택지면 Y/N, 아니면 아무 키/클릭으로 넘기기) —
+    // 이번 프레임에 선택지에 답했으면 Some(수락 여부). 대화가 안 떠 있으면 아무것도 안 한다.
+    pub fn handle_input(&mut self, win: &WinInput, in_view: bool) -> Option<bool> {
+        if !self.active() {
+            return None;
+        }
+        let input = win.input;
+        if self.choice_ready() {
+            let answer = if input.pressed(KeyCode::Y) {
+                Some(true)
+            } else if input.pressed(KeyCode::N) {
+                Some(false)
+            } else {
+                None
+            };
+            if answer.is_some() {
+                self.choose();
+            }
+            return answer;
+        }
+        if (input.any_key_pressed() && !input.pressed(KeyCode::Escape)) || (win.mouse_clicked && in_view) {
+            self.advance();
+        }
+        None
     }
 
     pub fn start(&mut self, entries: Vec<Entry>) {

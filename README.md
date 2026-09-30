@@ -134,8 +134,17 @@ cargo run
   옆으로 밀려나지 않는다. `walkable`(바닥/경사로로 쓰이는지)과 `solid`(수평
   충돌에 끼는지)를 상자마다 따로 켤 수 있어서, 밟고 지나가야 하는 얇은 경사로는
   `solid=false`로, 위로 못 올라가야 하는 장식 벽은 `walkable=false`로 둔다.
-- **`src/apps/doors_game/` — 메인 게임 "DOORS"**(`mod.rs` = 창 앱/HUD/입력,
-  `world.rs` = 맵·플레이어 이동/충돌·조준, `dialogue.rs` = 타자기 대화창·Y/N 선택지): 메일 첨부 `test Setup.exe`로
+- **`src/apps/game3d/` — 창 안 3D 게임 공용 도구**: `View`(창 안에 4:3 으로 맞춰
+  3D 장면/조준선/안내를 그림), `MouseLook`(클릭하면 시점 모드), `player.rs`(1인칭 이동·충돌·
+  조준 판정), `dialogue.rs`(타자기 대화창 + Y/N 선택지 + 입력 처리). doors_game 과
+  maze_game 이 같이 쓴다.
+- **`src/apps/maze_game/` — 서브 게임 "B+a" 1스테이지**(`test2.exe`, 시트의 SUB A+a-1):
+  열 때마다 `maze.rs`가 5x5 셀 완전 미로를 깊이 우선 탐색으로 새로 만들고(벽/바닥/천장
+  `Box3D`, 도착 칸 = 출발에서 가장 먼 칸 — 어떤 시드든 도착까지 길이 있는지 단위
+  테스트가 검사), 도착 지점의 물뿌리개를 `E`로 주우면 "물뿌리개를 발견했다. / 1라운드
+  클리어."가 나온다. 아직 여기까지 — 시트의 다음 이벤트(화분/사물함 스테이지)는 없다.
+- **`src/apps/doors_game/` — 메인 게임 "DOORS"**(`mod.rs` = 창 앱/입력, `world.rs` = 맵·
+  물건·조준 대상; 화면/시점/플레이어/대화창은 위 game3d): 메일 첨부 `test Setup.exe`로
   설치해 바탕화면에 생긴 `test.exe`(`FileKind::Game`)를 열면 OS 안의 창 하나로 뜨는 앱(`DoorsGameApp`, 별도 실행
   파일이 아니다). 3D 장면은 `mesh3d.rs`로 640x480 오프스크린에 그려서 창 안에 4:3
   으로 끼워 넣고(남는 곳은 검은 띠 — 그래서 창 크기 조절/최대화 자유), HUD/대화창도
@@ -164,7 +173,12 @@ cargo run
   즉시 저장). 발신자 이름이 깨져 있고(`SECOND_MAIL_FROM` — 폰트에 없는 U+FFFD 를 렌더러가
   마름모로 그린다) 제목/본문은 "내가 꽃을 구할 수 있는 곳을 알고 있어"(3개 언어)다. 받은
   편지함은 `fs.mail_arrived_count()`만큼 도착 순서대로 앞에서부터 보여준다. 첨부/두 번째
-  게임(미로)은 아직 없다.
+  게임은 아래 "서브 게임" 참고.
+  **다운로드 완료 + `test2.exe`**(시트의 CRT B-0): 두 번째 메일이 온 뒤 `SUB_GAME_DELAY`(6초)
+  뒤에 "다운로드 완료" 알림(`Toast`, 누르면 그냥 닫힘 — 새 메일 알림은 누르면 Mail 을 연다)이
+  뜨면서 바탕화면 빈 칸에 서브 게임 아이콘 `test2.exe`(`FileKind::SubGame`,
+  `fs.sub_game_ready`로 한 번만)가 생긴다. 이름은 임시다. 두 번째 메일만 오고 종료했어도
+  다음 실행에서 이어서 센다.
   창을 닫으면 게임 진행은 처음부터(아직 저장 안 함). 문은 열리지 않는다.
 
 ### 로컬라이제이션
@@ -227,7 +241,9 @@ src/
 ├── apps/               # 파일별 앱 — 새 앱은 파일 하나 + mod.rs 한 줄
 │   ├── mod.rs             # App 트레잇 / AppAction / Opened + open() 파일→앱 매칭
 │   ├── widgets.rs         # 여러 앱이 같이 쓰는 위젯(아이콘 격자/슬라이더/스크롤바)
-│   ├── doors_game/        # 메인 게임 DOORS — OS 창 안에서 도는 3D 게임(mod/world/dialogue)
+│   ├── game3d/            # 창 안 3D 게임 공용 도구(View/MouseLook/Player/Dialogue)
+│   ├── doors_game/        # 메인 게임 DOORS — OS 창 안에서 도는 3D 게임(mod/world)
+│   ├── maze_game/         # 서브 게임 test2.exe — 미로 + 물뿌리개(mod/maze)
 │   ├── game_installer.rs  # 메일 첨부 test Setup.exe 설치 마법사 → 바탕화면에 test.exe
 │   ├── notepad.rs, video_player.rs, image_viewer.rs, mail.rs, explorer.rs,
 │   │   recycle_bin.rs, password.rs, credits.rs, settings.rs, official_site.rs

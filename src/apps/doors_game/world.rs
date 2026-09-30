@@ -1,16 +1,8 @@
-//! 게임 월드 — 맵(방/문 상자들)과 플레이어 이동/충돌, 조준 판정.
+//! 도어즈 게임의 월드 — 맵(방/문/물건 상자들)과 조준 대상.
 
-use miniquad::KeyCode;
+use crate::render::mesh3d::{Box3D, Camera};
 
-use crate::render::mesh3d::{ground_height, resolve_horizontal, v_add, v_dot, v_len, v_scale, v_sub, Box3D, Camera};
-use crate::scenes::Input;
-
-const MOVE_SPEED: f32 = 2.6;
-const MAX_PITCH: f32 = std::f32::consts::FRAC_PI_2 - 0.05;
-const PLAYER_RADIUS: f32 = 0.3;
-const PLAYER_HEIGHT: f32 = 1.7;
-const EYE_OFFSET: f32 = 1.55;
-const GRAVITY: f32 = -12.0;
+use super::super::game3d::player::aim_dist;
 
 const FLOOR_COLOR: [f32; 4] = [0.28, 0.26, 0.24, 1.0];
 const CEILING_COLOR: [f32; 4] = [0.33, 0.33, 0.32, 1.0];
@@ -24,7 +16,7 @@ const ROOM_MIN_Z: f32 = -3.5; // 문이 있는 벽
 const ROOM_MAX_Z: f32 = 2.5;
 const ROOM_HEIGHT: f32 = 2.6;
 const WALL_THICK: f32 = 0.15;
-const SPAWN: [f32; 3] = [0.0, 0.0, 1.2];
+pub const SPAWN: [f32; 3] = [0.0, 0.0, 1.2];
 
 // 문 — 앞쪽 벽의 [DOOR_MIN_X, DOOR_MIN_X+DOOR_WIDTH] 틈을 정확히 채운다.
 const DOOR_WIDTH: f32 = 1.5;
@@ -36,10 +28,6 @@ const HANDLE_HALF: [f32; 3] = [0.05, 0.05, 0.05];
 const HANDLE_COLOR: [f32; 4] = [0.8, 0.72, 0.45, 1.0];
 // 손잡이 — 문의 오른쪽 가장자리 근처, 방 안쪽(+Z) 면에서 살짝 튀어나온 자리.
 pub const HANDLE_POS: [f32; 3] = [DOOR_MIN_X + DOOR_WIDTH - 0.15, DOOR_HALF_H - 0.45, ROOM_MIN_Z + 0.09];
-
-// 조준 판정 — 이 거리 안 + 이 각도(코사인) 안이면 "조준 중".
-const AIM_MAX_DIST: f32 = 3.0;
-const AIM_MAX_COS: f32 = 0.95;
 
 // 방 안의 조사할 수 있는 물건 — 상자 하나로 표현하고(Box3D, 충돌 있음), 조준 판정은
 // 상자 중심을 기준으로 한다. text 는 조사했을 때 나오는 한 줄.
@@ -112,79 +100,11 @@ pub fn build_room() -> Vec<Box3D> {
     boxes
 }
 
-// 조준선(화면 중앙)이 향한 대상 중 가장 가까운 것 — 거리 + 각도만 본다(벽에 가려져도 판정된다).
+// 조준선(화면 중앙)이 향한 대상 중 가장 가까운 것.
 pub fn aimed_target(cam: &Camera) -> Option<Target> {
     let candidates = std::iter::once(Target::Door).chain((0..PROPS.len()).map(Target::Prop));
     candidates
-        .filter_map(|t| {
-            let to = v_sub(t.pos(), cam.pos);
-            let dist = v_len(to);
-            let aimed = (0.05..=AIM_MAX_DIST).contains(&dist) && v_dot(v_scale(to, 1.0 / dist), cam.forward()) > AIM_MAX_COS;
-            aimed.then_some((t, dist))
-        })
+        .filter_map(|t| aim_dist(cam, t.pos()).map(|d| (t, d)))
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(t, _)| t)
-}
-
-pub struct Player {
-    feet: [f32; 3],
-    yaw: f32,
-    pitch: f32,
-    vel_y: f32,
-}
-
-impl Player {
-    pub fn spawn() -> Player {
-        Player { feet: SPAWN, yaw: 0.0, pitch: 0.0, vel_y: 0.0 }
-    }
-
-    pub fn camera(&self) -> Camera {
-        Camera { pos: [self.feet[0], self.feet[1] + EYE_OFFSET, self.feet[2]], yaw: self.yaw, pitch: self.pitch }
-    }
-
-    pub fn look(&mut self, dyaw: f32, dpitch: f32) {
-        self.yaw -= dyaw;
-        self.pitch = (self.pitch + dpitch).clamp(-MAX_PITCH, MAX_PITCH);
-    }
-
-    // can_move 가 false 면(창이 포커스가 아님) 키 입력은 무시하고 중력만 적용한다.
-    pub fn update(&mut self, input: &Input, can_move: bool, dt: f32, boxes: &[Box3D]) {
-        if can_move {
-            let cam = self.camera();
-            let (fwd, right) = (cam.forward_flat(), cam.right_flat());
-            let mut dir = [0.0f32; 3];
-            if input.is_down(KeyCode::W) {
-                dir = v_add(dir, fwd);
-            }
-            if input.is_down(KeyCode::S) {
-                dir = v_sub(dir, fwd);
-            }
-            if input.is_down(KeyCode::A) {
-                dir = v_sub(dir, right);
-            }
-            if input.is_down(KeyCode::D) {
-                dir = v_add(dir, right);
-            }
-            let len = v_len(dir);
-            if len > 1e-4 {
-                let step = v_scale(dir, MOVE_SPEED * dt / len);
-                self.feet[0] += step[0];
-                self.feet[2] += step[2];
-            }
-        }
-
-        let pushed = resolve_horizontal(self.feet, PLAYER_RADIUS, self.feet[1], PLAYER_HEIGHT, boxes);
-        self.feet[0] = pushed[0];
-        self.feet[2] = pushed[2];
-
-        self.vel_y += GRAVITY * dt;
-        let predicted_y = self.feet[1] + self.vel_y * dt;
-        match ground_height(self.feet[0], self.feet[2], self.feet[1], 60.0, boxes) {
-            Some(g) if predicted_y <= g && self.vel_y <= 0.0 => {
-                self.feet[1] = g;
-                self.vel_y = 0.0;
-            }
-            _ => self.feet[1] = predicted_y,
-        }
-    }
 }

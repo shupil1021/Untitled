@@ -9,11 +9,11 @@ use crate::apps::{
     MoveDest, OfficialSiteApp, Opened, SettingsApp, FIRST_MAIL_FROM, SECOND_MAIL_FROM,
 };
 use crate::foundation::{
-    display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, GAME_FILE_NAME, MY_COMPUTER_NAME,
+    display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, GAME_FILE_NAME, MY_COMPUTER_NAME, SUB_GAME_NAME,
     OFFICIAL_SITE_URL, RECYCLE_BIN_NAME,
 };
 use crate::render::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
-use crate::strings::{common, credits, desktop as s, explorer, official_site, settings, t};
+use crate::strings::{common, credits, desktop as s, explorer, official_site, settings, t, S};
 use crate::ui::*;
 use crate::window_manager::{DeskAction, Gui, WindowManager};
 
@@ -226,7 +226,8 @@ pub struct DesktopScene {
     // (fs.mail_arrived 를 true 로) — 이미 도착했으면(불러온 저장에서 이미
     // true 였거나 이번 세션에서 이미 울렸으면) 더 안 잰다.
     mail_timer: f32,
-    toast: Option<(String, String)>, // 우측 하단에 잠깐 뜨는 알림(발신자, 제목) — 없으면 안 보임
+    toast: Option<Toast>, // 우측 하단에 잠깐 뜨는 알림 — 없으면 안 보임
+    sub_game_timer: f32,  // 두 번째 메일이 온 뒤 흐른 시간 — SUB_GAME_DELAY 가 지나면 서브 게임 아이콘이 생긴다
     toast_timer: f32,                // 위 알림이 사라지기까지 남은 시간
     erase_confirm: bool,   // "Erase All Memory" 확인창 — 화면 전체(다른 창 포함)를 덮는 진짜 모달
     // 창을 열었다 옮기거나 크기를 바꾼 적 있으면 마지막 자리를 여기 기억해둔다(파일
@@ -239,6 +240,24 @@ pub struct DesktopScene {
 const AUTOSAVE_INTERVAL: f32 = 5.0; // 이 주기(초)마다 설정/바탕화면 상태를 자동 저장한다.
 const MAIL_ARRIVAL_DELAY: f32 = 5.0; // 게임 시작 후 이만큼(초) 지나면 메일이 도착한다.
 const TOAST_DURATION: f32 = 5.0; // 우측 하단 알림이 떠있는 시간(초)
+const SUB_GAME_DELAY: f32 = 6.0; // 두 번째 메일이 도착한 뒤 이만큼(초) 지나면 "다운로드 완료" + 서브 게임 아이콘
+
+// 우측 하단 알림 한 개 — 제목줄/두 줄 내용. opens_mail 이면 누를 때 Mail 을 연다(새 메일
+// 알림), 아니면 그냥 닫힌다(다운로드 완료 알림).
+#[derive(Clone)]
+struct Toast {
+    title: S,
+    line1: String,
+    line2: String,
+    opens_mail: bool,
+}
+
+impl Toast {
+    // 새 메일 알림 — 보낸 사람 + 제목.
+    fn new_mail(from: &str, subject: &str) -> Toast {
+        Toast { title: s::NEW_MAIL, line1: from.to_string(), line2: subject.to_string(), opens_mail: true }
+    }
+}
 
 impl Default for DesktopScene {
     fn default() -> Self {
@@ -297,6 +316,7 @@ impl DesktopScene {
             save_timer: 0.0,
             mail_timer: 0.0,
             toast: None,
+            sub_game_timer: 0.0,
             toast_timer: 0.0,
             erase_confirm: false,
             window_geometry,
@@ -943,18 +963,18 @@ impl DesktopScene {
     // 와이파이/시계 트레이 근처)에 잠깐 떴다가 TOAST_DURATION 뒤 저절로 사라지는
     // 알림. 누르면 바로 Mail 을 열고 닫힌다.
     fn update_toast(&mut self, f: &mut Frame, work: Rect, lang: Language) {
-        let Some((from, subject)) = self.toast.clone() else { return };
+        let Some(Toast { title, line1: from, line2: subject, opens_mail }) = self.toast.clone() else { return };
         let Rect { x, y, w, h } = Self::toast_rect();
         raised(f.r, x, y, w, h);
         f.r.rect(x + 2.0, y + 2.0, w - 4.0, 16.0, DARK_GRAY);
-        f.r.text(x + 6.0, y + 3.0, t(lang, s::NEW_MAIL), 0.8, WHITE);
+        f.r.text(x + 6.0, y + 3.0, t(lang, title), 0.8, WHITE);
         f.r.text_clipped(x + 6.0, y + 26.0, &from, 0.8, BLACK, w - 12.0);
         f.r.text_clipped(x + 6.0, y + 46.0, &subject, 0.8, GRAY, w - 12.0);
 
         if Rect::new(x, y, w, h).contains(f.input.mouse.0, f.input.mouse.1) && f.input.mouse_clicked {
             self.toast = None;
             self.toast_timer = 0.0;
-            if let Some(mail_id) = self.fs.find_by_name("Mail") {
+            if opens_mail && let Some(mail_id) = self.fs.find_by_name("Mail") {
                 let op = open(&self.fs, mail_id, &f.settings);
                 self.wm.open(op, Some(mail_id), work);
             }
@@ -1257,7 +1277,7 @@ impl Scene for DesktopScene {
                         self.fs.mail2_arrived = true;
                         self.refresh_mail_if_open(&f.settings);
                         let lang = f.settings.borrow().language;
-                        self.toast = Some((SECOND_MAIL_FROM.to_string(), t(lang, crate::strings::mail::FLOWER_MAIL_SUBJECT).to_string()));
+                        self.toast = Some(Toast::new_mail(SECOND_MAIL_FROM, t(lang, crate::strings::mail::FLOWER_MAIL_SUBJECT)));
                         self.toast_timer = TOAST_DURATION;
                         self.write_save(&f.settings);
                     }
@@ -1492,7 +1512,19 @@ impl Scene for DesktopScene {
                 self.refresh_mail_if_open(&f.settings);
                 // 메일이 도착했다고 우측 하단에 알려준다(보낸 사람 + 제목).
                 let lang = f.settings.borrow().language;
-                self.toast = Some((FIRST_MAIL_FROM.to_string(), t(lang, crate::strings::mail::GAME_MAIL_SUBJECT).to_string()));
+                self.toast = Some(Toast::new_mail(FIRST_MAIL_FROM, t(lang, crate::strings::mail::GAME_MAIL_SUBJECT)));
+                self.toast_timer = TOAST_DURATION;
+                self.write_save(&f.settings);
+            }
+        }
+        // 두 번째 메일이 온 뒤 잠깐 있다가 "다운로드 완료" 알림과 함께 서브 게임 아이콘이 생긴다
+        // (시트의 CRT B-0). 저장된 상태(mail2_arrived 만 켜진 채 종료)도 이어서 센다.
+        if self.fs.mail2_arrived && !self.fs.sub_game_ready {
+            self.sub_game_timer += f.dt;
+            if self.sub_game_timer >= SUB_GAME_DELAY {
+                self.fs.sub_game_ready = true;
+                self.add_desktop_icon(SUB_GAME_NAME, FileKind::SubGame);
+                self.toast = Some(Toast { title: s::DOWNLOAD_COMPLETE, line1: SUB_GAME_NAME.to_string(), line2: String::new(), opens_mail: false });
                 self.toast_timer = TOAST_DURATION;
                 self.write_save(&f.settings);
             }

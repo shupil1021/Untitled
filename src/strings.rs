@@ -211,6 +211,7 @@ pub mod desktop {
     pub const DISCONNECTED: S = S { en: "Disconnected", ko: "연결 안 됨", ja: "未接続" };
     pub const UNKNOWN: S = S { en: "(unknown)", ko: "(알 수 없음)", ja: "(不明)" };
     pub const NEW_MAIL: S = S { en: "New Mail", ko: "새 메일", ja: "新着メール" };
+    pub const DOWNLOAD_COMPLETE: S = S { en: "Download Complete", ko: "다운로드 완료", ja: "ダウンロード完了" };
 }
 
 // apps/settings.rs — 설정 창.

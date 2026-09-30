@@ -5,10 +5,12 @@
 
 mod credits;
 mod doors_game;
+mod game3d;
 mod game_installer;
 mod explorer;
 mod image_viewer;
 mod mail;
+mod maze_game;
 mod notepad;
 mod official_site;
 mod password;
@@ -22,6 +24,7 @@ pub use doors_game::DoorsGameApp;
 pub use game_installer::GameInstallerApp;
 pub use explorer::{ExplorerApp, ExplorerLocation};
 pub use image_viewer::ImageViewerApp;
+pub use maze_game::MazeGameApp;
 pub use mail::{MailApp, MailAttachment, SentMailView, FIRST_MAIL_FROM, SECOND_MAIL_FROM};
 pub use notepad::NotepadApp;
 pub use official_site::OfficialSiteApp;
@@ -290,6 +293,17 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             maximizable: false,
             movable: true,
             min_size: (360.0, 220.0),
+        },
+        // 서브 게임(test2.exe) — 미로 게임. 창 안 3D 게임이라 test.exe 와 같은 창 설정.
+        FileKind::SubGame => Opened {
+            app: Box::new(MazeGameApp::new()),
+            title: name,
+            size: (486.0, 386.0),
+            maximized: false,
+            resizable: true,
+            maximizable: true,
+            movable: true,
+            min_size: (246.0, 206.0),
         },
         // 설치가 끝나 바탕화면에 생긴 게임(test.exe) — 별도 실행 파일이 아니라 이 OS 안의 창 하나로
         // 돈다. 게임 화면은 창 안에 4:3 으로 맞춰 넣으므로(남는 곳은 검은 띠) 크기

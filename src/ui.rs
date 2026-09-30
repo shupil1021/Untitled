@@ -463,7 +463,7 @@ pub fn icon_of(node: &FileNode) -> IconType {
         FileKind::Mail { .. } => IconType::Mail,
         FileKind::Explorer => IconType::Computer,
         FileKind::Img(_) => IconType::Img,
-        FileKind::Game => IconType::Exe,
+        FileKind::Game | FileKind::SubGame => IconType::Exe,
         FileKind::GameSetup => IconType::Setup,
         FileKind::Deleted => IconType::Folder, // 그 무엇에서도 더는 참조 안 되니 실제로 그려질 일이 없다
     }
