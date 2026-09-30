@@ -138,11 +138,21 @@ cargo run
   3D 장면/조준선/안내를 그림), `MouseLook`(클릭하면 시점 모드), `player.rs`(1인칭 이동·충돌·
   조준 판정), `dialogue.rs`(타자기 대화창 + Y/N 선택지 + 입력 처리). doors_game 과
   maze_game 이 같이 쓴다.
-- **`src/apps/maze_game/` — 서브 게임 "B+a" 1스테이지**(`test2.exe`, 시트의 SUB A+a-1):
-  열 때마다 `maze.rs`가 5x5 셀 완전 미로를 깊이 우선 탐색으로 새로 만들고(벽/바닥/천장
-  `Box3D`, 도착 칸 = 출발에서 가장 먼 칸 — 어떤 시드든 도착까지 길이 있는지 단위
-  테스트가 검사), 도착 지점의 물뿌리개를 `E`로 주우면 "물뿌리개를 발견했다. / 1라운드
-  클리어."가 나온다. 아직 여기까지 — 시트의 다음 이벤트(화분/사물함 스테이지)는 없다.
+- **`src/apps/maze_game/` — 서브 게임 "B+a"**(`test2.exe`, 시트의 SUB A+a-1 ~ 14): `mod.rs`가
+  진행 상태(`Progress`)와 "지금 있는 곳"(`Place::Maze`/`Hub`)을 들고, 조사할 수 있는 물건
+  (`Item` — `Box3D` 로 그려지고 충돌도 있다)을 진행 상태에 따라 매번 새로 계산한다(`items()`).
+  흐름: ① 미로(`maze.rs` — 열 때마다 5x5 셀 완전 미로를 깊이 우선 탐색으로 새로 만들고, 도착
+  칸 = 출발에서 가장 먼 칸)를 걸어 물뿌리개를 줍는다("1라운드 클리어") → ② 대화가 끝나면
+  스테이지 1 방(`hub.rs`)으로 올라온다. 화분을 조사하면("이미 누가 꺾어간 것 같다 / 새롭게
+  심어야 할 것 같은데...") 그 뒤에 사물함이 나타나고, 사물함을 조사하면("열쇠 3개가 필요할 것
+  같다") 북쪽 문 3개가 열린다(어두운 색 → 밝은 색) → ③ 문 i 를 조사하면 새 미로로 들어가고,
+  도착 지점의 열쇠 i 를 주우면 밧줄이 내려오고, 밧줄을 조사하면 방으로 돌아온다(이미 다녀온
+  문은 안 들어가진다) → ④ 열쇠 3개를 모으면 사물함에서 씨앗을 얻고(모자라면 "열쇠가
+  부족하다 (n/3)"), 화분을 조사하면 심어지면서 "시간이 1년은 필요할 것 같다..."가 나온다.
+  방/미로 전환은 `pending_move`로 대화가 다 끝난 뒤에 한다. 왼쪽 위에 가진 것(물뿌리개/열쇠
+  n/3/씨앗)이 뜬다. 단위 테스트 두 개: 미로는 어떤 시드든 도착까지 길이 있는지, 진행
+  전체(`full_progression`)가 시트 순서대로 이어지는지. **다음 이벤트**(CRT 모니터에서 시간
+  조작으로 꽃이 핌 → 꽃 획득)는 아직 없다. 진행 상태는 저장하지 않는다(창을 닫으면 처음부터).
 - **`src/apps/doors_game/` — 메인 게임 "DOORS"**(`mod.rs` = 창 앱/입력, `world.rs` = 맵·
   물건·조준 대상; 화면/시점/플레이어/대화창은 위 game3d): 메일 첨부 `test Setup.exe`로
   설치해 바탕화면에 생긴 `test.exe`(`FileKind::Game`)를 열면 OS 안의 창 하나로 뜨는 앱(`DoorsGameApp`, 별도 실행
@@ -243,7 +253,7 @@ src/
 │   ├── widgets.rs         # 여러 앱이 같이 쓰는 위젯(아이콘 격자/슬라이더/스크롤바)
 │   ├── game3d/            # 창 안 3D 게임 공용 도구(View/MouseLook/Player/Dialogue)
 │   ├── doors_game/        # 메인 게임 DOORS — OS 창 안에서 도는 3D 게임(mod/world)
-│   ├── maze_game/         # 서브 게임 test2.exe — 미로 + 물뿌리개(mod/maze)
+│   ├── maze_game/         # 서브 게임 test2.exe — 미로/스테이지 1 방/열쇠·씨앗(mod/maze/hub)
 │   ├── game_installer.rs  # 메일 첨부 test Setup.exe 설치 마법사 → 바탕화면에 test.exe
 │   ├── notepad.rs, video_player.rs, image_viewer.rs, mail.rs, explorer.rs,
 │   │   recycle_bin.rs, password.rs, credits.rs, settings.rs, official_site.rs
