@@ -335,6 +335,15 @@ mod tests {
         assert!(!dir.exists());
     }
 
+    // 진짜 %APPDATA%\test 에 설치해서 눈으로 확인하고 싶을 때 손으로 돌린다(기본 테스트에선
+    // 빠진다): cargo test --lib install_to_real_appdata -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn install_to_real_appdata() {
+        let dir = install().expect("설치 실패");
+        println!("installed to {}", dir.display());
+    }
+
     #[test]
     fn foreign_folder_is_left_alone() {
         let dir = temp_dir("foreign");
