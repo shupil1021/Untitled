@@ -50,6 +50,8 @@ pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
 // 바탕화면에 생기는 게임 아이콘(FileKind::Game)의 fs 이름.
 pub const GAME_SETUP_NAME: &str = "test Setup.exe";
 pub const GAME_FILE_NAME: &str = "test.exe";
+// 설치할 때 %APPDATA% 아래에 만들어지는 게임 폴더 이름(gamefiles.rs) — 게임 이름(.exe 뗀 것).
+pub const GAME_FOLDER_NAME: &str = "test";
 pub const SUB_GAME_NAME: &str = "test2.exe";
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -564,6 +566,8 @@ pub fn save(data: &SaveData) {
 // 무시 — 어차피 호출부는 지웠다고 가정하고 부팅부터 다시 시작한다.
 pub fn delete() {
     let _ = std::fs::remove_file(save_path());
+    // 설치할 때 %APPDATA% 에 써 넣은 게임 폴더도 같이 지운다(우리가 만든 폴더일 때만).
+    crate::gamefiles::remove();
 }
 
 fn settings_path() -> PathBuf {

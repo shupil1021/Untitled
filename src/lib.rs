@@ -11,6 +11,7 @@ pub mod apps;
 // 작은 파일 기반 통신 — 실제 게임(crackhead.exe)은 이 모듈을 참조하지 않는다.
 pub mod director_ipc;
 pub mod foundation;
+pub mod gamefiles;
 pub mod platform;
 pub mod random;
 pub mod render;

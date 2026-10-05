@@ -1287,6 +1287,9 @@ impl Scene for DesktopScene {
                 DeskAction::InstallComplete => {
                     if !self.fs.game_installed {
                         self.fs.game_installed = true;
+                        // 진짜 컴퓨터의 %APPDATA%\test\ 에 게임 파일(소스/이미지/사운드)을 써 넣는
+                        // 연출 — 실패해도(권한 등) 게임 진행엔 영향이 없다.
+                        let _ = crate::gamefiles::install();
                         self.add_desktop_icon(GAME_FILE_NAME, FileKind::Game);
                     }
                     self.write_save(&f.settings);

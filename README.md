@@ -79,7 +79,9 @@ cargo run
   되살림)가 뜬다: Welcome → Installing(들쭉날쭉한 진행바, 취소 불가) → Finish.
   진행바가 다 차는 순간 `AppAction::InstallComplete` → desktop.rs 가
   `fs.game_installed`를 켜고 `add_desktop_icon()`으로 바탕화면 빈 칸에 게임 아이콘
-  `test.exe`(`FileKind::Game`)를 만든다. 이미 설치된 뒤 Setup 을 다시 열면 곧장
+  `test.exe`(`FileKind::Game`)를 만든다. 동시에 진짜 컴퓨터의
+  **`%APPDATA%\test\`에 게임 파일을 써 넣는다**(`gamefiles.rs`, 아래 "게임 설치 연출" 참고).
+  이미 설치된 뒤 Setup 을 다시 열면 곧장
   "이미 설치됨" 페이지만 뜬다(아이콘 중복 방지). 바탕화면의 `test.exe`를 열면
   **PalaceOS 안의 창 하나**로 게임(`apps/doors_game/`, 아래 "메인 게임" 절)이
   뜬다. 아이콘은 새로 그린 `assets/icon_setup.png`(`IconType::Setup`, 상자+디스크+
@@ -191,6 +193,21 @@ cargo run
   다음 실행에서 이어서 센다.
   창을 닫으면 게임 진행은 처음부터(아직 저장 안 함). 문은 열리지 않는다.
 
+### 게임 설치 연출 (`gamefiles.rs`)
+
+설치 마법사가 끝나는 순간(`InstallComplete`) 진짜 컴퓨터의 `%APPDATA%\test\`(폴더 이름 =
+`GAME_FOLDER_NAME`, 게임 이름)에 "정말 설치된 크랙 게임"처럼 보이는 파일들을 실제로 쓴다 —
+`README.txt`, 크랙 그룹(R18) 스타일 `test-CRACKED.nfo`, `config/game.ini`, `logs/install.log`,
+디컴파일된 듯한 소스 `src/{main,doors,maze}.rs`(도어즈는 꽃을 원한다, 시간이 필요하다 같은
+단서가 주석에 숨어 있다), 이미지 `assets/{door,flower_pot,static}.png`, 사운드
+`assets/sound/{ambience,door_creak}.wav`, 빈 `saves/`. 이진 에셋은 따로 두지 않고 설치할 때
+코드로 만든다(`image` 크레이트로 PNG, 16비트 PCM WAV 는 직접 헤더를 씀). **게임은 이 파일들을
+읽지 않는다** — 플레이어가 탐색기로 열어봤을 때를 위한 순수 연출(ARG)용이다. 설치 마법사의 끝
+페이지에 설치 위치(`%APPDATA%\test`)가 나온다. 안전장치: 우리가 만든 폴더라는 표식
+(`.palaceos`)이 있는 폴더만 덮어쓰고 지운다 — 같은 이름의 남의 폴더가 이미 있으면 아무것도
+안 건드린다. "Erase All Memory"(`foundation::delete`)도 이 폴더를 같이 지운다. 단위 테스트가
+임시 폴더에서 설치→파일 확인(PNG 디코드/WAV 헤더)→삭제와 남의 폴더 보호를 검사한다.
+
 ### 로컬라이제이션
 
 - 영어/한국어/일본어 3개 언어. 모든 UI 문자열은 `strings.rs`에 `S { en, ko, ja }` 상수로
@@ -236,6 +253,7 @@ src/
 ├── foundation.rs       # 가짜 파일 시스템(FileSystem/FileId/FileKind) + Settings + 저장/불러오기
 ├── ui.rs               # 9x 위젯(베벨/버튼/체크박스/아코디언/아이콘) + 커서
 ├── strings.rs          # 다국어(en/ko/ja) 문자열 테이블
+├── gamefiles.rs        # 설치 연출 — %APPDATA%\test\ 에 가짜 게임 파일(소스/이미지/사운드) 쓰기
 ├── random.rs           # 연출용 xorshift 난수(Rng) + 들쭉날쭉한 로딩 바 곡선(LoadCurve)
 ├── secrets.rs          # 스토리 스포일러 상수(따로 분리)
 ├── window_manager.rs   # 창 관리자 (z순서, 드래그, 크기조절, 타이틀바 버튼)

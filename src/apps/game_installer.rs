@@ -201,6 +201,9 @@ impl App for GameInstallerApp {
             }
             Page::Finish => {
                 let y = self.draw_paragraph(r, content.x, content.y, content.w, t(lang, s::FINISH_MSG), BLACK);
+                // 실제로 게임 파일이 써진 위치(gamefiles.rs) — 플레이어가 탐색기로 찾아가 볼 수 있다.
+                let location = format!("{} %APPDATA%\\{}", t(lang, s::INSTALLED_TO), crate::foundation::GAME_FOLDER_NAME);
+                let y = self.draw_paragraph(r, content.x, y + 6.0, content.w, &location, GRAY);
                 self.draw_paragraph(r, content.x, y + 8.0, content.w, t(lang, s::CLICK_FINISH_TO_CLOSE), GRAY);
 
                 if let NavClick::Next = self.draw_nav_row(r, card, win, t(lang, s::FINISH), false, lang) {

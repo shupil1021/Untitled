@@ -117,6 +117,7 @@ pub mod game_installer {
 
     pub const PAGE_FINISH: S = S { en: "Setup Complete", ko: "설치 완료", ja: "セットアップ完了" };
     pub const FINISH_MSG: S = S { en: "Setup has finished installing test on your computer.", ko: "test 설치가 완료되었습니다.", ja: "testのインストールが完了しました。" };
+    pub const INSTALLED_TO: S = S { en: "Installed to:", ko: "설치 위치:", ja: "インストール先:" };
     pub const CLICK_FINISH_TO_CLOSE: S = S { en: "Click Finish to close this wizard.", ko: "마법사를 닫으려면 마침을 누르세요.", ja: "ウィザードを閉じるには完了を押してください。" };
 }
 
