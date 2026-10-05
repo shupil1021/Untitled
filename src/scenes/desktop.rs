@@ -293,6 +293,11 @@ impl DesktopScene {
         icon_pos.truncate(fs.desktop.len());
         // 게임 파일 첨부가 생기기 전의 예전 저장 파일이면 지금 채워 넣는다.
         fs.ensure_game_attachment();
+        fs.ensure_appdata();
+        if fs.game_installed {
+            // 게임 폴더가 생기기 전에 설치한 예전 저장 파일에도 파일들을 채워 넣는다.
+            crate::gamefiles::install_into(&mut fs);
+        }
         // Photos.lock 이 풀려서 폴더로 바뀌었는지는 이제 별도 플래그 없이 fs 스냅샷
         // 자체(이름이 이미 "Photos" 로 바뀌어 있는지)로 판단한다.
         let unlocked = fs.find_by_name("Photos").is_some();
@@ -1287,9 +1292,10 @@ impl Scene for DesktopScene {
                 DeskAction::InstallComplete => {
                     if !self.fs.game_installed {
                         self.fs.game_installed = true;
-                        // 진짜 컴퓨터의 %APPDATA%\test\ 에 게임 파일(소스/이미지/사운드)을 써 넣는
-                        // 연출 — 실패해도(권한 등) 게임 진행엔 영향이 없다.
-                        let _ = crate::gamefiles::install();
+                        // 게임 안 File Explorer 의 AppData\test\ 에 게임 파일(소스/이미지/사운드)이
+                        // 생긴다(gamefiles.rs) — 열려있는 탐색기가 있으면 바로 보이게 새로고침.
+                        crate::gamefiles::install_into(&mut self.fs);
+                        self.refresh_explorer_if_open(&f.settings);
                         self.add_desktop_icon(GAME_FILE_NAME, FileKind::Game);
                     }
                     self.write_save(&f.settings);

@@ -87,6 +87,13 @@ pub mod video_player {
     pub const PUT_VIDEO_AT: S = S { en: "Put a video at", ko: "다음 경로에 동영상을 넣으세요:", ja: "動画を次の場所に置いてください:" };
 }
 
+// apps/sound_player.rs — .wav 재생 창.
+pub mod sound_player {
+    use super::S;
+    pub const PLAY: S = S { en: "Play", ko: "재생", ja: "再生" };
+    pub const PAUSE: S = S { en: "Pause", ko: "일시정지", ja: "一時停止" };
+}
+
 // apps/game_installer.rs — 메일 첨부 "test Setup.exe"를 열면 뜨는 설치 마법사.
 pub mod game_installer {
     use super::S;

@@ -1,78 +1,90 @@
-//! 게임 설치 연출 — 메일로 받은 게임(test)의 설치 마법사가 끝나면 진짜 컴퓨터의
-//! `%APPDATA%\<게임 이름>\` 폴더에 게임 파일처럼 보이는 파일들(소스 코드, 이미지, 사운드,
-//! 설정, 로그, 크랙 NFO)을 실제로 써 넣는다. 게임은 이 파일들을 읽지 않는다 — 플레이어가
-//! 탐색기로 직접 열어봤을 때 "정말 설치된 크랙 게임" 같고, 그 안에 이야기 단서가 숨어
-//! 있도록 하는 순전히 연출용 소품이다(ARG). 이미지/사운드는 이진 에셋을 따로 두지 않고 설치할
-//! 때 코드로 만들어낸다.
-//!
-//! 안전: 우리가 만든 폴더라는 표식(`.palaceos`)이 있는 폴더만 덮어쓰고 지운다 — 사용자가
-//! 이미 같은 이름의 폴더를 갖고 있으면 아무것도 건드리지 않는다.
+//! 게임 설치 연출 — 메일로 받은 게임(test)의 설치 마법사가 끝나면, **게임 안 가짜 컴퓨터**의
+//! File Explorer 에 `AppData\<게임 이름>\` 폴더가 생기고 그 안에 게임 파일처럼 보이는
+//! 파일들(소스 코드, 이미지, 사운드, 설정, 로그, 크랙 NFO)이 들어간다. 진짜 컴퓨터의 디스크에는
+//! 아무것도 쓰지 않는다 — 전부 `FileSystem`(저장 파일에 실리는 가짜 파일시스템) 안의 노드다.
+//! 플레이어가 게임 안에서 열어볼 수 있다: 글 파일은 Notepad, 이미지는 이미지 뷰어,
+//! 사운드는 사운드 플레이어(apps/sound_player.rs). 게임 자체는 이 파일들을 읽지 않는다 —
+//! 이야기 단서를 숨겨둔 연출용 소품이다(ARG). 이미지/사운드는 이진 에셋을 따로 두지 않고
+//! 코드로 만들어낸다(이미지는 시작할 때 Assets 가, 사운드는 열 때 플레이어가 만든다).
 
-use std::io;
-use std::path::{Path, PathBuf};
-
-use crate::foundation::GAME_FOLDER_NAME;
+use crate::foundation::{FileId, FileKind, FileSystem, GAME_FOLDER_NAME};
 use crate::random::Rng;
 
-const MARKER: &str = ".palaceos";
-
-// 설치 위치 — 실제 경로(%APPDATA% = ...\AppData\Roaming) 아래 게임 이름 폴더.
-pub fn install_dir() -> Option<PathBuf> {
-    std::env::var_os("APPDATA").map(|p| PathBuf::from(p).join(GAME_FOLDER_NAME))
+// 파일 하나의 내용 종류. Image/Sound 의 숫자는 IMAGE_NAMES/SOUND_NAMES 의 순서와 같다.
+enum Entry {
+    Text(&'static str),
+    Image(usize),
+    Sound(usize),
 }
 
-// 설치 마법사가 끝났을 때 부른다. 실패(권한, 같은 이름의 남의 폴더 등)해도 게임 진행엔
-// 영향이 없으니 호출부는 결과를 무시해도 된다.
-pub fn install() -> io::Result<PathBuf> {
-    let dir = install_dir().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "APPDATA 가 없다"))?;
-    install_to(&dir)?;
-    Ok(dir)
-}
+pub const IMAGE_NAMES: [&str; 3] = ["door.png", "flower_pot.png", "static.png"];
+pub const SOUND_NAMES: [&str; 2] = ["ambience.wav", "door_creak.wav"];
 
-// "Erase All Memory" 때 부른다 — 우리가 만든 폴더일 때만 지운다.
-pub fn remove() {
-    if let Some(dir) = install_dir() {
-        remove_dir(&dir);
-    }
-}
-
-fn remove_dir(dir: &Path) {
-    if dir.join(MARKER).exists() {
-        let _ = std::fs::remove_dir_all(dir);
-    }
-}
-
-fn install_to(dir: &Path) -> io::Result<()> {
-    if dir.exists() && !dir.join(MARKER).exists() {
-        return Err(io::Error::new(io::ErrorKind::AlreadyExists, "같은 이름의 폴더가 이미 있다"));
-    }
-    for sub in ["src", "assets/sound", "config", "logs", "saves"] {
-        std::fs::create_dir_all(dir.join(sub))?;
-    }
-    std::fs::write(dir.join(MARKER), "created by the PalaceOS installer\n")?;
-
-    for (path, text) in TEXT_FILES {
-        std::fs::write(dir.join(path), text)?;
-    }
-    door_image().save(dir.join("assets/door.png")).map_err(io::Error::other)?;
-    flower_pot_image().save(dir.join("assets/flower_pot.png")).map_err(io::Error::other)?;
-    static_image().save(dir.join("assets/static.png")).map_err(io::Error::other)?;
-    std::fs::write(dir.join("assets/sound/ambience.wav"), ambience_wav())?;
-    std::fs::write(dir.join("assets/sound/door_creak.wav"), creak_wav())?;
-    Ok(())
-}
-
-// ================= 텍스트 파일들(소스 코드/설정/로그/NFO) =================
-
-const TEXT_FILES: &[(&str, &str)] = &[
-    ("README.txt", README),
-    ("test-CRACKED.nfo", NFO),
-    ("config/game.ini", GAME_INI),
-    ("logs/install.log", INSTALL_LOG),
-    ("src/main.rs", SRC_MAIN),
-    ("src/doors.rs", SRC_DOORS),
-    ("src/maze.rs", SRC_MAZE),
+// 게임 폴더 안의 모든 파일 — (폴더 경로/파일 이름, 내용).
+const FILES: &[(&str, Entry)] = &[
+    ("README.txt", Entry::Text(README)),
+    ("test-CRACKED.nfo", Entry::Text(NFO)),
+    ("config/game.ini", Entry::Text(GAME_INI)),
+    ("logs/install.log", Entry::Text(INSTALL_LOG)),
+    ("src/main.rs", Entry::Text(SRC_MAIN)),
+    ("src/doors.rs", Entry::Text(SRC_DOORS)),
+    ("src/maze.rs", Entry::Text(SRC_MAZE)),
+    ("assets/door.png", Entry::Image(0)),
+    ("assets/flower_pot.png", Entry::Image(1)),
+    ("assets/static.png", Entry::Image(2)),
+    ("assets/sound/ambience.wav", Entry::Sound(0)),
+    ("assets/sound/door_creak.wav", Entry::Sound(1)),
 ];
+// 파일이 하나도 없는 빈 폴더.
+const EMPTY_DIRS: &[&str] = &["saves"];
+
+// 설치 마법사가 끝났을 때 부른다 — AppData 폴더 밑에 게임 폴더와 파일들을 만든다. 이미
+// 만들어져 있으면(다시 불러온 저장 등) 아무것도 안 한다.
+pub fn install_into(fs: &mut FileSystem) {
+    let appdata = fs.ensure_appdata();
+    if child_named(fs, appdata, GAME_FOLDER_NAME).is_some() {
+        return;
+    }
+    let root = new_folder(fs, appdata, GAME_FOLDER_NAME);
+    for dir in EMPTY_DIRS {
+        folder_at(fs, root, dir);
+    }
+    for (path, entry) in FILES {
+        let (dir, name) = path.rsplit_once('/').unwrap_or(("", path));
+        let parent = folder_at(fs, root, dir);
+        let kind = match entry {
+            // 소스에는 \r\n 으로 적어뒀지만(윈도 메모장 느낌) 게임 안 Notepad 는 \n 만 쓴다.
+            Entry::Text(text) => FileKind::Txt(text.replace("\r\n", "\n")),
+            Entry::Image(i) => FileKind::Img(*i),
+            Entry::Sound(i) => FileKind::Sound(*i),
+        };
+        let id = fs.add(name, kind);
+        fs.add_to_folder(parent, id);
+    }
+}
+
+fn child_named(fs: &FileSystem, folder: FileId, name: &str) -> Option<FileId> {
+    match &fs.get(folder).kind {
+        FileKind::Folder { children } => children.iter().copied().find(|&c| fs.get(c).name == name),
+        _ => None,
+    }
+}
+
+fn new_folder(fs: &mut FileSystem, parent: FileId, name: &str) -> FileId {
+    let id = fs.add(name, FileKind::Folder { children: Vec::new() });
+    fs.add_to_folder(parent, id);
+    id
+}
+
+// root 아래 "a/b/c" 경로의 폴더를 (없는 마디는 만들면서) 찾아 돌려준다. 빈 경로면 root.
+fn folder_at(fs: &mut FileSystem, root: FileId, path: &str) -> FileId {
+    path.split('/').filter(|s| !s.is_empty()).fold(root, |cur, seg| match child_named(fs, cur, seg) {
+        Some(id) => id,
+        None => new_folder(fs, cur, seg),
+    })
+}
+
+// ================= 글 파일들(소스 코드/설정/로그/NFO) =================
 
 const README: &str = "test - cracked edition\r\n\
 \r\n\
@@ -195,6 +207,12 @@ pub fn plant(seed: Seed, pot: &mut Pot) {\r\n\
 
 // ================= 코드로 만드는 이미지/사운드 =================
 
+// IMAGE_NAMES 순서대로 — Assets::load 가 이 순서로 photos 에 올리므로 FileKind::Img(i) 의
+// i 가 그대로 이 목록의 인덱스다.
+pub fn generated_images() -> [image::RgbaImage; 3] {
+    [door_image(), flower_pot_image(), static_image()]
+}
+
 fn door_image() -> image::RgbaImage {
     let (w, h) = (64u32, 96u32);
     image::RgbaImage::from_fn(w, h, |x, y| {
@@ -226,7 +244,7 @@ fn flower_pot_image() -> image::RgbaImage {
         } else if in_pot {
             image::Rgba([154, 89, 51, 255])
         } else {
-            image::Rgba([0, 0, 0, 0])
+            image::Rgba([12, 12, 14, 255])
         }
     })
 }
@@ -239,7 +257,21 @@ fn static_image() -> image::RgbaImage {
     })
 }
 
-// 16비트 모노 PCM WAV 파일 바이트.
+pub const SOUND_RATE: u32 = 22050;
+
+// SOUND_NAMES[i] 의 WAV 파일 바이트(16비트 모노 PCM) — 사운드 플레이어가 열 때 만든다.
+pub fn sound_wav(i: usize) -> Vec<u8> {
+    match i {
+        0 => ambience_wav(),
+        _ => creak_wav(),
+    }
+}
+
+// WAV 바이트의 재생 시간(초).
+pub fn wav_duration(wav: &[u8]) -> f32 {
+    (wav.len().saturating_sub(44) / 2) as f32 / SOUND_RATE as f32
+}
+
 fn wav_bytes(samples: &[i16], rate: u32) -> Vec<u8> {
     let data_len = (samples.len() * 2) as u32;
     let mut out = Vec::with_capacity(44 + data_len as usize);
@@ -261,16 +293,14 @@ fn wav_bytes(samples: &[i16], rate: u32) -> Vec<u8> {
     out
 }
 
-const RATE: u32 = 22050;
-
 // 낮게 웅웅거리는 방 안 소리 — 55Hz 저음 + 살짝 흔들리는 5도 위 + 느리게 숨 쉬는 노이즈.
 fn ambience_wav() -> Vec<u8> {
     let mut rng = Rng::new(0xA11B);
     let secs = 6.0;
-    let n = (RATE as f32 * secs) as usize;
+    let n = (SOUND_RATE as f32 * secs) as usize;
     let samples: Vec<i16> = (0..n)
         .map(|i| {
-            let t = i as f32 / RATE as f32;
+            let t = i as f32 / SOUND_RATE as f32;
             let tau = std::f32::consts::TAU;
             let hum = 0.25 * (tau * 55.0 * t).sin() + 0.12 * (tau * 82.5 * t + 0.8 * (tau * 0.2 * t).sin()).sin();
             let breath = 0.5 + 0.5 * (tau * 0.3 * t).sin();
@@ -279,79 +309,82 @@ fn ambience_wav() -> Vec<u8> {
             ((hum + noise) * fade * i16::MAX as f32 * 0.6) as i16
         })
         .collect();
-    wav_bytes(&samples, RATE)
+    wav_bytes(&samples, SOUND_RATE)
 }
 
 // 문 삐걱거리는 소리 — 높은 톱니파가 점점 낮아지며 떨린다.
 fn creak_wav() -> Vec<u8> {
     let mut rng = Rng::new(0xC0FFEE);
     let secs = 1.4;
-    let n = (RATE as f32 * secs) as usize;
+    let n = (SOUND_RATE as f32 * secs) as usize;
     let mut phase = 0.0f32;
     let samples: Vec<i16> = (0..n)
         .map(|i| {
-            let t = i as f32 / RATE as f32;
+            let t = i as f32 / SOUND_RATE as f32;
             let k = t / secs;
             let freq = 200.0 - 110.0 * k + 6.0 * (std::f32::consts::TAU * 14.0 * t).sin();
-            phase = (phase + freq / RATE as f32).fract();
+            phase = (phase + freq / SOUND_RATE as f32).fract();
             let saw = phase * 2.0 - 1.0;
             let env = (k * 12.0).min(1.0) * (1.0 - k).powf(0.7);
             ((saw * 0.35 + (rng.unit() * 2.0 - 1.0) * 0.1) * env * i16::MAX as f32 * 0.6) as i16
         })
         .collect();
-    wav_bytes(&samples, RATE)
+    wav_bytes(&samples, SOUND_RATE)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("palaceos_gamefiles_{tag}_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
+    // path("a/b/c") 로 파일을 찾는다.
+    fn find(fs: &FileSystem, root: FileId, path: &str) -> Option<FileId> {
+        path.split('/').try_fold(root, |cur, seg| child_named(fs, cur, seg))
     }
 
     #[test]
-    fn install_writes_every_file_and_remove_cleans_up() {
-        let dir = temp_dir("ok");
-        install_to(&dir).unwrap();
-        for (path, _) in TEXT_FILES {
-            assert!(dir.join(path).is_file(), "{path}");
+    fn install_builds_the_file_tree_inside_the_fake_fs() {
+        let mut fs = FileSystem::new();
+        install_into(&mut fs);
+        let appdata = fs.find_by_name("AppData").expect("AppData 폴더");
+        let root = child_named(&fs, appdata, GAME_FOLDER_NAME).expect("게임 폴더");
+
+        for (path, entry) in FILES {
+            let id = find(&fs, root, path).unwrap_or_else(|| panic!("{path} 가 없다"));
+            match (entry, &fs.get(id).kind) {
+                (Entry::Text(_), FileKind::Txt(t)) => assert!(!t.contains('\r'), "{path}"),
+                (Entry::Image(i), FileKind::Img(j)) | (Entry::Sound(i), FileKind::Sound(j)) => assert_eq!(i, j, "{path}"),
+                _ => panic!("{path}: 종류가 안 맞는다"),
+            }
         }
-        for path in ["assets/door.png", "assets/flower_pot.png", "assets/static.png"] {
-            image::open(dir.join(path)).unwrap_or_else(|e| panic!("{path}: {e}"));
+        assert!(matches!(&fs.get(find(&fs, root, "saves").unwrap()).kind, FileKind::Folder { children } if children.is_empty()));
+
+        // 다시 설치해도(저장을 불러온 뒤 등) 중복으로 안 늘어난다.
+        let nodes_before = fs.all_of_kind(|_| true).len();
+        install_into(&mut fs);
+        assert_eq!(fs.all_of_kind(|_| true).len(), nodes_before);
+    }
+
+    #[test]
+    fn file_names_match_image_and_sound_tables() {
+        for (path, entry) in FILES {
+            let name = path.rsplit('/').next().unwrap();
+            match entry {
+                Entry::Image(i) => assert_eq!(IMAGE_NAMES[*i], name),
+                Entry::Sound(i) => assert_eq!(SOUND_NAMES[*i], name),
+                Entry::Text(_) => {}
+            }
         }
-        for path in ["assets/sound/ambience.wav", "assets/sound/door_creak.wav"] {
-            let bytes = std::fs::read(dir.join(path)).unwrap();
+    }
+
+    #[test]
+    fn generated_sounds_are_valid_wav() {
+        for i in 0..SOUND_NAMES.len() {
+            let bytes = sound_wav(i);
             assert_eq!(&bytes[..4], b"RIFF");
             assert_eq!(&bytes[8..12], b"WAVE");
             let data_len = u32::from_le_bytes(bytes[40..44].try_into().unwrap()) as usize;
-            assert_eq!(bytes.len(), 44 + data_len, "{path}");
+            assert_eq!(bytes.len(), 44 + data_len);
+            assert!(wav_duration(&bytes) > 1.0);
         }
-        assert!(dir.join("saves").is_dir());
-        install_to(&dir).unwrap(); // 다시 설치해도(덮어쓰기) 문제없다
-        remove_dir(&dir);
-        assert!(!dir.exists());
-    }
-
-    // 진짜 %APPDATA%\test 에 설치해서 눈으로 확인하고 싶을 때 손으로 돌린다(기본 테스트에선
-    // 빠진다): cargo test --lib install_to_real_appdata -- --ignored --nocapture
-    #[test]
-    #[ignore]
-    fn install_to_real_appdata() {
-        let dir = install().expect("설치 실패");
-        println!("installed to {}", dir.display());
-    }
-
-    #[test]
-    fn foreign_folder_is_left_alone() {
-        let dir = temp_dir("foreign");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("mine.txt"), "important").unwrap();
-        assert!(install_to(&dir).is_err());
-        remove_dir(&dir); // 표식이 없으니 안 지워진다
-        assert!(dir.join("mine.txt").is_file());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

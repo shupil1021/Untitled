@@ -436,6 +436,7 @@ pub enum IconType {
     RecycleFull,
     Exe,   // 실행 파일(FileKind::Game — 설치된 게임)
     Setup, // 설치 파일(FileKind::GameSetup — 메일로 받은 게임 Setup.exe)
+    Sound, // 사운드 파일(FileKind::Sound)
 }
 
 // 목록/트리에서 "이 아이콘은 폴더처럼 안을 열어볼 수 있는 대상인가" — 휴지통도
@@ -465,6 +466,7 @@ pub fn icon_of(node: &FileNode) -> IconType {
         FileKind::Img(_) => IconType::Img,
         FileKind::Game | FileKind::SubGame => IconType::Exe,
         FileKind::GameSetup => IconType::Setup,
+        FileKind::Sound(_) => IconType::Sound,
         FileKind::Deleted => IconType::Folder, // 그 무엇에서도 더는 참조 안 되니 실제로 그려질 일이 없다
     }
 }
@@ -489,6 +491,7 @@ pub fn draw_icon(r: &mut Renderer, assets: &Assets, icon: &IconType, x: f32, y: 
         IconType::RecycleFull => assets.icon_recycle_full,
         IconType::Exe => assets.icon_exe,
         IconType::Setup => assets.icon_setup,
+        IconType::Sound => assets.icon_sound,
     };
     r.sprite(tex, x, y, s, s, WHITE);
 }

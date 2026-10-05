@@ -79,8 +79,8 @@ cargo run
   되살림)가 뜬다: Welcome → Installing(들쭉날쭉한 진행바, 취소 불가) → Finish.
   진행바가 다 차는 순간 `AppAction::InstallComplete` → desktop.rs 가
   `fs.game_installed`를 켜고 `add_desktop_icon()`으로 바탕화면 빈 칸에 게임 아이콘
-  `test.exe`(`FileKind::Game`)를 만든다. 동시에 진짜 컴퓨터의
-  **`%APPDATA%\test\`에 게임 파일을 써 넣는다**(`gamefiles.rs`, 아래 "게임 설치 연출" 참고).
+  `test.exe`(`FileKind::Game`)를 만든다. 동시에
+  **게임 안 `AppData\test\` 폴더에 게임 파일이 생긴다**(`gamefiles.rs`, 아래 "게임 설치 연출" 참고).
   이미 설치된 뒤 Setup 을 다시 열면 곧장
   "이미 설치됨" 페이지만 뜬다(아이콘 중복 방지). 바탕화면의 `test.exe`를 열면
   **PalaceOS 안의 창 하나**로 게임(`apps/doors_game/`, 아래 "메인 게임" 절)이
@@ -195,18 +195,25 @@ cargo run
 
 ### 게임 설치 연출 (`gamefiles.rs`)
 
-설치 마법사가 끝나는 순간(`InstallComplete`) 진짜 컴퓨터의 `%APPDATA%\test\`(폴더 이름 =
-`GAME_FOLDER_NAME`, 게임 이름)에 "정말 설치된 크랙 게임"처럼 보이는 파일들을 실제로 쓴다 —
-`README.txt`, 크랙 그룹(R18) 스타일 `test-CRACKED.nfo`, `config/game.ini`, `logs/install.log`,
-디컴파일된 듯한 소스 `src/{main,doors,maze}.rs`(도어즈는 꽃을 원한다, 시간이 필요하다 같은
-단서가 주석에 숨어 있다), 이미지 `assets/{door,flower_pot,static}.png`, 사운드
-`assets/sound/{ambience,door_creak}.wav`, 빈 `saves/`. 이진 에셋은 따로 두지 않고 설치할 때
-코드로 만든다(`image` 크레이트로 PNG, 16비트 PCM WAV 는 직접 헤더를 씀). **게임은 이 파일들을
-읽지 않는다** — 플레이어가 탐색기로 열어봤을 때를 위한 순수 연출(ARG)용이다. 설치 마법사의 끝
-페이지에 설치 위치(`%APPDATA%\test`)가 나온다. 안전장치: 우리가 만든 폴더라는 표식
-(`.palaceos`)이 있는 폴더만 덮어쓰고 지운다 — 같은 이름의 남의 폴더가 이미 있으면 아무것도
-안 건드린다. "Erase All Memory"(`foundation::delete`)도 이 폴더를 같이 지운다. 단위 테스트가
-임시 폴더에서 설치→파일 확인(PNG 디코드/WAV 헤더)→삭제와 남의 폴더 보호를 검사한다.
+설치 마법사가 끝나는 순간(`InstallComplete`) **게임 안 가짜 컴퓨터**의 File Explorer 에
+`AppData\test\`(폴더 이름 = `GAME_FOLDER_NAME`, 게임 이름) 폴더가 생기고 "정말 설치된 크랙
+게임"처럼 보이는 파일들이 들어간다 — 진짜 컴퓨터의 디스크에는 아무것도 쓰지 않는다(전부
+`FileSystem` 노드라 저장 파일에 실린다). 탐색기 왼쪽에 **AppData 탭**(`APPDATA_NAME`,
+`FileSystem::ensure_appdata()`가 만드는 폴더 노드의 내용 — 바탕화면엔 안 놓이고 탭으로만 보임)이
+추가됐고, 그 안에서 폴더를 더블클릭해 들어가면 된다: `README.txt`, 크랙 그룹(R18) 스타일
+`test-CRACKED.nfo`, `config/game.ini`, `logs/install.log`, 디컴파일된 듯한 소스
+`src/{main,doors,maze}.rs`(도어즈는 꽃을 원한다, 시간이 필요하다 같은 단서가 주석에 숨어
+있다), 이미지 `assets/{door,flower_pot,static}.png`, 사운드
+`assets/sound/{ambience,door_creak}.wav`, 빈 `saves/`. 글 파일은 Notepad(`FileKind::Txt`),
+이미지는 이미지 뷰어(`FileKind::Img(i)`), 사운드는 새 **사운드 플레이어**(`apps/sound_player.rs`,
+`FileKind::Sound(i)` — 재생/일시정지 + 진행 막대, 소리 크기는 설정창의 Mp4 Sound/Master/
+음소거를 따른다)로 열린다. 이진 에셋은 따로 두지 않고 코드로 만든다 — 이미지는 시작할 때
+`Assets::load`가 `generated_images()`를 `photos`에 올리고(그래서 Images 가상 탭에도 보인다),
+WAV 는 열 때 만들어 임시 폴더에 써두고 `video.rs::Audio`(WASAPI)로 재생한다(그 임시 파일은
+게임 폴더가 아니라 내부용). **게임은 이 파일들을 읽지 않는다** — 플레이어가 게임 안에서
+뒤져봤을 때를 위한 연출(ARG)용이다. 설치 마법사 끝 페이지에 설치 위치가 나온다. 게임 폴더가
+이미 있으면 다시 안 만든다(예전에 설치한 저장 파일을 불러올 때도 채워 넣는다). 단위 테스트가
+파일 트리(종류/내용), 중복 설치 방지, WAV 헤더를 검사한다.
 
 ### 로컬라이제이션
 
@@ -253,7 +260,7 @@ src/
 ├── foundation.rs       # 가짜 파일 시스템(FileSystem/FileId/FileKind) + Settings + 저장/불러오기
 ├── ui.rs               # 9x 위젯(베벨/버튼/체크박스/아코디언/아이콘) + 커서
 ├── strings.rs          # 다국어(en/ko/ja) 문자열 테이블
-├── gamefiles.rs        # 설치 연출 — %APPDATA%\test\ 에 가짜 게임 파일(소스/이미지/사운드) 쓰기
+├── gamefiles.rs        # 설치 연출 — 게임 안 AppData\test\ 에 가짜 게임 파일(소스/이미지/사운드) 만들기
 ├── random.rs           # 연출용 xorshift 난수(Rng) + 들쭉날쭉한 로딩 바 곡선(LoadCurve)
 ├── secrets.rs          # 스토리 스포일러 상수(따로 분리)
 ├── window_manager.rs   # 창 관리자 (z순서, 드래그, 크기조절, 타이틀바 버튼)
@@ -273,7 +280,7 @@ src/
 │   ├── doors_game/        # 메인 게임 DOORS — OS 창 안에서 도는 3D 게임(mod/world)
 │   ├── maze_game/         # 서브 게임 test2.exe — 미로/스테이지 1 방/열쇠·씨앗(mod/maze/hub)
 │   ├── game_installer.rs  # 메일 첨부 test Setup.exe 설치 마법사 → 바탕화면에 test.exe
-│   ├── notepad.rs, video_player.rs, image_viewer.rs, mail.rs, explorer.rs,
+│   ├── notepad.rs, video_player.rs, sound_player.rs, image_viewer.rs, mail.rs, explorer.rs,
 │   │   recycle_bin.rs, password.rs, credits.rs, settings.rs, official_site.rs
 └── scenes/              # 화면 전체를 차지하는 씬 — 새 씬은 파일 하나 + mod.rs 한 줄
     ├── mod.rs              # Scene 트레잇 / Transition / SceneManager / Frame / Input

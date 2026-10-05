@@ -121,6 +121,7 @@ pub struct Assets {
     pub icon_recycle_full: TextureId,  // 휴지통(안에 파일이 있음)
     pub icon_exe: TextureId,           // 실행 파일(설치된 게임 test.exe)
     pub icon_setup: TextureId,         // 설치 파일(메일로 받은 test Setup.exe)
+    pub icon_sound: TextureId,         // 사운드 파일(.wav)
     // "팔라스 OS가 생성한 이미지" 로 바탕화면에 놓이는 실제 사진들 — FileKind::Img(idx) 의
     // idx 가 이 Vec 의 인덱스다. (텍스처, 원본 픽셀 폭, 원본 픽셀 높이) — 종횡비를 살려서
     // 레터박스로 그리려면 원본 크기가 필요해서 아이콘 텍스처들과 달리 크기도 같이 들고 있는다.
@@ -144,10 +145,10 @@ impl Assets {
             icon_recycle_full: load_texture(ctx, include_bytes!("../../assets/icon_recycle_full.png")),
             icon_exe: load_texture(ctx, include_bytes!("../../assets/icon_exe.png")),
             icon_setup: load_texture(ctx, include_bytes!("../../assets/icon_setup.png")),
-            // Photos.tar/photo01·02.jpg 플레이스홀더 스토리 콘텐츠를 걷어내면서
-            // 비웠다 — FileKind::Img(usize)/ImageViewerApp 자체는 나중에 진짜
-            // Chapter 1 사진이 생기면 그대로 다시 쓸 수 있게 남겨뒀다.
-            photos: vec![],
+            icon_sound: load_texture(ctx, include_bytes!("../../assets/icon_sound.png")),
+            // 이미지 뷰어가 보여주는 사진들 — 지금은 게임 폴더(AppData\test\assets)의 이미지
+            // 3장뿐이고(gamefiles.rs 가 코드로 만든다), FileKind::Img(i) 의 i 가 이 순서다.
+            photos: crate::gamefiles::generated_images().iter().map(|img| upload_rgba(ctx, img)).collect(),
         }
     }
 }
@@ -158,6 +159,15 @@ fn load_texture(ctx: &mut dyn RenderingBackend, png: &[u8]) -> TextureId {
     let tex = ctx.new_texture_from_rgba8(w as u16, h as u16, &img);
     ctx.texture_set_filter(tex, FilterMode::Nearest, MipmapFilterMode::None);
     tex
+}
+
+// 코드로 만든 RGBA 이미지를 텍스처로 올린다 — (텍스처, 폭, 높이). 작은 이미지를 키워 보여줘도
+// 흐려지지 않게 Nearest.
+fn upload_rgba(ctx: &mut dyn RenderingBackend, img: &image::RgbaImage) -> (TextureId, u32, u32) {
+    let (w, h) = img.dimensions();
+    let tex = ctx.new_texture_from_rgba8(w as u16, h as u16, img);
+    ctx.texture_set_filter(tex, FilterMode::Nearest, MipmapFilterMode::None);
+    (tex, w, h)
 }
 
 fn build_font_atlas(ctx: &mut dyn RenderingBackend) -> (TextureId, HashMap<char, GlyphInfo>, f32) {
@@ -181,7 +191,7 @@ fn build_font_atlas(ctx: &mut dyn RenderingBackend) -> (TextureId, HashMap<char,
          事会似体例修傷処判別割加務勤危可合含告員問困囲在報安実害審対念提損撃攻料断映期査検業様歓殿活無物現生的皆直研社祈移究等範級結維覧討証該説調識象貴資迎近遂部閲険難題類\
          刻大小弊拡深縮致被覚際非\
          圧書死奇妙押既\
-         笑版手想教花";
+         笑版手想教花停止";
     let ascii = (0x20u32..0x7F).filter_map(char::from_u32);
     let hangul = (0xAC00u32..=0xD7A3).filter_map(char::from_u32);
     let hangul_jamo = (0x1100u32..=0x11FFu32).filter_map(char::from_u32);

@@ -18,6 +18,7 @@ pub enum FileKind {
     Txt(String),                                       // 메모장 텍스트
     Mp4,                                                // 영상
     Img(usize),                                         // 이미지 — Assets::photos 의 인덱스
+    Sound(usize),                                       // 사운드(.wav) — gamefiles::SOUND_NAMES 의 인덱스
     Lock { password: String, children: Vec<FileId> },  // 잠금(풀리면 폴더로)
     Folder { children: Vec<FileId> },                  // 일반 폴더 (잠금 풀리면 이걸로 변함)
     // #[serde(rename)] 로 저장 파일의 JSON 태그는 예전 이름("Email") 그대로 유지한다
@@ -46,11 +47,13 @@ pub enum FileKind {
 // 타이핑하면 오타 하나로 매칭이 조용히 깨질 수 있어 상수로 모아뒀다.
 pub const MY_COMPUTER_NAME: &str = "My Computer";
 pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
+// File Explorer 의 "AppData" 탭 = 이 이름의 폴더 노드의 내용(탭 이름도 같은 문자열).
+pub const APPDATA_NAME: &str = "AppData";
 // 첫 메일에 첨부돼 오는 게임 설치 파일(FileKind::GameSetup)과, 설치가 끝나면
 // 바탕화면에 생기는 게임 아이콘(FileKind::Game)의 fs 이름.
 pub const GAME_SETUP_NAME: &str = "test Setup.exe";
 pub const GAME_FILE_NAME: &str = "test.exe";
-// 설치할 때 %APPDATA% 아래에 만들어지는 게임 폴더 이름(gamefiles.rs) — 게임 이름(.exe 뗀 것).
+// 설치할 때 게임 안 AppData 폴더 밑에 만들어지는 게임 폴더 이름(gamefiles.rs) — 게임 이름(.exe 뗀 것).
 pub const GAME_FOLDER_NAME: &str = "test";
 pub const SUB_GAME_NAME: &str = "test2.exe";
 
@@ -189,6 +192,7 @@ impl FileSystem {
         let explorer = fs.add(MY_COMPUTER_NAME, FileKind::Explorer);
         let mail = fs.add("Mail", FileKind::Mail { attachment: None });
         fs.ensure_game_attachment();
+        fs.ensure_appdata();
 
         // 휴지통도 그냥 이름이 "Recycle Bin"인 빈 Folder — 드래그로 파일을 옮기면
         // desktop_folder_drop_target_at 이 다른 폴더와 똑같이 인식하고, 더블클릭하면
@@ -199,6 +203,16 @@ impl FileSystem {
         fs.desktop = vec![recycle_bin, explorer, mail];
 
         fs
+    }
+
+    // File Explorer 의 "AppData" 탭이 보여주는 폴더 노드 — 바탕화면에는 안 놓이고 탭으로만
+    // 보인다. 없으면 만든다(예전 저장 파일에도 그대로 채워 넣는다). 설치된 게임 폴더가 이
+    // 안에 들어간다(gamefiles.rs).
+    pub fn ensure_appdata(&mut self) -> FileId {
+        match self.find_by_name(APPDATA_NAME) {
+            Some(id) => id,
+            None => self.add(APPDATA_NAME, FileKind::Folder { children: Vec::new() }),
+        }
     }
 
     // 지금까지 도착한 메일 개수(도착 순서대로 앞에서부터) — MailApp 이 그만큼만 보여준다.
@@ -566,8 +580,6 @@ pub fn save(data: &SaveData) {
 // 무시 — 어차피 호출부는 지웠다고 가정하고 부팅부터 다시 시작한다.
 pub fn delete() {
     let _ = std::fs::remove_file(save_path());
-    // 설치할 때 %APPDATA% 에 써 넣은 게임 폴더도 같이 지운다(우리가 만든 폴더일 때만).
-    crate::gamefiles::remove();
 }
 
 fn settings_path() -> PathBuf {

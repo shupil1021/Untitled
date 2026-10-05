@@ -16,6 +16,7 @@ mod official_site;
 mod password;
 mod recycle_bin;
 mod settings;
+mod sound_player;
 mod video_player;
 mod widgets;
 
@@ -31,6 +32,7 @@ pub use official_site::OfficialSiteApp;
 pub use password::PasswordApp;
 pub use recycle_bin::RecycleBinApp;
 pub use settings::SettingsApp;
+pub use sound_player::SoundApp;
 pub use video_player::VideoApp;
 
 use std::any::Any;
@@ -39,7 +41,7 @@ use std::rc::Rc;
 
 use miniquad::RenderingBackend;
 
-use crate::foundation::{display_name, FileId, FileKind, FileSystem, Settings};
+use crate::foundation::{display_name, FileId, FileKind, FileSystem, Settings, APPDATA_NAME};
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::scenes::Input;
 use crate::ui::{icon_of, IconType};
@@ -192,6 +194,16 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             maximizable: true,
             movable: true,
             min_size: (150.0, 90.0),
+        },
+        &FileKind::Sound(idx) => Opened {
+            app: Box::new(SoundApp::new(idx, settings.clone())),
+            title: name,
+            size: (300.0, 130.0),
+            maximized: false,
+            resizable: false,   // 작은 플레이어라 크기 고정
+            maximizable: false,
+            movable: true,
+            min_size: (300.0, 130.0),
         },
         FileKind::Lock { password, .. } => Opened {
             app: Box::new(PasswordApp::new(id, password.clone(), settings.clone())),
@@ -348,6 +360,10 @@ fn folder_items(fs: &FileSystem, ids: &[FileId]) -> ExplorerItems {
 // 않고, explorer.rs 가 화면에 그릴 때만 category_label() 로 번역한다.
 fn explorer_tabs(fs: &FileSystem, self_id: FileId) -> ExplorerTabs {
     let downloads = folder_items(fs, &fs.downloads);
+    let appdata = fs.find_by_name(APPDATA_NAME).map_or_else(Vec::new, |id| match &fs.get(id).kind {
+        FileKind::Folder { children } => folder_items(fs, children),
+        _ => Vec::new(),
+    });
     let desktop = folder_items(fs, &fs.desktop.iter().copied().filter(|&fid| fid != self_id).collect::<Vec<_>>());
     // 휴지통에 들어간 항목은 종류가 여전히 Mp4/Img 라도 이 가상 탭에서 뺀다 — 안 그러면
     // 휴지통 안에도 있고 Videos/Images 탭에도 그대로 남아 두 군데에 동시에 보인다.
@@ -356,6 +372,8 @@ fn explorer_tabs(fs: &FileSystem, self_id: FileId) -> ExplorerTabs {
     vec![
         ("Downloads".to_string(), downloads, None, None),
         ("Desktop".to_string(), desktop, None, None),
+        // AppData 폴더 노드의 내용 — 설치한 게임의 폴더가 여기 생긴다(gamefiles.rs).
+        (APPDATA_NAME.to_string(), appdata, None, None),
         ("Videos".to_string(), videos, None, None),
         ("Images".to_string(), images, None, None),
     ]
