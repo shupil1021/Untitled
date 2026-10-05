@@ -22,7 +22,7 @@ use crate::render::mesh3d::Box3D;
 
 use super::game3d::dialogue::{Dialogue, Entry};
 use super::game3d::player::Player;
-use super::game3d::{MouseLook, View};
+use super::game3d::{MouseLook, RenderSlot, View};
 use super::{App, AppAction, WinInput};
 use world::{aimed_target, build_room, Target, PROPS, SPAWN};
 
@@ -31,6 +31,7 @@ const CLEAR_COLOR: [f32; 4] = [0.02, 0.02, 0.03, 1.0];
 pub struct DoorsGameApp {
     boxes: Vec<Box3D>,
     player: Player,
+    slot: RenderSlot, // 이 창 전용 3D 렌더 타깃(창끼리 화면이 섞이지 않게)
     look: MouseLook,
     aimed: Option<Target>, // 지금 조준선이 향한 대상(문 손잡이/방 안 물건)
     dialogue: Dialogue,
@@ -46,6 +47,7 @@ impl DoorsGameApp {
         DoorsGameApp {
             boxes: build_room(),
             player: Player::at(SPAWN, 0.0),
+            slot: RenderSlot::acquire(),
             look: MouseLook::new(),
             aimed: None,
             dialogue: Dialogue::new(),
@@ -115,7 +117,7 @@ impl App for DoorsGameApp {
         }
 
         let cam = self.player.camera();
-        view.draw_scene(ctx, r, area, CLEAR_COLOR, &cam, &self.boxes);
+        view.draw_scene(ctx, r, area, &self.slot, CLEAR_COLOR, &cam, &self.boxes);
 
         if let Some(target) = self.aimed
             && !frozen

@@ -20,7 +20,7 @@ use crate::render::mesh3d::Box3D;
 
 use super::game3d::dialogue::{Dialogue, Entry};
 use super::game3d::player::{aim_dist, Player};
-use super::game3d::{MouseLook, View};
+use super::game3d::{MouseLook, RenderSlot, View};
 use super::{App, AppAction, WinInput};
 use maze::Maze;
 
@@ -88,6 +88,7 @@ pub struct MazeGameApp {
     walls: Vec<Box3D>, // 지금 곳의 벽/바닥/천장
     place: Place,
     player: Player,
+    slot: RenderSlot, // 이 창 전용 3D 렌더 타깃(창끼리 화면이 섞이지 않게)
     look: MouseLook,
     dialogue: Dialogue,
     aimed: Option<Target>,
@@ -108,6 +109,7 @@ impl MazeGameApp {
             walls,
             place,
             player,
+            slot: RenderSlot::acquire(),
             look: MouseLook::new(),
             dialogue: Dialogue::new(),
             aimed: None,
@@ -278,7 +280,7 @@ impl App for MazeGameApp {
         }
 
         let cam = self.player.camera();
-        view.draw_scene(ctx, r, area, CLEAR_COLOR, &cam, &scene);
+        view.draw_scene(ctx, r, area, &self.slot, CLEAR_COLOR, &cam, &scene);
 
         if let Some(target) = self.aimed
             && !frozen

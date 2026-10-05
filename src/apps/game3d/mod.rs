@@ -24,12 +24,46 @@ pub const VIEW_H: f32 = 480.0;
 pub const FOV_Y: f32 = std::f32::consts::PI / 3.2;
 const MOUSE_SENS: f32 = 0.0032; // 실제 화면 픽셀당 라디안
 
-// Mesh3D(오프스크린 타깃 + 셰이더/파이프라인)는 창을 열 때마다 새로 만들면 닫을
-// 때 지울 방법이 없어(App 은 Drop 에서 ctx 를 못 받는다) GPU 자원이 계속 쌓인다 —
-// 그래서 한 번 만든 걸 스레드 전역에 두고 게임 창들이 같이 재사용한다(3D 게임 창은
-// 한 프레임에 하나씩 차례로 그려진다).
+// 게임 창마다 자기 전용 3D 오프스크린 타깃(Mesh3D)이 필요하다 — 창 안 장면은 이 텍스처를
+// 2D 렌더러에 "스프라이트로 그리라"고 예약만 해두고 실제 그리기는 프레임 끝에 한꺼번에
+// 일어나서, 창들이 타깃 하나를 같이 쓰면 마지막에 렌더한 창의 장면이 모든 창에 똑같이
+// 나온다(예전 버그). 그렇다고 창을 열 때마다 새로 만들면 닫을 때 지울 방법이 없어(App 은
+// Drop 에서 ctx 를 못 받는다) GPU 자원이 계속 쌓인다 — 그래서 타깃을 스레드 전역 풀에 두고
+// 창이 RenderSlot 으로 한 칸을 빌려 쓰다가(Drop 때 반납) 다음 창이 그 칸을 재사용한다.
+struct Pool {
+    targets: Vec<Option<Mesh3D>>, // 칸마다 처음 쓸 때 만든다
+    in_use: Vec<bool>,
+}
+
 thread_local! {
-    static MESH3D: RefCell<Option<Mesh3D>> = const { RefCell::new(None) };
+    static POOL: RefCell<Pool> = const { RefCell::new(Pool { targets: Vec::new(), in_use: Vec::new() }) };
+}
+
+// 풀에서 빌린 3D 타깃 한 칸 — 게임 앱이 들고 있다가 View::draw_scene 에 넘긴다.
+pub struct RenderSlot(usize);
+
+impl RenderSlot {
+    pub fn acquire() -> RenderSlot {
+        POOL.with(|pool| {
+            let mut pool = pool.borrow_mut();
+            let i = match pool.in_use.iter().position(|&used| !used) {
+                Some(i) => i,
+                None => {
+                    pool.in_use.push(false);
+                    pool.targets.push(None);
+                    pool.in_use.len() - 1
+                }
+            };
+            pool.in_use[i] = true;
+            RenderSlot(i)
+        })
+    }
+}
+
+impl Drop for RenderSlot {
+    fn drop(&mut self) {
+        POOL.with(|pool| pool.borrow_mut().in_use[self.0] = false);
+    }
 }
 
 // 창 영역 안에 4:3 으로 맞춰 넣은 게임 화면 자리 + VIEW 기준 → 실제 화면 배율.
@@ -54,8 +88,9 @@ impl View {
     }
 
     // 3D 장면을 그려서 창에 붙이고(남는 곳은 검은 띠) 조준선까지 그린다.
-    pub fn draw_scene(&self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, area: Rect, clear: [f32; 4], cam: &Camera, boxes: &[Box3D]) {
-        let tex = render_scene(ctx, clear, cam, boxes);
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_scene(&self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, area: Rect, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D]) {
+        let tex = render_scene(ctx, slot, clear, cam, boxes);
         r.rect(area.x, area.y, area.w, area.h, [0.0, 0.0, 0.0, 1.0]);
         // 오프스크린 텍스처는 위아래가 뒤집혀 있어 v 를 뒤집어 붙인다(crt.rs 와 같은 이유).
         r.sprite_uv(tex, self.rect.x, self.rect.y, self.rect.w, self.rect.h, 0.0, 1.0, 1.0, 0.0, [1.0, 1.0, 1.0, 1.0]);
@@ -83,10 +118,10 @@ impl View {
     }
 }
 
-fn render_scene(ctx: &mut dyn RenderingBackend, clear: [f32; 4], cam: &Camera, boxes: &[Box3D]) -> TextureId {
-    MESH3D.with(|cell| {
-        let mut slot = cell.borrow_mut();
-        let mesh = slot.get_or_insert_with(|| Mesh3D::new(ctx, VIEW_W as u32, VIEW_H as u32));
+fn render_scene(ctx: &mut dyn RenderingBackend, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D]) -> TextureId {
+    POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        let mesh = pool.targets[slot.0].get_or_insert_with(|| Mesh3D::new(ctx, VIEW_W as u32, VIEW_H as u32));
         mesh.render(ctx, clear, cam, boxes, FOV_Y);
         mesh.color_texture()
     })
@@ -151,5 +186,23 @@ impl MouseLook {
             let (dx, dy) = win.input.look_delta;
             player.look(dx * MOUSE_SENS, -dy * MOUSE_SENS);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 동시에 열린 창은 서로 다른 타깃 칸을 받고(화면이 섞이지 않는다), 닫힌 창의 칸은 재사용된다.
+    #[test]
+    fn slots_are_distinct_while_open_and_reused_after_drop() {
+        let a = RenderSlot::acquire();
+        let b = RenderSlot::acquire();
+        assert_ne!(a.0, b.0);
+        let a_index = a.0;
+        drop(a);
+        let c = RenderSlot::acquire();
+        assert_eq!(c.0, a_index);
+        assert_ne!(c.0, b.0);
     }
 }
