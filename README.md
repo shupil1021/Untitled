@@ -200,7 +200,7 @@ cargo run
 게임"처럼 보이는 파일들이 들어간다 — 진짜 컴퓨터의 디스크에는 아무것도 쓰지 않는다(전부
 `FileSystem` 노드라 저장 파일에 실린다). 탐색기 왼쪽에 **AppData 탭**(`APPDATA_NAME`,
 `FileSystem::ensure_appdata()`가 만드는 폴더 노드의 내용 — 바탕화면엔 안 놓이고 탭으로만 보임)이
-추가됐고, 그 안에서 폴더를 더블클릭해 들어가면 된다: `README.txt`, 크랙 그룹(R18) 스타일
+추가됐고, 그 안에서 폴더를 더블클릭해 들어가면 된다(폴더 안의 폴더로 들어가도 지나온 폴더들이 트리에 계속 이어져 남고, 주소창도 `내 컴퓨터\AppData\test\assets`처럼 전체 경로가 나온다 — `explorer_app_for_folder`가 맨 위 조상까지 거슬러 올라가 전부 끼워 넣는다): `README.txt`, 크랙 그룹(R18) 스타일
 `test-CRACKED.nfo`, `config/game.ini`, `logs/install.log`, 디컴파일된 듯한 소스
 `src/{main,doors,maze}.rs`(도어즈는 꽃을 원한다, 시간이 필요하다 같은 단서가 주석에 숨어
 있다), 이미지 `assets/{door,flower_pot,static}.png`, 사운드

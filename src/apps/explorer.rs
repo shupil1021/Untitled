@@ -386,11 +386,25 @@ impl ExplorerApp {
         let field = Rect::new(area.x + lw, area.y + 2.0, area.w - lw - 4.0, ADDR_H - 6.0);
         sunken(r, field.x, field.y, field.w, field.h);
         let my_computer = display_name(lang, MY_COMPUTER_NAME);
-        let path = match self.tabs.get(self.tab) {
-            Some((name, _, Some(parent), _)) => format!("{my_computer}\\{}\\{}", category_label(lang, parent), category_label(lang, name)),
-            Some((name, _, None, _)) if !name.is_empty() => format!("{my_computer}\\{}", category_label(lang, name)),
-            _ => my_computer.into_owned(),
-        };
+        // 보고 있는 탭에서 부모(2번째 칸)를 거슬러 올라가며 경로를 이어 붙인다 — 폴더 안의 폴더처럼
+        // 깊이가 2 를 넘어도 "내 컴퓨터\\AppData\\test\\assets" 식으로 전부 나온다.
+        let mut path = my_computer.into_owned();
+        if let Some((name, _, parent, _)) = self.tabs.get(self.tab)
+            && !name.is_empty()
+        {
+            let mut chain = vec![name.as_str()];
+            let mut parent = parent.as_deref();
+            while let Some(p) = parent {
+                if chain.contains(&p) {
+                    break; // 이름이 같은 탭이 있어도 무한 루프는 안 돌게
+                }
+                chain.push(p);
+                parent = self.tabs.iter().find(|t| t.0 == p).and_then(|t| t.2.as_deref());
+            }
+            for seg in chain.iter().rev() {
+                path = format!("{path}\\{}", category_label(lang, seg));
+            }
+        }
         // 좌우 8px 여유(테두리에 안 닿게) + 글자 높이(CELL_H*스케일)에 맞춰 세로 중앙 정렬.
         let ty = field.y + (field.h - CELL_H * 0.8) / 2.0;
         r.text_clipped(field.x + 8.0, ty, &path, 0.8, BLACK, field.w - 16.0);
@@ -694,5 +708,13 @@ impl App for ExplorerApp {
         };
         let pos = (self.last_mouse.0 - self.item_drag_offset.0, self.last_mouse.1 - self.item_drag_offset.1);
         Some(DragGhost { icon: *icon, label, pos })
+    }
+}
+
+#[cfg(test)]
+impl ExplorerApp {
+    // 지금 트리의 (탭 이름, 부모 탭 이름) 목록 — 테스트용.
+    pub(super) fn tab_trail(&self) -> Vec<(String, Option<String>)> {
+        self.tabs.iter().map(|t| (t.0.clone(), t.2.clone())).collect()
     }
 }

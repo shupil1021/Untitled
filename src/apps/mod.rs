@@ -41,7 +41,7 @@ use std::rc::Rc;
 
 use miniquad::RenderingBackend;
 
-use crate::foundation::{display_name, FileId, FileKind, FileSystem, Settings, APPDATA_NAME};
+use crate::foundation::{display_name, FileId, FileKind, FileOrigin, FileSystem, Settings, APPDATA_NAME};
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::scenes::Input;
 use crate::ui::{icon_of, IconType};
@@ -392,17 +392,33 @@ pub fn explorer_app_for_folder(
     settings: &Rc<RefCell<Settings>>,
 ) -> Box<dyn App> {
     let mut tabs = explorer_tabs(fs, explorer_id);
-    let parent_idx = tabs.iter().position(|(_, items, ..)| items.iter().any(|(fid, ..)| *fid == folder_id));
-    let parent_name = parent_idx.map(|i| tabs[i].0.clone());
-    let node = fs.get(folder_id);
-    let items = match &node.kind {
-        FileKind::Folder { children } => folder_items(fs, children),
-        _ => Vec::new(),
-    };
-    // 부모 카테고리를 찾았으면 바로 그 아래(트리에서 바로 다음 줄)에 끼워넣고, 못
-    // 찾았으면(이론상 안 생기지만 방어적으로) 맨 뒤에 붙인다.
-    let insert_at = parent_idx.map(|i| i + 1).unwrap_or(tabs.len());
-    tabs.insert(insert_at, (node.name.clone(), items, parent_name, Some(folder_id)));
+    let in_category = |tabs: &ExplorerTabs, id: FileId| tabs.iter().position(|(_, items, ..)| items.iter().any(|(fid, ..)| *fid == id));
+    // 폴더 안의 폴더(AppData	estssets 처럼)면 고정 카테고리에 바로 나오는 맨 위 조상까지
+    // 거슬러 올라가서, 조상들을 전부 트리에 끼워 넣는다 — 안 그러면 한 칸 들어갈 때마다
+    // 방금 지나온 폴더 탭이 사라져서 "밖으로 튕겨나간" 것처럼 보인다. chain 은 깊은 쪽부터.
+    let mut chain = vec![folder_id];
+    while in_category(&tabs, *chain.last().unwrap()).is_none() {
+        match fs.locate(*chain.last().unwrap()) {
+            Some(FileOrigin::Folder(p)) if !chain.contains(&p) => chain.push(p),
+            _ => break,
+        }
+    }
+    let parent_idx = in_category(&tabs, *chain.last().unwrap());
+    // 맨 위 조상은 카테고리 탭 바로 아래, 그 아래 조상들은 차례로 이어서 끼워넣는다. 카테고리를
+    // 못 찾았으면(이론상 안 생기지만 방어적으로) 맨 뒤에 붙인다.
+    let first_at = parent_idx.map(|i| i + 1).unwrap_or(tabs.len());
+    let mut parent_name = parent_idx.map(|i| tabs[i].0.clone());
+    let mut insert_at = first_at;
+    for (k, &fid) in chain.iter().rev().enumerate() {
+        let node = fs.get(fid);
+        let items = match &node.kind {
+            FileKind::Folder { children } => folder_items(fs, children),
+            _ => Vec::new(),
+        };
+        insert_at = first_at + k;
+        tabs.insert(insert_at, (node.name.clone(), items, parent_name.clone(), Some(fid)));
+        parent_name = Some(node.name.clone());
+    }
     // 창 제목은 드릴다운으로 들어간 하위 폴더가 아니라 이 창이 원래 대표하는
     // 루트(explorer_id)를 계속 가리켜야 한다 — 실제 탐색기도 My Computer 창 안에서
     // 바탕화면 폴더로 들어가도 제목이 "바탕화면"으로 안 바뀌고 "내 컴퓨터"인 채다.
@@ -429,5 +445,48 @@ pub fn explorer_app_refreshed(
             Box::new(ExplorerApp::new_tabbed_active(tabs, active, raw_title, settings.clone()))
         }
         None => Box::new(ExplorerApp::new_tabbed(explorer_tabs(fs, explorer_id), raw_title, settings.clone())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::foundation::GAME_FOLDER_NAME;
+
+    fn child(fs: &FileSystem, folder: FileId, name: &str) -> FileId {
+        match &fs.get(folder).kind {
+            FileKind::Folder { children } => children.iter().copied().find(|&c| fs.get(c).name == name).unwrap_or_else(|| panic!("{name}")),
+            _ => panic!("폴더가 아니다"),
+        }
+    }
+
+    // AppData\test 안의 assets\sound 처럼 폴더 안의 폴더로 들어가도, 지나온 폴더들(AppData → test → assets)
+    // 이 트리에 그대로 남아야 한다 — 예전엔 한 칸 들어갈 때마다 부모 탭이 사라져 "밖으로 튕긴" 것처럼 보였다.
+    #[test]
+    fn nested_folder_keeps_its_ancestors_in_the_tree() {
+        let mut fs = FileSystem::new();
+        crate::gamefiles::install_into(&mut fs);
+        let explorer = fs.find_by_name(crate::foundation::MY_COMPUTER_NAME).unwrap();
+        let appdata = fs.find_by_name(APPDATA_NAME).unwrap();
+        let test = child(&fs, appdata, GAME_FOLDER_NAME);
+        let assets = child(&fs, test, "assets");
+        let sound = child(&fs, assets, "sound");
+        let settings = Rc::new(RefCell::new(Settings::default()));
+
+        for (target, expected) in [
+            (test, vec!["AppData", "test"]),
+            (assets, vec!["AppData", "test", "assets"]),
+            (sound, vec!["AppData", "test", "assets", "sound"]),
+        ] {
+            let mut app = explorer_app_for_folder(&fs, explorer, target, &settings);
+            let app = app.as_any_mut().downcast_mut::<ExplorerApp>().unwrap();
+            assert!(matches!(app.current_location(), Some(ExplorerLocation::Folder(id)) if id == target));
+            let trail = app.tab_trail();
+            let pos = trail.iter().position(|(n, _)| n == expected[0]).unwrap();
+            // 조상 체인이 카테고리 바로 아래에 차례로 이어서 있고, 각 탭의 부모는 바로 위 탭이다.
+            for (k, name) in expected.iter().enumerate().skip(1) {
+                assert_eq!(trail[pos + k], (name.to_string(), Some(expected[k - 1].to_string())), "{expected:?}");
+            }
+        }
     }
 }
