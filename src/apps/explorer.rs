@@ -309,6 +309,21 @@ impl ExplorerApp {
         self.tabs[i].1.iter().any(|(_, _, icon)| tree_expandable(icon))
     }
 
+    // i 번째 탭의 트리 깊이 — 카테고리면 0, 부모 탭을 거슬러 올라가며 센다(폴더 안의 폴더는 그만큼
+    // 더 들여쓴다). 이름이 겹치는 탭이 있어도 무한 루프는 안 돌게 탭 개수로 상한을 둔다.
+    pub(super) fn tab_depth(&self, i: usize) -> usize {
+        let mut depth = 0;
+        let mut parent = self.tabs[i].2.as_deref();
+        while let Some(p) = parent {
+            depth += 1;
+            if depth > self.tabs.len() {
+                break;
+            }
+            parent = self.tabs.iter().find(|t| t.0 == p).and_then(|t| t.2.as_deref());
+        }
+        depth
+    }
+
     // 이름이 name 인 탭이 지금 트리에서 펼쳐져 있는지 — 그 탭을 parent 로 삼는 하위
     // 탭이 이미 있으면 펼쳐진 것으로 본다.
     fn is_expanded(&self, name: &str) -> bool {
@@ -479,7 +494,7 @@ impl App for ExplorerApp {
             r.text(body.x + 6.0, body.y + 4.0, t(lang, s::FOLDERS), TEXT_SCALE, BLACK);
             r.rect(body.x, body.y + 20.0, self.sidebar_w, 1.0, GRAY);
 
-            const INDENT: f32 = 14.0; // 부모 카테고리의 하위 폴더 탭은 이만큼 들여쓴다
+            const INDENT: f32 = 14.0; // 하위 폴더 탭은 깊이 한 단계마다 이만큼 들여쓴다
             let icon_x = 4.0 + EXPAND_BOX + 4.0;
             let text_x = icon_x + ICON_S + 2.0;
             let row_h = (line_h + 4.0).max(20.0);
@@ -490,7 +505,7 @@ impl App for ExplorerApp {
                 // self 를 다시 빌리는 호출과 얽히면 안 되기 때문(빌림 규칙상 self.tabs 를
                 // 참조로 붙들고 있는 채로 self 를 mutably 못 씀).
                 let name = self.tabs[i].0.clone();
-                let indent = if self.tabs[i].2.is_some() { INDENT } else { 0.0 };
+                let indent = INDENT * self.tab_depth(i) as f32;
                 let has_children = self.has_expandable_children(i);
                 let expanded = has_children && self.is_expanded(&name);
                 let row = Rect::new(body.x + 2.0 + indent, ry, (self.sidebar_w - 4.0 - indent).max(10.0), row_h);

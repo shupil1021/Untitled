@@ -487,6 +487,11 @@ mod tests {
             for (k, name) in expected.iter().enumerate().skip(1) {
                 assert_eq!(trail[pos + k], (name.to_string(), Some(expected[k - 1].to_string())), "{expected:?}");
             }
+            // 들여쓰기 깊이도 한 단계씩 늘어난다(카테고리 0, test 1, assets 2 ...).
+            for (k, name) in expected.iter().enumerate() {
+                let i = trail.iter().position(|(n, _)| n == name).unwrap();
+                assert_eq!(app.tab_depth(i), k, "{name}");
+            }
         }
     }
 }
