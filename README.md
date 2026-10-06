@@ -12,7 +12,6 @@ Rust + [miniquad](https://github.com/not-fl3/miniquad)로 만든 **가짜 Window
 
 - 전체화면 4:3 CRT 연출, 모든 UI 문자열은 영어/한국어/일본어
 - 창 안에서 도는 1인칭 3D 게임(자체 3D 렌더러)과 그 안의 미니 게임
-- 이야기는 [STORY.md](STORY.md), 제작 순서는 [ROADMAP.md](ROADMAP.md)
 
 ## 실행
 
@@ -45,8 +44,4 @@ src/
 ├── ui.rs · strings.rs 위젯 · 다국어 문자열
 └── …                  기타 작은 모듈(random, signals, gamefiles 등)
 assets/                아이콘 · 폰트 · 커서
-docs/                  구현 상세 문서(IMPLEMENTATION.md)
-STORY.md · ROADMAP.md · GITHUB.md
 ```
-
-구현 방식과 동작 상세는 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)에 정리돼 있다.

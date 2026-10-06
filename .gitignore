@@ -1,3 +1,8 @@
 /target
 /production
 *.pdb
+# 문서는 로컬에서만 관리한다(저장소에는 README.md 만 올린다)
+/STORY.md
+/ROADMAP.md
+/GITHUB.md
+/docs/
