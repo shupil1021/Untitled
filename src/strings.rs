@@ -144,9 +144,9 @@ pub mod mail {
     pub const FLOWER_MAIL_SUBJECT: S =
         S { en: "I know where you can get a flower", ko: "내가 꽃을 구할 수 있는 곳을 알고 있어", ja: "花を手に入れられる場所を知っている" };
     pub const FLOWER_MAIL_BODY: S = S {
-        en: "I know where you can get a flower.",
-        ko: "내가 꽃을 구할 수 있는 곳을 알고 있어.",
-        ja: "花を手に入れられる場所を知っている。",
+        en: "I know where you can get a flower.\nI just sent it over. Run it when it arrives.",
+        ko: "내가 꽃을 구할 수 있는 곳을 알고 있어.\n방금 보냈어. 받으면 실행해 봐.",
+        ja: "花を手に入れられる場所を知っている。\nたった今送ったよ。届いたら起動してみて。",
     };
 
     // 세 번째 메일 — 씨앗을 심은 뒤 오는 힌트(시트의 "메일 가이딩").

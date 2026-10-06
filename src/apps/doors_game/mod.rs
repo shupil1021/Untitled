@@ -44,13 +44,16 @@ pub struct DoorsGameApp {
 
 impl DoorsGameApp {
     pub(super) fn new() -> DoorsGameApp {
+        // 열자마자 어디에 서 있는지 한마디로 알려준다.
+        let mut dialogue = Dialogue::new();
+        dialogue.start(vec![Entry::Line("낡은 방 안이다.".to_string()), Entry::Line("정면에 문이 하나 있다.".to_string())]);
         DoorsGameApp {
             boxes: build_room(),
             player: Player::at(SPAWN, 0.0),
             slot: RenderSlot::acquire(),
             look: MouseLook::new(),
             aimed: None,
-            dialogue: Dialogue::new(),
+            dialogue,
             quest_accepted: false,
             flower_absence_checked: false,
             second_mail_sent: false,
@@ -62,9 +65,14 @@ impl DoorsGameApp {
             return;
         }
         if self.dialogue.active() {
-            // 선택지에 수락하면 퀘스트 수락만 기록한다.
-            if self.dialogue.handle_input(win, in_view) == Some(true) {
-                self.quest_accepted = true;
+            // 선택지에 답하면 문의 반응을 한 줄 보여준다 — 수락하면 퀘스트 수락만 기록한다.
+            match self.dialogue.handle_input(win, in_view) {
+                Some(true) => {
+                    self.quest_accepted = true;
+                    self.dialogue.start(vec![Entry::Line("문 너머에서 작은 한숨이 새어 나왔다.".to_string())]);
+                }
+                Some(false) => self.dialogue.start(vec![Entry::Line("문은 아무 말도 하지 않았다.".to_string())]),
+                None => {}
             }
             return;
         }
@@ -78,7 +86,8 @@ impl DoorsGameApp {
         match self.aimed {
             // 도어즈는 보리지꽃을 달라는 말만 한다. 수락한 뒤로는 더 말을 걸 수 없다.
             Some(Target::Door) if !self.quest_accepted => {
-                self.dialogue.start(vec![Entry::Choice("보리지꽃을 줘.".to_string())]);
+                // 문이 말을 걸어오는 걸 갑자기 시작하지 않고 먼저 알려준다.
+                self.dialogue.start(vec![Entry::Line("문고리에서 낮은 목소리가 들려왔다.".to_string()), Entry::Choice("보리지꽃을 줘.".to_string())]);
             }
             // 방 물건은 그 물건의 한 줄을 보여준다. 부탁을 수락한 뒤 처음 조사하면 이어서
             // 방에 꽃이 없다는 걸 깨닫는다.
@@ -87,6 +96,8 @@ impl DoorsGameApp {
                 if self.quest_accepted && !self.flower_absence_checked {
                     self.flower_absence_checked = true;
                     lines.push(Entry::Line("방에는 꽃이 없는 것 같다...".to_string()));
+                    // 이어서 오는 메일(두 번째 메일)을 눈치채게 한다.
+                    lines.push(Entry::Line("그때 어디선가 희미한 알림음이 울렸다.".to_string()));
                 }
                 self.dialogue.start(lines);
             }

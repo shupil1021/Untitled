@@ -141,6 +141,72 @@ fn world_to_view(cam: &Camera, p: [f32; 3]) -> Option<(f32, f32)> {
     Some(((ndc_x * 0.5 + 0.5) * VIEW_W, (1.0 - (ndc_y * 0.5 + 0.5)) * VIEW_H))
 }
 
+// 장면이 확 바뀌는 곳(미로 ↔ 방)에서 쓰는 페이드 — 화면이 검게 어두워졌다가(Out) 그 순간 장면을
+// 바꾸고(update 가 true 를 돌려준다) 다시 밝아진다(In). 도는 동안은 게임이 입력/이동을 멈춰야
+// 해서 active() 로 알려준다.
+const FADE_SECS: f32 = 0.6; // 어두워지는 데/밝아지는 데 각각 걸리는 시간
+
+#[derive(Clone, Copy, PartialEq)]
+enum FadePhase {
+    Idle,
+    Out,
+    In,
+}
+
+pub struct Fade {
+    phase: FadePhase,
+    t: f32, // 0 = 완전히 밝음 ~ 1 = 완전히 검음
+}
+
+impl Fade {
+    pub fn new() -> Fade {
+        Fade { phase: FadePhase::Idle, t: 0.0 }
+    }
+
+    pub fn active(&self) -> bool {
+        self.phase != FadePhase::Idle
+    }
+
+    // 어두워지기 시작한다(이미 도는 중이면 무시).
+    pub fn start(&mut self) {
+        if self.phase == FadePhase::Idle {
+            self.phase = FadePhase::Out;
+            self.t = 0.0;
+        }
+    }
+
+    // 매 프레임 부른다 — 화면이 완전히 검어진 바로 그 프레임에만 true(이때 장면을 바꾼다).
+    pub fn update(&mut self, dt: f32) -> bool {
+        match self.phase {
+            FadePhase::Idle => false,
+            FadePhase::Out => {
+                self.t += dt / FADE_SECS;
+                if self.t >= 1.0 {
+                    self.t = 1.0;
+                    self.phase = FadePhase::In;
+                    return true;
+                }
+                false
+            }
+            FadePhase::In => {
+                self.t -= dt / FADE_SECS;
+                if self.t <= 0.0 {
+                    self.t = 0.0;
+                    self.phase = FadePhase::Idle;
+                }
+                false
+            }
+        }
+    }
+
+    // 게임 화면 위에 검은 막을 덮는다.
+    pub fn draw(&self, r: &mut Renderer, view: &View) {
+        if self.t > 0.0 {
+            r.rect(view.rect.x, view.rect.y, view.rect.w, view.rect.h, [0.0, 0.0, 0.0, self.t]);
+        }
+    }
+}
+
 // 마우스 시점 모드 — 게임 화면을 클릭하면 켜지고(커서가 사라지고 마우스로 시점이 돈다,
 // main.rs 가 scenes::request_mouse_look() 요청을 받아 처리) Esc/포커스 잃음으로 풀린다.
 pub struct MouseLook {
@@ -204,5 +270,22 @@ mod tests {
         let c = RenderSlot::acquire();
         assert_eq!(c.0, a_index);
         assert_ne!(c.0, b.0);
+    }
+
+    // 페이드는 어두워진 한 프레임에서만 true 를 주고, 끝나면 다시 멈춘다.
+    #[test]
+    fn fade_switches_exactly_once_at_black() {
+        let mut f = Fade::new();
+        assert!(!f.active() && !f.update(0.1));
+        f.start();
+        let mut switched = 0;
+        for _ in 0..100 {
+            if f.update(0.05) {
+                switched += 1;
+                assert_eq!(f.t, 1.0);
+            }
+        }
+        assert_eq!(switched, 1);
+        assert!(!f.active());
     }
 }

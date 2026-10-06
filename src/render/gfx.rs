@@ -191,7 +191,7 @@ fn build_font_atlas(ctx: &mut dyn RenderingBackend) -> (TextureId, HashMap<char,
          事会似体例修傷処判別割加務勤危可合含告員問困囲在報安実害審対念提損撃攻料断映期査検業様歓殿活無物現生的皆直研社祈移究等範級結維覧討証該説調識象貴資迎近遂部閲険難題類\
          刻大小弊拡深縮致被覚際非\
          圧書死奇妙押既\
-         笑版手想教花停止計";
+         笑版手想教花停止計今届";
     let ascii = (0x20u32..0x7F).filter_map(char::from_u32);
     let hangul = (0xAC00u32..=0xD7A3).filter_map(char::from_u32);
     let hangul_jamo = (0x1100u32..=0x11FFu32).filter_map(char::from_u32);

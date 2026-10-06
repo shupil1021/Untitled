@@ -23,7 +23,7 @@ use crate::render::mesh3d::Box3D;
 
 use super::game3d::dialogue::{Dialogue, Entry};
 use super::game3d::player::{aim_dist, Player};
-use super::game3d::{MouseLook, RenderSlot, View};
+use super::game3d::{Fade, MouseLook, RenderSlot, View};
 use super::{App, AppAction, WinInput};
 use maze::Maze;
 
@@ -118,6 +118,8 @@ pub struct MazeGameApp {
     progress: Progress,
     pending_move: Option<Move>,
     pending_notify: Option<Notify>,
+    fade: Fade,          // 미로 ↔ 방으로 장면이 바뀔 때 화면을 어둡게 덮었다 걷는다
+    hub_visited: bool,   // 방에 이미 한 번 올라와 봤는지(처음엔 상황 설명 대사가 나온다)
 }
 
 fn new_maze(kind: MazeKind) -> (Vec<Box3D>, Place, Player) {
@@ -129,17 +131,22 @@ fn new_maze(kind: MazeKind) -> (Vec<Box3D>, Place, Player) {
 impl MazeGameApp {
     pub(super) fn new() -> MazeGameApp {
         let (walls, place, player) = new_maze(MazeKind::Round1);
+        let mut dialogue = Dialogue::new();
+        // 열자마자 낯선 곳에 서 있는 이유와 할 일을 한마디로 알려준다.
+        dialogue.start(vec![Self::line("눈을 떠 보니 어두운 복도 안이다."), Self::line("어딘가에 쓸 만한 물건이 있을 것 같다...")]);
         MazeGameApp {
             walls,
             place,
             player,
             slot: RenderSlot::acquire(),
             look: MouseLook::new(),
-            dialogue: Dialogue::new(),
+            dialogue,
             aimed: None,
             progress: Progress::default(),
             pending_move: None,
             pending_notify: None,
+            fade: Fade::new(),
+            hub_visited: false,
         }
     }
 
@@ -191,10 +198,16 @@ impl MazeGameApp {
         self.walls = hub::build_walls();
         self.place = Place::Hub;
         self.player = Player::at(hub::SPAWN, 0.0);
+        // 처음 올라왔을 땐 갑자기 방에 와 있는 이유(물뿌리개를 줍자 주위가 흐려졌다)를 이어서 알려준다.
+        if !self.hub_visited {
+            self.hub_visited = true;
+            self.dialogue.start(vec![Self::line("정신을 차려 보니 낯선 방 안이다."), Self::line("한쪽에 화분이 하나 놓여 있다.")]);
+        }
     }
 
     fn go_maze(&mut self, door: usize) {
         (self.walls, self.place, self.player) = new_maze(MazeKind::Key(door));
+        self.dialogue.start(vec![Self::line("문 너머는 또 다른 어두운 복도였다.")]);
     }
 
     // E — 조준 중인 대상을 조사한다.
@@ -203,7 +216,7 @@ impl MazeGameApp {
         match target {
             Target::Can => {
                 p.has_can = true;
-                self.dialogue.start(vec![Self::line("물뿌리개를 발견했다."), Self::line("1라운드 클리어.")]);
+                self.dialogue.start(vec![Self::line("물뿌리개를 발견했다."), Self::line("1라운드 클리어."), Self::line("그 순간 주위가 하얗게 흐려졌다...")]);
                 self.pending_move = Some(Move::ToHub);
             }
             Target::Key(i) => {
@@ -224,7 +237,12 @@ impl MazeGameApp {
                     self.dialogue.start(vec![Self::line("씨앗이 심겨 있다. 아직 아무 일도 없다.")]);
                 } else {
                     p.pot_checked = true; // 뒤에 사물함이 나타난다
-                    self.dialogue.start(vec![Self::line("이미 누가 꺾어간 것 같다."), Self::line("새롭게 심어야 할 것 같은데...")]);
+                    self.dialogue.start(vec![
+                        Self::line("이미 누가 꺾어간 것 같다."),
+                        Self::line("새롭게 심어야 할 것 같은데..."),
+                        // 사물함이 갑자기 나타나는 걸 모른 척하지 않고 눈에 띄게 한다.
+                        Self::line("...그런데 화분 뒤에 사물함이 있다. 아까는 못 본 것 같다."),
+                    ]);
                 }
             }
             Target::Locker => {
@@ -286,7 +304,7 @@ impl MazeGameApp {
     }
 
     fn handle_input(&mut self, win: &WinInput, in_view: bool) {
-        if self.look.update(win, in_view) {
+        if self.look.update(win, in_view) || self.fade.active() {
             return;
         }
         if self.dialogue.active() {
@@ -314,8 +332,12 @@ impl App for MazeGameApp {
         self.look.request();
         self.dialogue.tick(win.dt);
 
-        // 대화가 다 끝났으면 미뤄둔 이동(방/미로 전환)을 한다.
-        if !self.dialogue.active()
+        // 대화가 다 끝났으면 미뤄둔 이동(방/미로 전환)을 위해 화면을 어둡게 덮고, 완전히 어두워진
+        // 순간에 장면을 바꾼다(그래서 화면이 확 바뀌어 보이지 않는다).
+        if !self.dialogue.active() && self.pending_move.is_some() {
+            self.fade.start();
+        }
+        if self.fade.update(win.dt)
             && let Some(mv) = self.pending_move.take()
         {
             match mv {
@@ -331,7 +353,7 @@ impl App for MazeGameApp {
         let mut scene = self.walls.clone();
         scene.extend(items.iter().map(Item::to_box));
 
-        let frozen = self.dialogue.active();
+        let frozen = self.dialogue.active() || self.fade.active();
         if !frozen {
             self.look.apply(&mut self.player, win);
             self.player.update(win.input, win.focused, win.dt, &scene);
@@ -356,6 +378,7 @@ impl App for MazeGameApp {
             view.draw_capture_hint(r);
         }
         self.draw_inventory(r, &view);
+        self.fade.draw(r, &view);
         self.dialogue.draw(r, view.rect.x, view.rect.y, view.s, win.time);
 
         // 대화가 다 끝났으면 OS 에 알릴 일(씨앗 심음/꽃 발송)을 한 번 알린다.
