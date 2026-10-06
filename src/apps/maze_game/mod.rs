@@ -9,14 +9,15 @@
 //! 사물함을 열어 씨앗을 얻고 화분에 심는다("시간이 1년은 필요할 것 같다") → (5) 심은 뒤 잠깐 있다
 //! 가 OS 로 힌트 메일이 오고("바탕화면에서 물리적으로 시간을 돌려도 괜찮지 않을까?"), 진짜 컴퓨터의
 //! 시스템 시간이 심은 때보다 1년 이상 앞서가면 꽃이 핀다 → (6) 꽃을 꺾어 우체통에 넣으면 OS 로
-//! 꽃 사진이 첨부된 메일이 도착한다(시트의 SUB A+a-15 ~ 18). 진행 상태는 저장하지 않는다(창을
-//! 닫으면 처음부터).
+//! 꽃 사진이 첨부된 메일이 도착한다(시트의 SUB A+a-15 ~ 18). 진행 상황은 바뀔 때마다 OS 에 저장을
+//! 요청해서(AppAction::SaveMaze) 창을 닫았다 다시 열어도 이어진다.
 
 mod hub;
 mod maze;
 
 use miniquad::{KeyCode, RenderingBackend};
 
+use crate::foundation::{MazeProgress, MAZE_KEYS};
 use crate::random::Rng;
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::render::mesh3d::Box3D;
@@ -28,7 +29,7 @@ use super::{App, AppAction, WinInput};
 use maze::Maze;
 
 const CLEAR_COLOR: [f32; 4] = [0.01, 0.02, 0.02, 1.0];
-const KEYS_NEEDED: usize = 3;
+const KEYS_NEEDED: usize = MAZE_KEYS;
 const YEAR_SECS: f64 = 365.0 * 86_400.0; // "시간이 1년은 필요하다" — 심은 때보다 시스템 시간이 이만큼 앞서가면 핀다
 
 // 심은 때(planted_at)보다 시스템 시간(now, 유닉스 초)이 1년 이상 앞서갔는지 — 시계를 뒤로 돌린
@@ -85,21 +86,6 @@ enum Move {
     ToMaze(usize), // 문 i+1 번 미로로
 }
 
-// 지금까지의 진행.
-#[derive(Default)]
-struct Progress {
-    has_can: bool,
-    pot_checked: bool,    // 화분을 조사했다 → 뒤에 사물함이 나타난다
-    locker_checked: bool, // 사물함을 조사했다 → 문 3개가 열린다
-    keys: [bool; KEYS_NEEDED],
-    seed: bool,
-    planted: bool,
-    planted_at: Option<f64>, // 씨앗을 심은 때(시스템 시간, 유닉스 초)
-    bloomed: bool,           // 시스템 시간이 1년 넘게 흘러 꽃이 폈다
-    has_flower: bool,        // 꽃을 꺾어서 가지고 있다
-    flower_sent: bool,       // 꽃을 우체통에 넣어 보냈다
-}
-
 // 대화가 다 끝난 뒤 OS 에 알릴 일 — AppAction 으로 돌려준다.
 #[derive(Clone, Copy)]
 enum Notify {
@@ -115,11 +101,11 @@ pub struct MazeGameApp {
     look: MouseLook,
     dialogue: Dialogue,
     aimed: Option<Target>,
-    progress: Progress,
+    progress: MazeProgress,
+    saved: MazeProgress, // 마지막으로 OS 에 저장을 요청한 진행 상황 — 달라지면 다시 요청한다
     pending_move: Option<Move>,
     pending_notify: Option<Notify>,
     fade: Fade,          // 미로 ↔ 방으로 장면이 바뀔 때 화면을 어둡게 덮었다 걷는다
-    hub_visited: bool,   // 방에 이미 한 번 올라와 봤는지(처음엔 상황 설명 대사가 나온다)
 }
 
 fn new_maze(kind: MazeKind) -> (Vec<Box3D>, Place, Player) {
@@ -129,11 +115,24 @@ fn new_maze(kind: MazeKind) -> (Vec<Box3D>, Place, Player) {
 }
 
 impl MazeGameApp {
-    pub(super) fn new() -> MazeGameApp {
-        let (walls, place, player) = new_maze(MazeKind::Round1);
+    // 이어서 하는 거면(물뿌리개를 이미 얻었으면) 방에서 시작하고, 아니면 첫 미로에서 시작한다.
+    // 미로는 열 때마다 새로 만들어지고, 열쇠 미로 도중에 닫았다면 방으로 돌아온 걸로 이어진다.
+    pub(super) fn new(progress: MazeProgress) -> MazeGameApp {
+        let resume = progress.has_can;
+        let (walls, place, player) = if resume { (hub::build_walls(), Place::Hub, Player::at(hub::SPAWN, 0.0)) } else { new_maze(MazeKind::Round1) };
         let mut dialogue = Dialogue::new();
-        // 열자마자 낯선 곳에 서 있는 이유와 할 일을 한마디로 알려준다.
-        dialogue.start(vec![Self::line("눈을 떠 보니 어두운 복도 안이다."), Self::line("어딘가에 쓸 만한 물건이 있을 것 같다...")]);
+        if !resume {
+            // 열자마자 낯선 곳에 서 있는 이유와 할 일을 한마디로 알려준다.
+            dialogue.start(vec![Self::line("눈을 떠 보니 어두운 복도 안이다."), Self::line("어딘가에 쓸 만한 물건이 있을 것 같다...")]);
+        }
+        // 이어서 하는 거면 이미 한 일(씨앗 심음/꽃 발송)을 OS 에 다시 한 번 알린다(메일은 중복으로 안 온다).
+        let pending_notify = if progress.flower_sent {
+            Some(Notify::FlowerSent)
+        } else if progress.planted {
+            Some(Notify::SeedPlanted)
+        } else {
+            None
+        };
         MazeGameApp {
             walls,
             place,
@@ -142,11 +141,11 @@ impl MazeGameApp {
             look: MouseLook::new(),
             dialogue,
             aimed: None,
-            progress: Progress::default(),
+            saved: progress.clone(),
+            progress,
             pending_move: None,
-            pending_notify: None,
+            pending_notify,
             fade: Fade::new(),
-            hub_visited: false,
         }
     }
 
@@ -199,8 +198,8 @@ impl MazeGameApp {
         self.place = Place::Hub;
         self.player = Player::at(hub::SPAWN, 0.0);
         // 처음 올라왔을 땐 갑자기 방에 와 있는 이유(물뿌리개를 줍자 주위가 흐려졌다)를 이어서 알려준다.
-        if !self.hub_visited {
-            self.hub_visited = true;
+        if !self.progress.hub_visited {
+            self.progress.hub_visited = true;
             self.dialogue.start(vec![Self::line("정신을 차려 보니 낯선 방 안이다."), Self::line("한쪽에 화분이 하나 놓여 있다.")]);
         }
     }
@@ -390,6 +389,11 @@ impl App for MazeGameApp {
                 Notify::FlowerSent => AppAction::FlowerSent,
             };
         }
+        // 진행 상황이 바뀌었으면 OS 에 저장을 요청한다.
+        if self.progress != self.saved {
+            self.saved = self.progress.clone();
+            return AppAction::SaveMaze(self.saved.clone());
+        }
         AppAction::None
     }
 }
@@ -429,7 +433,7 @@ mod tests {
     // 시트의 흐름(물뿌리개 → 화분 → 사물함 → 문/열쇠 3번 → 씨앗 → 심기)을 처음부터 끝까지 따라가 본다.
     #[test]
     fn full_progression() {
-        let mut app = MazeGameApp::new();
+        let mut app = MazeGameApp::new(MazeProgress::default());
         assert!(has(&app, Target::Can));
 
         app.interact(Target::Can);
@@ -491,6 +495,20 @@ mod tests {
         assert!(app.progress.has_flower && !has(&app, Target::Flower));
         app.interact(Target::Mailbox);
         assert!(app.progress.flower_sent && matches!(app.pending_notify, Some(Notify::FlowerSent)));
+    }
+
+    // 물뿌리개를 이미 얻었으면 방에서 이어서 시작하고, 이미 한 일은 OS 에 다시 알린다.
+    #[test]
+    fn resuming_starts_in_the_hub() {
+        let fresh = MazeGameApp::new(MazeProgress::default());
+        assert!(matches!(fresh.place, Place::Maze { kind: MazeKind::Round1, .. }) && fresh.dialogue.active());
+
+        let saved = MazeProgress { has_can: true, hub_visited: true, planted: true, flower_sent: true, ..MazeProgress::default() };
+        let app = MazeGameApp::new(saved.clone());
+        assert!(matches!(app.place, Place::Hub) && !app.dialogue.active());
+        assert_eq!(app.progress, saved);
+        assert!(matches!(app.pending_notify, Some(Notify::FlowerSent)));
+        assert!(has(&app, Target::Pot) && has(&app, Target::Mailbox));
     }
 
     #[test]

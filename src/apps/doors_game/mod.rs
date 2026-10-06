@@ -17,6 +17,7 @@ mod world;
 
 use miniquad::{KeyCode, RenderingBackend};
 
+use crate::foundation::DoorsProgress;
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::render::mesh3d::Box3D;
 
@@ -35,25 +36,23 @@ pub struct DoorsGameApp {
     look: MouseLook,
     aimed: Option<Target>, // 지금 조준선이 향한 대상(문 손잡이/방 안 물건)
     dialogue: Dialogue,
-    quest_accepted: bool, // 도어즈의 부탁(보리지꽃)을 수락했는지 — 수락한 직후엔 문이 말이 없다
-    // 시트 오른쪽 표 — 수락하면 책상 위에 편지가 나타난다 → 집으면(has_letter) 문이 쓴 편지를 읽게 되고
-    // → 우편함에 넣으면(letter_sent) OS 로 같은 내용의 메일이 간다 → 그 메일을 읽고 게임으로
+    // 진행 상황 — 시트 오른쪽 표: 수락하면 책상 위에 편지가 나타난다 → 집으면(has_letter) 문이 쓴 편지를
+    // 읽게 되고 → 우편함에 넣으면(letter_sent) OS 로 같은 내용의 메일이 간다 → 그 메일을 읽고 게임으로
     // 돌아오면(door_changed) 문의 대사가 달라지고 방 물건을 조사해 꽃이 없다는 걸 깨달을 수 있다.
-    has_letter: bool,
-    letter_sent: bool,
+    // 바뀔 때마다 OS 에 저장을 요청해서(saved 와 비교) 창을 닫았다 다시 열어도 이어진다.
+    progress: DoorsProgress,
+    saved: DoorsProgress,
     letter_notify_pending: bool, // 편지를 넣은 걸 OS 에 아직 못 알렸다(대화가 끝나면 알린다)
-    door_changed: bool,
-    // 수락한 뒤 방 물건을 조사해서 "방에 꽃이 없다"는 걸 확인했는지 — 다음 이벤트(꽃 있는
-    // 곳을 안다는 두 번째 메일)의 조건이다.
-    flower_absence_checked: bool,
     second_mail_sent: bool, // 그 확인을 OS 에 알려서 두 번째 메일을 요청했는지(한 번만)
 }
 
 impl DoorsGameApp {
-    pub(super) fn new() -> DoorsGameApp {
-        // 열자마자 어디에 서 있는지 한마디로 알려준다.
+    pub(super) fn new(progress: DoorsProgress) -> DoorsGameApp {
+        // 처음 열었을 때만 어디에 서 있는지 한마디로 알려준다(이어서 하는 거면 생략).
         let mut dialogue = Dialogue::new();
-        dialogue.start(vec![Entry::Line("낡은 방 안이다.".to_string()), Entry::Line("정면에 문이 하나 있다.".to_string())]);
+        if progress == DoorsProgress::default() {
+            dialogue.start(vec![Entry::Line("낡은 방 안이다.".to_string()), Entry::Line("정면에 문이 하나 있다.".to_string())]);
+        }
         DoorsGameApp {
             boxes: build_room(),
             player: Player::at(SPAWN, 0.0),
@@ -61,12 +60,10 @@ impl DoorsGameApp {
             look: MouseLook::new(),
             aimed: None,
             dialogue,
-            quest_accepted: false,
-            has_letter: false,
-            letter_sent: false,
-            letter_notify_pending: false,
-            door_changed: false,
-            flower_absence_checked: false,
+            // 이어서 하는 거면 이미 보낸 편지/꽃 위치 확인을 OS 에 다시 한 번 알린다(메일은 중복으로 안 온다).
+            letter_notify_pending: progress.letter_sent,
+            saved: progress.clone(),
+            progress,
             second_mail_sent: false,
         }
     }
@@ -79,7 +76,7 @@ impl DoorsGameApp {
             // 선택지에 답하면 문의 반응을 한 줄 보여준다 — 수락하면 퀘스트 수락만 기록한다.
             match self.dialogue.handle_input(win, in_view) {
                 Some(true) => {
-                    self.quest_accepted = true;
+                    self.progress.quest_accepted = true;
                     self.dialogue.start(vec![
                         Entry::Line("문 너머에서 작은 한숨이 새어 나왔다.".to_string()),
                         // 다음에 뭘 해야 하는지 — 책상 위에 편지가 나타난 걸 짚어준다.
@@ -99,8 +96,8 @@ impl DoorsGameApp {
     // 편지를 우편함에 넣은 뒤 OS 에서 그 편지 메일을 읽었고(mail_read) 이 창으로 돌아왔으면(focused)
     // 문이 달라진다 — 이때부터 문의 대사가 바뀐다. 게임은 그동안 멈추지 않고 그대로 돌아간다.
     fn notice_mail_read(&mut self, mail_read: bool, focused: bool) -> bool {
-        if self.letter_sent && !self.door_changed && mail_read && focused && !self.dialogue.active() {
-            self.door_changed = true;
+        if self.progress.letter_sent && !self.progress.door_changed && mail_read && focused && !self.dialogue.active() {
+            self.progress.door_changed = true;
             self.dialogue.start(vec![Entry::Line("문 쪽에서 인기척이 느껴진다...".to_string())]);
             return true;
         }
@@ -111,7 +108,7 @@ impl DoorsGameApp {
     fn interact(&mut self, target: Option<Target>) {
         match target {
             // 문이 편지를 읽은 뒤엔 달라진 말을 한다(시트의 "도어즈 대사 변경").
-            Some(Target::Door) if self.door_changed => {
+            Some(Target::Door) if self.progress.door_changed => {
                 self.dialogue.start(vec![
                     Entry::Line("문고리에서 낮은 목소리가 들려왔다.".to_string()),
                     Entry::Line("편지는 잘 읽었어.".to_string()),
@@ -119,7 +116,7 @@ impl DoorsGameApp {
                 ]);
             }
             // 도어즈는 보리지꽃을 달라는 말만 한다. 수락한 직후엔 문이 말이 없다(available 에서 걸러진다).
-            Some(Target::Door) if !self.quest_accepted => {
+            Some(Target::Door) if !self.progress.quest_accepted => {
                 // 문이 말을 걸어오는 걸 갑자기 시작하지 않고 먼저 알려준다.
                 self.dialogue.start(vec![Entry::Line("문고리에서 낮은 목소리가 들려왔다.".to_string()), Entry::Choice("보리지꽃을 줘.".to_string())]);
             }
@@ -127,8 +124,8 @@ impl DoorsGameApp {
             // 방에 꽃이 없다는 걸 깨닫는다.
             Some(Target::Prop(i)) => {
                 let mut lines = vec![Entry::Line(PROPS[i].text.to_string())];
-                if self.quest_accepted && self.door_changed && !self.flower_absence_checked {
-                    self.flower_absence_checked = true;
+                if self.progress.quest_accepted && self.progress.door_changed && !self.progress.flower_absence_checked {
+                    self.progress.flower_absence_checked = true;
                     lines.push(Entry::Line("방에는 꽃이 없는 것 같다...".to_string()));
                     // 이어서 오는 메일(두 번째 메일)을 눈치채게 한다.
                     lines.push(Entry::Line("그때 어디선가 희미한 알림음이 울렸다.".to_string()));
@@ -137,21 +134,21 @@ impl DoorsGameApp {
             }
             // 책상 위의 편지 — 집으면 문이 쓴 편지의 내용이 그대로 나온다(OS 로 가는 메일과 같은 글).
             Some(Target::Letter) => {
-                self.has_letter = true;
+                self.progress.has_letter = true;
                 let mut lines = vec![Entry::Line("편지를 집어 들었다.".to_string())];
                 lines.extend(crate::strings::mail::LETTER_MAIL_BODY.ko.split('\n').map(|l| Entry::Line(l.to_string())));
                 self.dialogue.start(lines);
             }
             // 우편함 — 편지를 넣으면 OS 로 같은 내용의 메일이 가고, 게임은 메일을 읽고 돌아올 때까지 멈춘다.
             Some(Target::Mailbox) => {
-                if self.has_letter && !self.letter_sent {
-                    self.letter_sent = true;
+                if self.progress.has_letter && !self.progress.letter_sent {
+                    self.progress.letter_sent = true;
                     self.letter_notify_pending = true;
                     self.dialogue.start(vec![
                         Entry::Line("편지를 우편함에 넣었다.".to_string()),
                         Entry::Line("어디선가 알림음이 울린다...".to_string()),
                     ]);
-                } else if self.letter_sent {
+                } else if self.progress.letter_sent {
                     self.dialogue.start(vec![Entry::Line("우편함은 비어 있다.".to_string())]);
                 } else {
                     self.dialogue.start(vec![Entry::Line("우편함이다. 지금은 넣을 게 없다.".to_string())]);
@@ -182,7 +179,7 @@ impl App for DoorsGameApp {
         if !frozen {
             self.look.apply(&mut self.player, win);
             self.player.update(win.input, win.focused, win.dt, &self.boxes);
-            let (accepted, door_changed, has_letter) = (self.quest_accepted, self.door_changed, self.has_letter);
+            let (accepted, door_changed, has_letter) = (self.progress.quest_accepted, self.progress.door_changed, self.progress.has_letter);
             self.aimed = aimed_target(&self.player.camera(), |t| match t {
                 // 수락한 직후엔 문이 말이 없다 — 편지 메일을 읽고 돌아온 뒤에야 다시 말을 한다.
                 Target::Door => !accepted || door_changed,
@@ -194,7 +191,7 @@ impl App for DoorsGameApp {
 
         let cam = self.player.camera();
         let mut scene = self.boxes.clone();
-        if self.quest_accepted && !self.has_letter {
+        if self.progress.quest_accepted && !self.progress.has_letter {
             scene.push(letter_box());
         }
         view.draw_scene(ctx, r, area, &self.slot, CLEAR_COLOR, &cam, &scene);
@@ -222,9 +219,14 @@ impl App for DoorsGameApp {
         }
 
         // 방에 꽃이 없다는 걸 확인했으면(대화가 다 끝난 뒤) OS 에 두 번째 메일을 요청한다.
-        if self.flower_absence_checked && !self.second_mail_sent && !frozen {
+        if self.progress.flower_absence_checked && !self.second_mail_sent && !frozen {
             self.second_mail_sent = true;
             return AppAction::FlowerAbsenceChecked;
+        }
+        // 진행 상황이 바뀌었으면 OS 에 저장을 요청한다.
+        if self.progress != self.saved {
+            self.saved = self.progress.clone();
+            return AppAction::SaveDoors(self.saved.clone());
         }
         AppAction::None
     }
@@ -236,30 +238,44 @@ mod tests {
 
     // 시트 오른쪽 표의 흐름 — 수락 → 편지 집기 → 우편함 → 메일을 읽고 돌아옴 → 문 대사 변경 →
     // 그 뒤에야 방 물건으로 "꽃이 없다"를 확인할 수 있다.
+    // 저장된 진행으로 다시 열면 처음 인사 대사 없이 그 상태 그대로 이어진다.
+    #[test]
+    fn resuming_keeps_progress_and_skips_the_intro() {
+        let fresh = DoorsGameApp::new(DoorsProgress::default());
+        assert!(fresh.dialogue.active(), "처음 열면 상황 설명 대사가 나온다");
+
+        let saved = DoorsProgress { quest_accepted: true, has_letter: true, letter_sent: true, ..DoorsProgress::default() };
+        let app = DoorsGameApp::new(saved.clone());
+        assert!(!app.dialogue.active());
+        assert_eq!(app.progress, saved);
+        assert_eq!(app.saved, saved, "불러온 값은 바뀐 게 아니라서 저장을 다시 요청하지 않는다");
+        assert!(app.letter_notify_pending, "이미 보낸 편지는 OS 에 다시 한 번 알린다(메일은 중복으로 안 온다)");
+    }
+
     #[test]
     fn letter_loop_gates_the_flower_check() {
-        let mut app = DoorsGameApp::new();
+        let mut app = DoorsGameApp::new(DoorsProgress::default());
         app.dialogue = Dialogue::new();
 
         app.interact(Some(Target::Mailbox));
-        assert!(!app.letter_sent, "편지가 없으면 보낼 게 없다");
+        assert!(!app.progress.letter_sent, "편지가 없으면 보낼 게 없다");
 
-        app.quest_accepted = true;
+        app.progress.quest_accepted = true;
         app.interact(Some(Target::Prop(0)));
-        assert!(!app.flower_absence_checked, "편지 일을 끝내기 전엔 꽃이 없다는 걸 못 깨닫는다");
+        assert!(!app.progress.flower_absence_checked, "편지 일을 끝내기 전엔 꽃이 없다는 걸 못 깨닫는다");
 
         app.interact(Some(Target::Letter));
-        assert!(app.has_letter);
+        assert!(app.progress.has_letter);
         app.interact(Some(Target::Mailbox));
-        assert!(app.letter_sent && app.letter_notify_pending);
+        assert!(app.progress.letter_sent && app.letter_notify_pending);
 
         app.dialogue = Dialogue::new();
         assert!(!app.notice_mail_read(false, true), "메일을 안 읽었으면 문은 그대로");
         assert!(!app.notice_mail_read(true, false), "창으로 돌아오기 전엔 문은 그대로");
-        assert!(app.notice_mail_read(true, true) && app.door_changed);
+        assert!(app.notice_mail_read(true, true) && app.progress.door_changed);
 
         app.dialogue = Dialogue::new();
         app.interact(Some(Target::Prop(0)));
-        assert!(app.flower_absence_checked);
+        assert!(app.progress.flower_absence_checked);
     }
 }

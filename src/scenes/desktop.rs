@@ -1341,6 +1341,15 @@ impl Scene for DesktopScene {
                 DeskAction::FlowerAbsenceChecked => self.deliver_mail(MailId::Flower, &f.settings),
                 // 문 게임에서 편지를 우편함에 넣음 — 같은 내용의 편지 메일이 도착한다(시트 오른쪽 표).
                 DeskAction::LetterSent => self.deliver_mail(MailId::Letter, &f.settings),
+                // 창 안 게임의 진행 상황이 바뀌었다 — fs 에 기록하고 즉시 저장해서 창을 닫았다 다시 열어도 이어진다.
+                DeskAction::SaveDoors(p) => {
+                    self.fs.doors_progress = p;
+                    self.write_save(&f.settings);
+                }
+                DeskAction::SaveMaze(p) => {
+                    self.fs.maze_progress = p;
+                    self.write_save(&f.settings);
+                }
                 // 설치 마법사 진행바가 다 찬 순간 한 번 온다 — 설치 완료를 기록하고
                 // 바탕화면에 게임 아이콘을 만든다(마법사 창은 Finish 로 사용자가 닫는다).
                 DeskAction::InstallComplete => {

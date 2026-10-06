@@ -48,6 +48,39 @@ pub enum FileKind {
 pub const MY_COMPUTER_NAME: &str = "My Computer";
 pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
 
+// ---- 창 안 게임들의 진행 상황(저장 파일에 실려서 창을 닫았다 다시 열어도 이어진다) ----
+// 앱은 열릴 때 fs 의 값을 복사해 받고, 바뀔 때마다 AppAction::SaveDoors/SaveMaze 로 돌려줘서
+// desktop.rs 가 fs 에 쓰고 저장한다. "Erase All Memory" 는 저장 파일을 지우므로 같이 초기화된다.
+
+// 서브 게임 열쇠 개수(문 3개, 열쇠 3개).
+pub const MAZE_KEYS: usize = 3;
+
+// 메인 게임(방 + 문) 진행.
+#[derive(Clone, Default, PartialEq, Debug, Serialize, Deserialize)]
+pub struct DoorsProgress {
+    pub quest_accepted: bool,        // 도어즈의 부탁(보리지꽃)을 수락했다
+    pub has_letter: bool,            // 책상 위 편지를 집었다
+    pub letter_sent: bool,           // 편지를 우편함에 넣었다
+    pub door_changed: bool,          // 편지 메일을 읽고 돌아와서 문의 대사가 바뀌었다
+    pub flower_absence_checked: bool, // 방에 꽃이 없다는 걸 확인했다
+}
+
+// 서브 게임(미로 + 방) 진행.
+#[derive(Clone, Default, PartialEq, Debug, Serialize, Deserialize)]
+pub struct MazeProgress {
+    pub has_can: bool,
+    pub pot_checked: bool,    // 화분을 조사했다 → 뒤에 사물함이 나타난다
+    pub locker_checked: bool, // 사물함을 조사했다 → 문 3개가 열린다
+    pub keys: [bool; MAZE_KEYS],
+    pub seed: bool,
+    pub planted: bool,
+    pub planted_at: Option<f64>, // 씨앗을 심은 때(시스템 시간, 유닉스 초)
+    pub bloomed: bool,           // 시스템 시간이 1년 넘게 흘러 꽃이 폈다
+    pub has_flower: bool,        // 꽃을 꺾어서 가지고 있다
+    pub flower_sent: bool,       // 꽃을 우체통에 넣어 보냈다
+    pub hub_visited: bool,       // 방에 이미 한 번 올라와 봤다(처음엔 상황 설명 대사가 나온다)
+}
+
 // 받은편지함에 도착할 수 있는 메일들 — 도착 순서는 게임 진행에 따라 달라서(mail_log) 번호가
 // 아니라 이 이름으로 구분한다.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -106,6 +139,12 @@ pub struct FileSystem {
     legacy_mail2_arrived: bool,
     #[serde(default, rename = "extra_mails")]
     legacy_extra_mails: usize,
+    // 창 안 게임들의 진행 상황 — 위 DoorsProgress/MazeProgress 참고. 이 필드가 없던 예전 저장
+    // 파일은 처음부터 시작으로 불러온다.
+    #[serde(default)]
+    pub doors_progress: DoorsProgress,
+    #[serde(default)]
+    pub maze_progress: MazeProgress,
     // 서브 게임에서 씨앗을 심었는지 — 힌트 메일이 올 차례인지 판단하는 데 쓴다.
     #[serde(default)]
     pub seed_planted: bool,
@@ -205,6 +244,8 @@ impl FileSystem {
             legacy_mail_arrived: false,
             legacy_mail2_arrived: false,
             legacy_extra_mails: 0,
+            doors_progress: DoorsProgress::default(),
+            maze_progress: MazeProgress::default(),
             seed_planted: false,
             flower_image: None,
             mail_read: Vec::new(),
@@ -713,6 +754,30 @@ mod tests {
         assert!(fs.is_mail_read(MailId::Flower) && !fs.is_mail_read(MailId::Friend));
         fs.migrate_mail_log(); // 한 번 옮긴 뒤엔 다시 안 건드린다
         assert_eq!(fs.mail_log.len(), 4);
+    }
+
+    // 게임 진행 상황이 저장 파일(JSON)을 거쳐도 그대로 돌아오고, 이 필드가 없던 예전 저장 파일은
+    // 처음부터 시작으로 불러와진다.
+    #[test]
+    fn game_progress_survives_save_roundtrip_and_old_saves_load() {
+        let mut fs = FileSystem::new();
+        fs.doors_progress.quest_accepted = true;
+        fs.doors_progress.has_letter = true;
+        fs.maze_progress.has_can = true;
+        fs.maze_progress.keys = [true, false, true];
+        fs.maze_progress.planted_at = Some(1_759_708_800.5);
+        let json = serde_json::to_string(&fs).unwrap();
+        let back: FileSystem = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.doors_progress, fs.doors_progress);
+        assert_eq!(back.maze_progress, fs.maze_progress);
+
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let obj = value.as_object_mut().unwrap();
+        obj.remove("doors_progress");
+        obj.remove("maze_progress");
+        let old: FileSystem = serde_json::from_value(value).unwrap();
+        assert_eq!(old.doors_progress, DoorsProgress::default());
+        assert_eq!(old.maze_progress, MazeProgress::default());
     }
 
     #[test]

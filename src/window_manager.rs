@@ -3,7 +3,7 @@
 use miniquad::RenderingBackend;
 
 use crate::apps::{App, AppAction, DragGhost, MoveDest, Opened, WinInput};
-use crate::foundation::FileId;
+use crate::foundation::{DoorsProgress, FileId, MazeProgress};
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::scenes::Input;
 use crate::ui::*;
@@ -65,6 +65,8 @@ pub enum DeskAction {
     InstallComplete,
     FlowerAbsenceChecked,
     LetterSent,
+    SaveDoors(DoorsProgress),
+    SaveMaze(MazeProgress),
     SeedPlanted,
     FlowerSent,
 }
@@ -499,6 +501,8 @@ impl WindowManager {
                 AppAction::InstallComplete => actions.push(DeskAction::InstallComplete),
                 AppAction::FlowerAbsenceChecked => actions.push(DeskAction::FlowerAbsenceChecked),
                 AppAction::LetterSent => actions.push(DeskAction::LetterSent),
+                AppAction::SaveDoors(p) => actions.push(DeskAction::SaveDoors(p)),
+                AppAction::SaveMaze(p) => actions.push(DeskAction::SaveMaze(p)),
                 AppAction::SeedPlanted => actions.push(DeskAction::SeedPlanted),
                 AppAction::FlowerSent => actions.push(DeskAction::FlowerSent),
             }

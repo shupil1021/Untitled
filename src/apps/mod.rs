@@ -41,7 +41,7 @@ use std::rc::Rc;
 
 use miniquad::RenderingBackend;
 
-use crate::foundation::{display_name, FileId, FileKind, FileOrigin, FileSystem, Settings, APPDATA_NAME};
+use crate::foundation::{display_name, DoorsProgress, FileId, FileKind, FileOrigin, FileSystem, MazeProgress, Settings, APPDATA_NAME};
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::scenes::Input;
 use crate::ui::{icon_of, IconType};
@@ -83,6 +83,9 @@ pub enum AppAction {
     FlowerAbsenceChecked,
     // 문 게임에서 편지를 우편함에 넣음 — 같은 내용의 편지 메일이 도착하게 해달라는 요청.
     LetterSent,
+    // 창 안 게임의 진행 상황이 바뀜 — fs 에 기록하고 저장해달라는 요청(창을 닫았다 열어도 이어진다).
+    SaveDoors(DoorsProgress),
+    SaveMaze(MazeProgress),
     // 서브 게임에서 씨앗을 심음 — 잠시 뒤 시간 힌트 메일이 오게 해달라는 요청.
     SeedPlanted,
     // 서브 게임에서 꽃을 우체통에 넣음 — 꽃 사진이 첨부된 메일이 오게 해달라는 요청.
@@ -320,7 +323,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
         },
         // 서브 게임(test2.exe) — 미로 게임. 창 안 3D 게임이라 test.exe 와 같은 창 설정.
         FileKind::SubGame => Opened {
-            app: Box::new(MazeGameApp::new()),
+            app: Box::new(MazeGameApp::new(fs.maze_progress.clone())),
             title: name,
             size: (486.0, 386.0),
             maximized: false,
@@ -334,7 +337,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
         // 조절/최대화도 그냥 허용한다. 기본 크기는 클라이언트 영역이 480x360(4:3)이
         // 되게 테두리(3*2)/타이틀바(20)만큼 더했다.
         FileKind::Game => Opened {
-            app: Box::new(DoorsGameApp::new()),
+            app: Box::new(DoorsGameApp::new(fs.doors_progress.clone())),
             title: name,
             size: (486.0, 386.0),
             maximized: false,

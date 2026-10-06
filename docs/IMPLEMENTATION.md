@@ -171,8 +171,14 @@ cargo run
   뒤로 돌려도 안 핀다 — 시스템 시간을 직접 바꾸는 건 플레이어 몫이고 게임은 바꾸지 않는다) → ⑥ 꽃을
   조사해 꺾고(`has_flower`, 왼쪽 위 "보리지꽃") 서쪽 벽의 **우체통**을 조사하면 꽃이 발송되고 OS 로
   꽃 사진 메일이 도착한다(꽃 없이 조사하면 "지금은 보낼 게 없다"). 대화가 다 끝난 뒤 OS 에 알릴
-  일은 `pending_notify` → `AppAction::SeedPlanted`/`FlowerSent`. 진행 상태는 저장하지 않는다(창을
-  닫으면 처음부터) — 시트의 SUB A+a-15 ~ 18 까지가 여기까지다.
+  일은 `pending_notify` → `AppAction::SeedPlanted`/`FlowerSent`. 시트의 SUB A+a-15 ~ 18 까지가 여기까지다.
+  **진행 저장**: 진행 상황은 `foundation::MazeProgress`(저장 파일에 실리는 `fs.maze_progress`)에
+  있고, 앱은 열릴 때 그 복사본을 받아 바뀔 때마다(`saved`와 비교) `AppAction::SaveMaze`로 돌려줘서
+  desktop.rs 가 fs 에 쓰고 즉시 저장한다 — 창을 닫았다 다시 열면 이어진다(물뿌리개를 이미 얻었으면
+  방에서 시작, 미로는 열 때마다 새로 만들어지고 열쇠 미로 도중에 닫았다면 방으로 돌아온 걸로 이어짐,
+  이미 한 일은 OS 에 다시 알리지만 메일은 중복으로 안 옴, 심은 때가 저장돼 있어 닫은 채로 시스템
+  시간을 돌려도 다시 열면 꽃이 핀다). 문 게임도 같은 방식(`DoorsProgress`/`SaveDoors`)이고, 이 필드가
+  없던 예전 저장 파일은 처음부터로 불러온다. "Erase All Memory" 는 저장 파일을 지우니 같이 초기화된다.
 - **`src/apps/doors_game/` — 메인 게임 "DOORS"**(`mod.rs` = 창 앱/입력, `world.rs` = 맵·
   물건·조준 대상; 화면/시점/플레이어/대화창은 위 game3d): 메일 첨부 `test Setup.exe`로
   설치해 바탕화면에 생긴 `test.exe`(`FileKind::Game`)를 열면 OS 안의 창 하나로 뜨는 앱(`DoorsGameApp`, 별도 실행
@@ -229,7 +235,7 @@ cargo run
   꼬이게 힌트 메일도 같이 도착한다. **시계 팝업**: 작업표시줄 시계를 누르면 위에 날짜
   (`YYYY-MM-DD`, 시스템 시간 KST)가 뜬다 — 시스템 시간을 돌렸을 때 날짜가 실제로 바뀌었는지
   확인하라고 넣었다(달력 계산 `civil_date`는 단위 테스트).
-  창을 닫으면 게임 진행은 처음부터(아직 저장 안 함). 문은 열리지 않는다.
+  진행은 저장된다(위 "진행 저장" 참고). 문은 열리지 않는다.
 
 ### 게임 설치 연출 (`gamefiles.rs`)
 
