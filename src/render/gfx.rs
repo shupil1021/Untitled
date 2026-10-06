@@ -122,7 +122,7 @@ pub struct Assets {
     pub icon_exe: TextureId,           // 실행 파일(설치된 게임 test.exe)
     pub icon_setup: TextureId,         // 설치 파일(메일로 받은 test Setup.exe)
     pub icon_sound: TextureId,         // 사운드 파일(.wav)
-    // "팔라스 OS가 생성한 이미지" 로 바탕화면에 놓이는 실제 사진들 — FileKind::Img(idx) 의
+    // 이미지 뷰어가 보여주는 사진들 — FileKind::Img(idx) 의
     // idx 가 이 Vec 의 인덱스다. (텍스처, 원본 픽셀 폭, 원본 픽셀 높이) — 종횡비를 살려서
     // 레터박스로 그리려면 원본 크기가 필요해서 아이콘 텍스처들과 달리 크기도 같이 들고 있는다.
     // 사진을 늘릴수록 여기 include_bytes! 한 줄만 추가하면 된다.
