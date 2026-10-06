@@ -1,6 +1,6 @@
 # GitHub 관련 메모
 
-저장소/계정/릴리스 방법을 잊지 않으려고 적어둔 문서. 게임 설정은 [README.md](README.md), 스토리는
+저장소/계정/릴리스 방법을 잊지 않으려고 적어둔 문서. 구현 상세는 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md), 스토리는
 [STORY.md](STORY.md), 제작 순서는 [ROADMAP.md](ROADMAP.md).
 
 ## 저장소

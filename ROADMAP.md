@@ -2,7 +2,7 @@
 
 [STORY.md](STORY.md)의 스토리 흐름을 기준으로, 지금까지 만들어진 것(OS 셸)과 아직 없는 것을
 대조해서 "무엇을 먼저 만들어야 하는지" 정리한 문서. 실제 구현 방식/버그 히스토리는
-[README.md](README.md)에 남긴다 — 여기는 순서/우선순위 계획만.
+[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)에 남긴다 — 여기는 순서/우선순위 계획만.
 
 ## 지금 있는 것 (재사용 가능한 기반)
 

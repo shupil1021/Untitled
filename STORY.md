@@ -1,7 +1,7 @@
 # PALLAS OS — 스토리 바이블
 
 PalaceOS(이 저장소의 코드명)가 최종적으로 구현할 ARG/아날로그 호러 게임 "PALLAS OS"의
-전체 스토리 문서. 코드 구현 세부사항은 [README.md](README.md)에, 이 문서는 세계관/플롯
+전체 스토리 문서. 코드 구현 세부사항은 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)에, 이 문서는 세계관/플롯
 기준점으로 둔다.
 
 ## 0. 설정
