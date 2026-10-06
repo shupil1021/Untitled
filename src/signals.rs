@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 static LETTER_MAIL_READ: AtomicBool = AtomicBool::new(false);
 
-// 문(도어즈)의 편지 메일을 받은편지함에서 읽었는지 — 문 게임이 일시 정지에서 풀릴 조건.
+// 문(도어즈)의 편지 메일을 받은편지함에서 읽었는지 — 문 게임에서 문이 달라지는 조건.
 pub fn set_letter_mail_read(read: bool) {
     LETTER_MAIL_READ.store(read, Ordering::Relaxed);
 }

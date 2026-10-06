@@ -37,8 +37,8 @@ pub struct DoorsGameApp {
     dialogue: Dialogue,
     quest_accepted: bool, // 도어즈의 부탁(보리지꽃)을 수락했는지 — 수락한 직후엔 문이 말이 없다
     // 시트 오른쪽 표 — 수락하면 책상 위에 편지가 나타난다 → 집으면(has_letter) 문이 쓴 편지를 읽게 되고
-    // → 우편함에 넣으면(letter_sent) 게임이 일시 정지하고 OS 로 같은 내용의 메일이 간다 → 그 메일을 읽고
-    // 게임으로 돌아오면(door_changed) 문의 대사가 달라지고 방 물건을 조사해 꽃이 없다는 걸 깨달을 수 있다.
+    // → 우편함에 넣으면(letter_sent) OS 로 같은 내용의 메일이 간다 → 그 메일을 읽고 게임으로
+    // 돌아오면(door_changed) 문의 대사가 달라지고 방 물건을 조사해 꽃이 없다는 걸 깨달을 수 있다.
     has_letter: bool,
     letter_sent: bool,
     letter_notify_pending: bool, // 편지를 넣은 걸 OS 에 아직 못 알렸다(대화가 끝나면 알린다)
@@ -96,17 +96,12 @@ impl DoorsGameApp {
         }
     }
 
-    // 편지를 우편함에 넣어서 일시 정지 중인가 — OS 에서 그 편지 메일을 읽고 돌아올 때까지.
-    fn paused_for_mail(&self) -> bool {
-        self.letter_sent && !self.door_changed
-    }
-
-    // OS 에서 편지 메일을 읽었고(mail_read) 이 창으로 돌아왔으면(focused) 일시 정지에서 푼다.
-    // 이때부터 문의 대사가 달라진다.
-    fn resume_if_mail_read(&mut self, mail_read: bool, focused: bool) -> bool {
-        if self.paused_for_mail() && mail_read && focused && !self.dialogue.active() {
+    // 편지를 우편함에 넣은 뒤 OS 에서 그 편지 메일을 읽었고(mail_read) 이 창으로 돌아왔으면(focused)
+    // 문이 달라진다 — 이때부터 문의 대사가 바뀐다. 게임은 그동안 멈추지 않고 그대로 돌아간다.
+    fn notice_mail_read(&mut self, mail_read: bool, focused: bool) -> bool {
+        if self.letter_sent && !self.door_changed && mail_read && focused && !self.dialogue.active() {
             self.door_changed = true;
-            self.dialogue.start(vec![Entry::Line("멈춰 있던 화면이 다시 움직이기 시작했다.".to_string()), Entry::Line("문 쪽에서 인기척이 느껴진다...".to_string())]);
+            self.dialogue.start(vec![Entry::Line("문 쪽에서 인기척이 느껴진다...".to_string())]);
             return true;
         }
         false
@@ -154,7 +149,7 @@ impl DoorsGameApp {
                     self.letter_notify_pending = true;
                     self.dialogue.start(vec![
                         Entry::Line("편지를 우편함에 넣었다.".to_string()),
-                        Entry::Line("어디선가 알림음이 울린다. 화면이 멈추는 것 같다...".to_string()),
+                        Entry::Line("어디선가 알림음이 울린다...".to_string()),
                     ]);
                 } else if self.letter_sent {
                     self.dialogue.start(vec![Entry::Line("우편함은 비어 있다.".to_string())]);
@@ -176,19 +171,14 @@ impl App for DoorsGameApp {
         let view = View::fit(area);
         let in_view = view.rect.contains(win.mouse.0, win.mouse.1);
 
-        // 편지 메일을 읽고 이 창으로 돌아왔으면 일시 정지를 푼다 — 정지 중엔 입력도 막는다.
-        self.resume_if_mail_read(crate::signals::letter_mail_read(), win.focused);
-        if self.paused_for_mail() && !self.dialogue.active() {
-            self.look.update(win, in_view); // 포커스/시점 모드만 정리하고 나머지 입력은 무시
-        } else {
-            self.handle_input(win, in_view);
-        }
+        // 편지 메일을 읽고 이 창으로 돌아왔으면 문이 달라진다.
+        self.notice_mail_read(crate::signals::letter_mail_read(), win.focused);
+        self.handle_input(win, in_view);
         self.look.request();
         self.dialogue.tick(win.dt);
 
-        // 대화창이 떠 있거나 편지 메일을 기다리는 동안은 이동·시점·조준을 멈춘다.
-        let paused = self.paused_for_mail() && !self.dialogue.active();
-        let frozen = self.dialogue.active() || paused;
+        // 대화창이 떠 있는 동안은 이동·시점·조준을 멈춘다.
+        let frozen = self.dialogue.active();
         if !frozen {
             self.look.apply(&mut self.player, win);
             self.player.update(win.input, win.focused, win.dt, &self.boxes);
@@ -223,15 +213,6 @@ impl App for DoorsGameApp {
         if !self.look.captured() && !frozen {
             view.draw_capture_hint(r);
         }
-        // 편지 메일을 기다리는 동안은 화면을 어둡게 덮고 무엇을 해야 하는지 알려준다.
-        if paused {
-            r.rect(view.rect.x, view.rect.y, view.rect.w, view.rect.h, [0.0, 0.0, 0.0, 0.6]);
-            for (i, line) in ["일시 정지", "모니터에 새 메일이 도착했다.", "메일을 확인하고 돌아오자."].iter().enumerate() {
-                let scale = if i == 0 { 1.1 } else { 0.8 } * view.s;
-                let tw = r.text_width(line, scale);
-                r.text(view.px(crate::apps::game3d::VIEW_W / 2.0) - tw / 2.0, view.py(190.0 + i as f32 * 30.0), line, scale, [1.0, 1.0, 1.0, 1.0]);
-            }
-        }
         self.dialogue.draw(r, view.rect.x, view.rect.y, view.s, win.time);
 
         // 편지를 넣은 걸(대화가 끝난 뒤) OS 에 알린다 — 같은 내용의 메일이 도착한다.
@@ -253,7 +234,7 @@ impl App for DoorsGameApp {
 mod tests {
     use super::*;
 
-    // 시트 오른쪽 표의 흐름 — 수락 → 편지 집기 → 우편함 → 일시 정지 → 메일을 읽고 돌아옴 → 문 대사 변경 →
+    // 시트 오른쪽 표의 흐름 — 수락 → 편지 집기 → 우편함 → 메일을 읽고 돌아옴 → 문 대사 변경 →
     // 그 뒤에야 방 물건으로 "꽃이 없다"를 확인할 수 있다.
     #[test]
     fn letter_loop_gates_the_flower_check() {
@@ -270,13 +251,12 @@ mod tests {
         app.interact(Some(Target::Letter));
         assert!(app.has_letter);
         app.interact(Some(Target::Mailbox));
-        assert!(app.letter_sent && app.letter_notify_pending && app.paused_for_mail());
+        assert!(app.letter_sent && app.letter_notify_pending);
 
         app.dialogue = Dialogue::new();
-        assert!(!app.resume_if_mail_read(false, true), "메일을 안 읽었으면 계속 정지");
-        assert!(!app.resume_if_mail_read(true, false), "창으로 돌아오기 전엔 계속 정지");
-        assert!(app.resume_if_mail_read(true, true) && app.door_changed);
-        assert!(!app.paused_for_mail());
+        assert!(!app.notice_mail_read(false, true), "메일을 안 읽었으면 문은 그대로");
+        assert!(!app.notice_mail_read(true, false), "창으로 돌아오기 전엔 문은 그대로");
+        assert!(app.notice_mail_read(true, true) && app.door_changed);
 
         app.dialogue = Dialogue::new();
         app.interact(Some(Target::Prop(0)));
