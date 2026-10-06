@@ -497,7 +497,7 @@ impl Renderer {
     }
 
     // text() 와 달리 매 글자를 실제 폭 대신 고정폭(advance 인자)으로 강제 이동시킨다
-    // — PalaceOS 피겨렛 로고(boot.rs::LOGO)처럼 여러 줄에 걸쳐 문자 위치가 그대로
+    // — 타이틀 피겨렛 로고(boot.rs::LOGO)처럼 여러 줄에 걸쳐 문자 위치가 그대로
     // 세로로 정렬돼야 하는 아스키 아트에 안전하게 쓴다.
     pub fn text_mono(&mut self, x: f32, y: f32, text: &str, scale: f32, color: Color, advance: f32) {
         let mut pen = x;
