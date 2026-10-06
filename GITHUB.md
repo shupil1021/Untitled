@@ -26,6 +26,15 @@ git push            # 이미 origin/master 를 추적 중이라 이것만 하면
 - 지워진 에셋(`assets/photo/*` 등)의 삭제도 이미 커밋돼 있다. `.gitignore` 에 `target`, `production`,
   `*.pdb` 가 들어 있어 빌드 결과물과 녹화 도구 폴더는 올라가지 않는다.
 
+## 커밋 메시지에 AI 공동 작성자 표시 안 넣기
+
+- GitHub Contributors 에 AI 도구가 안 보이게, 커밋 메시지에 `Co-Authored-By: ...`(AI 도구 이름) 줄을
+  **넣지 않는다.** 2026-10-06 에 기존 113개 커밋에서도 그 줄을 모두 지우고(기록 다시 쓰기) `git push --force`
+  했고, v0.1.0 릴리스/태그도 새 기록에 맞춰 다시 만들었다. 이전 기록의 백업은
+  `D:\ConsoleProject\CrackHead_before_rewrite.bundle`(되돌릴 일이 있을 때만).
+- 기록을 다시 쓰면 커밋 주소가 전부 바뀐다 — 그러면 릴리스 태그도 옛 커밋을 가리키므로 아래 "다시
+  배포" 순서로 릴리스를 지우고 다시 만든다.
+
 ## 릴리스 (진짜 Release — 태그만이 아니라)
 
 현재 릴리스: **v0.1.0** (https://github.com/shupil1021/Untitled/releases/tag/v0.1.0), 파일 3개:
