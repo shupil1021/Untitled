@@ -4,7 +4,7 @@ Rust + [miniquad](https://github.com/not-fl3/miniquad)로 만드는 **가짜 Win
 Windows 9x / NT 4.0~2000 룩앤필 + CRT 모니터 느낌(화면 곡률·스캔라인·색수차)을 낸다.
 지금은 데스크톱 토이 형태지만, 최종 목표는 이 위에 얹을 **ARG/아날로그 호러 게임의 셸**이다 —
 그래서 부팅/종료/삭제 같은 "시스템 자체가 살아있는" 연출에 공을 들인다.
-스토리 설정은 [STORY.md](STORY.md), 챕터별 개발 순서는 [ROADMAP.md](ROADMAP.md) 참고.
+스토리 설정은 [STORY.md](STORY.md), 챕터별 개발 순서는 [ROADMAP.md](ROADMAP.md), GitHub 저장소/릴리스 방법은 [GITHUB.md](GITHUB.md) 참고.
 
 ## 실행
 
