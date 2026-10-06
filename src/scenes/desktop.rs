@@ -6,10 +6,10 @@ use std::rc::Rc;
 
 use crate::apps::{
     explorer_app_for_folder, explorer_app_refreshed, mail_attachable_files, open, CreditsApp, ExplorerApp, ExplorerLocation, MailApp,
-    MoveDest, OfficialSiteApp, Opened, SettingsApp, FIRST_MAIL_FROM, SECOND_MAIL_FROM,
+    MoveDest, OfficialSiteApp, Opened, SettingsApp, mail_from, mail_subject,
 };
 use crate::foundation::{
-    display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, Settings, GAME_FILE_NAME, MY_COMPUTER_NAME, SUB_GAME_NAME,
+    display_name, FileId, FileKind, FileOrigin, FileSystem, Language, SentMail, MailId, Settings, GAME_FILE_NAME, MY_COMPUTER_NAME, SUB_GAME_NAME,
     OFFICIAL_SITE_URL, RECYCLE_BIN_NAME,
 };
 use crate::render::gfx::{Assets, Rect, Renderer, CELL_H, SCREEN_H, SCREEN_W};
@@ -296,6 +296,7 @@ impl DesktopScene {
         icon_pos.truncate(fs.desktop.len());
         // 게임 파일 첨부가 생기기 전의 예전 저장 파일이면 지금 채워 넣는다.
         fs.ensure_game_attachment();
+        fs.migrate_mail_log();
         fs.ensure_appdata();
         if fs.game_installed {
             // 게임 폴더가 생기기 전에 설치한 예전 저장 파일에도 파일들을 채워 넣는다.
@@ -387,6 +388,19 @@ impl DesktopScene {
     // 되돌려준다("Write Mail" 초안은 새 MailApp 을 만드는 순간 사라지지만, 메일
     // 도착은 세션에 한 번뿐이라 그 시점에 마침 초안을 쓰고 있었을 확률은 낮고,
     // 이 파이프라인 1단계에서는 거기까진 다루지 않는다).
+    // 메일을 받은편지함에 도착시키고(이미 왔으면 아무것도 안 함) 열려있는 Mail 을 새로고침한 뒤
+    // 우측 하단 토스트(보낸 사람 + 제목)로 알리고 저장한다.
+    fn deliver_mail(&mut self, id: MailId, settings: &Rc<RefCell<Settings>>) {
+        if !self.fs.deliver_mail(id) {
+            return;
+        }
+        self.refresh_mail_if_open(settings);
+        let lang = settings.borrow().language;
+        self.toast = Some(Toast::new_mail(mail_from(id), mail_subject(id, lang)));
+        self.toast_timer = TOAST_DURATION;
+        self.write_save(settings);
+    }
+
     fn refresh_mail_if_open(&mut self, settings: &Rc<RefCell<Settings>>) {
         if let Some(mail_id) = self.fs.find_by_name("Mail")
             && self.wm.is_open(mail_id)
@@ -1317,30 +1331,16 @@ impl Scene for DesktopScene {
                     self.write_save(&f.settings);
                 }
                 // 서브 게임에서 꽃을 우체통에 넣음 — 꽃 사진이 첨부된 메일이 도착한다(시트의 SUB A+a-17/18).
-                // 힌트 메일보다 먼저 와버려도(타이머가 아직인데 시간을 돌린 경우) 순서가 안 꼬이게 둘 다 도착시킨다.
+                // 힌트 메일보다 먼저 와버려도(타이머가 아직인데 시간을 돌린 경우) 순서가 안 꼬이게 힌트도 같이 도착시킨다.
                 DeskAction::FlowerSent => {
-                    if self.fs.extra_mails < 2 {
-                        self.fs.extra_mails = 2;
-                        self.fs.ensure_flower_image();
-                        self.refresh_mail_if_open(&f.settings);
-                        let lang = f.settings.borrow().language;
-                        self.toast = Some(Toast::new_mail(SECOND_MAIL_FROM, t(lang, crate::strings::mail::PHOTO_MAIL_SUBJECT)));
-                        self.toast_timer = TOAST_DURATION;
-                        self.write_save(&f.settings);
-                    }
+                    self.fs.ensure_flower_image();
+                    self.deliver_mail(MailId::Hint, &f.settings);
+                    self.deliver_mail(MailId::Photo, &f.settings);
                 }
-                // 게임 안에서 방에 꽃이 없다는 걸 확인함 — 두 번째 메일을 한 번만 도착시키고
-                // 첫 메일 때처럼 토스트로 알린다.
-                DeskAction::FlowerAbsenceChecked => {
-                    if !self.fs.mail2_arrived {
-                        self.fs.mail2_arrived = true;
-                        self.refresh_mail_if_open(&f.settings);
-                        let lang = f.settings.borrow().language;
-                        self.toast = Some(Toast::new_mail(SECOND_MAIL_FROM, t(lang, crate::strings::mail::FLOWER_MAIL_SUBJECT)));
-                        self.toast_timer = TOAST_DURATION;
-                        self.write_save(&f.settings);
-                    }
-                }
+                // 게임 안에서 방에 꽃이 없다는 걸 확인함 — 꽃 위치 메일이 도착한다.
+                DeskAction::FlowerAbsenceChecked => self.deliver_mail(MailId::Flower, &f.settings),
+                // 문 게임에서 편지를 우편함에 넣음 — 같은 내용의 편지 메일이 도착한다(시트 오른쪽 표).
+                DeskAction::LetterSent => self.deliver_mail(MailId::Letter, &f.settings),
                 // 설치 마법사 진행바가 다 찬 순간 한 번 온다 — 설치 완료를 기록하고
                 // 바탕화면에 게임 아이콘을 만든다(마법사 창은 Finish 로 사용자가 닫는다).
                 DeskAction::InstallComplete => {
@@ -1568,33 +1568,25 @@ impl Scene for DesktopScene {
 
         // 게임 다운로드 파일이 첨부된 메일 도착 — 이미 도착했으면(불러온 저장에서도
         // true 로 남아있다) 더는 재지 않는다.
-        if !self.fs.mail_arrived {
+        if !self.fs.has_mail(MailId::Friend) {
             self.mail_timer += f.dt;
             if self.mail_timer >= MAIL_ARRIVAL_DELAY {
-                self.fs.mail_arrived = true;
-                self.refresh_mail_if_open(&f.settings);
-                // 메일이 도착했다고 우측 하단에 알려준다(보낸 사람 + 제목).
-                let lang = f.settings.borrow().language;
-                self.toast = Some(Toast::new_mail(FIRST_MAIL_FROM, t(lang, crate::strings::mail::GAME_MAIL_SUBJECT)));
-                self.toast_timer = TOAST_DURATION;
-                self.write_save(&f.settings);
+                self.deliver_mail(MailId::Friend, &f.settings);
             }
         }
+        // 문(도어즈)의 편지 메일을 읽었는지 매 프레임 최신 값을 게임에 알려준다 — 문 게임이 일시
+        // 정지에서 풀리는 조건이다(signals.rs).
+        crate::signals::set_letter_mail_read(self.fs.is_mail_read(MailId::Letter));
         // 씨앗을 심은 뒤 잠깐 있다가 시간 힌트 메일(시트 SUB A+a-15 의 메일 가이딩)이 온다.
-        if self.fs.seed_planted && self.fs.extra_mails < 1 {
+        if self.fs.seed_planted && !self.fs.has_mail(MailId::Hint) {
             self.hint_timer += f.dt;
             if self.hint_timer >= HINT_MAIL_DELAY {
-                self.fs.extra_mails = 1;
-                self.refresh_mail_if_open(&f.settings);
-                let lang = f.settings.borrow().language;
-                self.toast = Some(Toast::new_mail(SECOND_MAIL_FROM, t(lang, crate::strings::mail::HINT_MAIL_SUBJECT)));
-                self.toast_timer = TOAST_DURATION;
-                self.write_save(&f.settings);
+                self.deliver_mail(MailId::Hint, &f.settings);
             }
         }
         // 두 번째 메일이 온 뒤 잠깐 있다가 "다운로드 완료" 알림과 함께 서브 게임 아이콘이 생긴다
-        // (시트의 CRT B-0). 저장된 상태(mail2_arrived 만 켜진 채 종료)도 이어서 센다.
-        if self.fs.mail2_arrived && !self.fs.sub_game_ready {
+        // (시트의 CRT B-0). 저장된 상태(꽃 위치 메일만 온 채 종료)도 이어서 센다.
+        if self.fs.has_mail(MailId::Flower) && !self.fs.sub_game_ready {
             self.sub_game_timer += f.dt;
             if self.sub_game_timer >= SUB_GAME_DELAY {
                 self.fs.sub_game_ready = true;

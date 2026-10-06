@@ -47,6 +47,17 @@ pub enum FileKind {
 // 타이핑하면 오타 하나로 매칭이 조용히 깨질 수 있어 상수로 모아뒀다.
 pub const MY_COMPUTER_NAME: &str = "My Computer";
 pub const RECYCLE_BIN_NAME: &str = "Recycle Bin";
+
+// 받은편지함에 도착할 수 있는 메일들 — 도착 순서는 게임 진행에 따라 달라서(mail_log) 번호가
+// 아니라 이 이름으로 구분한다.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum MailId {
+    Friend, // 친구가 보낸 게임 설치 파일 메일(타이머로 도착)
+    Letter, // 문(도어즈)의 편지 — 방의 우편함에 넣으면 도착
+    Flower, // "내가 꽃을 구할 수 있는 곳을 알고 있어" — 방에 꽃이 없다는 걸 확인하면 도착
+    Hint,   // "바탕화면에서 시간을 돌려도..." — 서브 게임에서 씨앗을 심으면 도착
+    Photo,  // 꽃 사진 첨부 메일 — 꽃을 우체통에 넣으면 도착
+}
 // File Explorer 의 "AppData" 탭 = 이 이름의 폴더 노드의 내용(탭 이름도 같은 문자열).
 pub const APPDATA_NAME: &str = "AppData";
 // 첫 메일에 첨부돼 오는 게임 설치 파일(FileKind::GameSetup)과, 설치가 끝나면
@@ -77,24 +88,24 @@ pub struct FileSystem {
     // 폴더)을 바탕화면으로 옮기면 downloads 에서 빠지면서 "아직 안 받음" 취급돼 다시
     // 다운로드 버튼이 나타나는 문제가 있었다.
     pub ever_downloaded: Vec<FileId>,
-    // 첫 메일(게임 다운로드 파일 첨부)이 도착했는지 — 도착 전엔 받은편지함이 빈
-    // 상태. desktop.rs 의 타이머가 새 게임을 시작하고 일정 시간 뒤 true 로 바꾼다.
+    // 받은편지함에 도착한 메일들 — 도착한 순서대로(앞이 먼저). 메일 앱은 이 순서 그대로
+    // 보여주고, mail_read 의 인덱스도 이 순번이다. 첫 메일은 desktop.rs 의 타이머가, 나머지는
+    // 게임 안 이벤트(AppAction)가 deliver_mail 로 도착시킨다.
     #[serde(default)]
-    pub mail_arrived: bool,
+    pub mail_log: Vec<MailId>,
+    // 예전 저장 파일 호환용 — mail_log 가 생기기 전엔 "첫 메일 도착"/"두 번째 메일 도착"/"그 뒤
+    // 몇 통 더"를 이 값들로 기록했다. 불러온 직후 migrate_mail_log 가 mail_log 로 옮긴다.
+    #[serde(default, rename = "mail_arrived")]
+    legacy_mail_arrived: bool,
     // 읽은 메일의 인덱스(MailApp::seed_messages 순번) — MailApp 자체는 창을 닫거나
     // 3초 주기 새로고침으로 새로 만들어질 때마다 통째로 새 인스턴스가 되므로, 읽음
     // 여부를 여기(저장 파일에 실리는 fs)에 둬야 새로고침은 물론 게임을 종료했다
     // 재시작해도 유지된다. #[serde(default)] 는 이 필드가 없던 예전 저장 파일도
     // (그냥 다 안 읽은 것으로) 계속 불러올 수 있게 해준다.
-    // 두 번째 메일(방에 꽃이 없다는 걸 확인하면 오는, 꽃을 구할 수 있는 곳을 안다는 메일)이
-    // 도착했는지 — 첫 메일과 달리 타이머가 아니라 게임 안 이벤트(AppAction::
-    // FlowerAbsenceChecked)로 도착한다.
-    #[serde(default)]
-    pub mail2_arrived: bool,
-    // 두 번째 메일 뒤에 더 도착한 메일 수 — (1) 씨앗을 심은 뒤 오는 시간 힌트 메일, (2) 꽃을
-    // 우체통에 넣은 뒤 꽃 사진이 첨부돼 돌아오는 메일. 모두 게임 안 이벤트로 도착한다.
-    #[serde(default)]
-    pub extra_mails: usize,
+    #[serde(default, rename = "mail2_arrived")]
+    legacy_mail2_arrived: bool,
+    #[serde(default, rename = "extra_mails")]
+    legacy_extra_mails: usize,
     // 서브 게임에서 씨앗을 심었는지 — 힌트 메일이 올 차례인지 판단하는 데 쓴다.
     #[serde(default)]
     pub seed_planted: bool,
@@ -190,9 +201,10 @@ impl FileSystem {
             desktop: Vec::new(),
             downloads: Vec::new(),
             ever_downloaded: Vec::new(),
-            mail_arrived: false,
-            mail2_arrived: false,
-            extra_mails: 0,
+            mail_log: Vec::new(),
+            legacy_mail_arrived: false,
+            legacy_mail2_arrived: false,
+            legacy_extra_mails: 0,
             seed_planted: false,
             flower_image: None,
             mail_read: Vec::new(),
@@ -229,9 +241,45 @@ impl FileSystem {
         }
     }
 
-    // 지금까지 도착한 메일 개수(도착 순서대로 앞에서부터) — MailApp 이 그만큼만 보여준다.
-    pub fn mail_arrived_count(&self) -> usize {
-        self.mail_arrived as usize + self.mail2_arrived as usize + self.extra_mails
+    // 메일을 받은편지함에 도착시킨다 — 이미 도착했으면 아무것도 안 하고 false(중복 도착 방지).
+    pub fn deliver_mail(&mut self, id: MailId) -> bool {
+        if self.mail_log.contains(&id) {
+            return false;
+        }
+        self.mail_log.push(id);
+        true
+    }
+
+    pub fn has_mail(&self, id: MailId) -> bool {
+        self.mail_log.contains(&id)
+    }
+
+    // 그 메일을 읽었는지(받은편지함에서 눌러 mail_read 에 기록됐는지).
+    pub fn is_mail_read(&self, id: MailId) -> bool {
+        self.mail_log.iter().position(|&m| m == id).is_some_and(|i| self.mail_read.contains(&i))
+    }
+
+    // 예전 저장 파일(mail_log 가 없던 때)의 도착 기록을 mail_log 로 옮긴다 — 불러온 직후 한 번.
+    // 예전 순서는 항상 친구 메일 → 꽃 위치 메일 → 힌트 → 꽃 사진이라 읽음 인덱스도 그대로 맞는다.
+    pub fn migrate_mail_log(&mut self) {
+        if !self.mail_log.is_empty() {
+            return;
+        }
+        if self.legacy_mail_arrived {
+            self.mail_log.push(MailId::Friend);
+        }
+        if self.legacy_mail2_arrived {
+            self.mail_log.push(MailId::Flower);
+        }
+        if self.legacy_extra_mails >= 1 {
+            self.mail_log.push(MailId::Hint);
+        }
+        if self.legacy_extra_mails >= 2 {
+            self.mail_log.push(MailId::Photo);
+        }
+        self.legacy_mail_arrived = false;
+        self.legacy_mail2_arrived = false;
+        self.legacy_extra_mails = 0;
     }
 
     // 꽃 사진 첨부 노드를 (없으면) 만든다.
@@ -246,9 +294,17 @@ impl FileSystem {
         }
     }
 
-    // 받은편지함 메시지 순서대로의 첨부 노드 — (1) 게임 설치 파일, (2) 없음, (3) 없음, (4) 꽃 사진.
+    // 받은편지함 메시지(mail_log 순서)마다의 첨부 노드 — 친구 메일엔 게임 설치 파일, 꽃 사진
+    // 메일엔 flower.png, 나머지는 없다.
     pub fn mail_attachments(&self) -> Vec<Option<FileId>> {
-        vec![self.mail_attachment(), None, None, self.flower_image]
+        self.mail_log
+            .iter()
+            .map(|id| match id {
+                MailId::Friend => self.mail_attachment(),
+                MailId::Photo => self.flower_image,
+                _ => None,
+            })
+            .collect()
     }
 
     // Mail 노드의 첨부(첫 메일에 붙어오는 게임 설치 파일)가 아직 없으면 만들어
@@ -638,3 +694,35 @@ pub fn load_settings() -> Option<Settings> {
     serde_json::from_str(&text).ok()
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // mail_log 가 생기기 전 저장 파일(도착 여부를 bool/개수로 기록)이 같은 순서의 mail_log 로 옮겨지고,
+    // 읽음 인덱스도 그대로 맞는다.
+    #[test]
+    fn legacy_mail_flags_migrate_to_the_log() {
+        let mut fs = FileSystem::new();
+        fs.legacy_mail_arrived = true;
+        fs.legacy_mail2_arrived = true;
+        fs.legacy_extra_mails = 2;
+        fs.mail_read = vec![1];
+        fs.migrate_mail_log();
+        assert_eq!(fs.mail_log, [MailId::Friend, MailId::Flower, MailId::Hint, MailId::Photo]);
+        assert!(fs.is_mail_read(MailId::Flower) && !fs.is_mail_read(MailId::Friend));
+        fs.migrate_mail_log(); // 한 번 옮긴 뒤엔 다시 안 건드린다
+        assert_eq!(fs.mail_log.len(), 4);
+    }
+
+    #[test]
+    fn deliver_mail_is_idempotent_and_keeps_arrival_order() {
+        let mut fs = FileSystem::new();
+        assert!(fs.deliver_mail(MailId::Friend));
+        assert!(fs.deliver_mail(MailId::Letter));
+        assert!(!fs.deliver_mail(MailId::Letter));
+        assert!(fs.deliver_mail(MailId::Flower));
+        assert_eq!(fs.mail_log, [MailId::Friend, MailId::Letter, MailId::Flower]);
+        assert_eq!(fs.mail_attachments().len(), 3);
+    }
+}

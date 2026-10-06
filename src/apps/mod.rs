@@ -26,7 +26,7 @@ pub use game_installer::GameInstallerApp;
 pub use explorer::{ExplorerApp, ExplorerLocation};
 pub use image_viewer::ImageViewerApp;
 pub use maze_game::MazeGameApp;
-pub use mail::{MailApp, MailAttachment, SentMailView, FIRST_MAIL_FROM, SECOND_MAIL_FROM};
+pub use mail::{mail_from, mail_subject, MailApp, MailAttachment, SentMailView};
 pub use notepad::NotepadApp;
 pub use official_site::OfficialSiteApp;
 pub use password::PasswordApp;
@@ -81,6 +81,8 @@ pub enum AppAction {
     // 게임 안에서 방에 꽃이 없다는 걸 확인함 — 두 번째 메일(꽃을 구할 수 있는 곳을 안다는)을
     // 도착시켜달라는 요청. 여러 번 와도 한 번만 도착한다.
     FlowerAbsenceChecked,
+    // 문 게임에서 편지를 우편함에 넣음 — 같은 내용의 편지 메일이 도착하게 해달라는 요청.
+    LetterSent,
     // 서브 게임에서 씨앗을 심음 — 잠시 뒤 시간 힌트 메일이 오게 해달라는 요청.
     SeedPlanted,
     // 서브 게임에서 꽃을 우체통에 넣음 — 꽃 사진이 첨부된 메일이 오게 해달라는 요청.
@@ -276,7 +278,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
                 })
                 .collect();
             Opened {
-                app: Box::new(MailApp::new(fs.mail_arrived_count(), &fs.mail_read, attachments, attachable, sent, settings.clone())),
+                app: Box::new(MailApp::new(&fs.mail_log, &fs.mail_read, attachments, attachable, sent, settings.clone())),
                 title: name,
                 // Outlook Express/Exchange 참고 레이아웃 — 메뉴바 + 폴더 트리(150) +
                 // 상태바(20)까지 들어가야 해서 기존보다 좌우/위아래로 넉넉해야 한다.

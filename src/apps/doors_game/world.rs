@@ -47,11 +47,26 @@ pub const PROPS: [Prop; 4] = [
     Prop { name: "Trash", center: [-2.4, 0.15, 1.6], half: [0.4, 0.15, 0.4], color: [0.3, 0.32, 0.22, 1.0], text: "구겨진 종이와 쓰레기가 쌓여 있다." },
 ];
 
-// 조준선이 가리킬 수 있는 대상 — 문 손잡이 또는 방 안의 물건 하나.
+// 방 서쪽 벽 쪽의 우편함 — 편지를 넣어 보내는 곳(시트 오른쪽 표의 "우편함").
+pub const MAILBOX_CENTER: [f32; 3] = [-2.6, 0.6, 0.4];
+const MAILBOX_HALF: [f32; 3] = [0.25, 0.6, 0.25];
+const MAILBOX_COLOR: [f32; 4] = [0.3, 0.35, 0.5, 1.0];
+// 부탁을 수락하면 책상 위에 나타나는 편지(작고 납작한 흰 상자).
+pub const LETTER_CENTER: [f32; 3] = [-2.3, 0.81, -1.5];
+const LETTER_HALF: [f32; 3] = [0.12, 0.01, 0.09];
+const LETTER_COLOR: [f32; 4] = [0.92, 0.9, 0.78, 1.0];
+
+pub fn letter_box() -> Box3D {
+    Box3D { center: LETTER_CENTER, half: LETTER_HALF, yaw: 0.2, pitch: 0.0, roll: 0.0, color: LETTER_COLOR, texture: None, walkable: false, solid: false }
+}
+
+// 조준선이 가리킬 수 있는 대상 — 문 손잡이, 방 안의 물건 하나, 책상 위의 편지, 우편함.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Target {
     Door,
     Prop(usize),
+    Letter,
+    Mailbox,
 }
 
 impl Target {
@@ -59,6 +74,8 @@ impl Target {
         match self {
             Target::Door => HANDLE_POS,
             Target::Prop(i) => PROPS[i].center,
+            Target::Letter => LETTER_CENTER,
+            Target::Mailbox => MAILBOX_CENTER,
         }
     }
 }
@@ -97,13 +114,16 @@ pub fn build_room() -> Vec<Box3D> {
     for p in &PROPS {
         boxes.push(solid(p.center, p.half, p.color, false));
     }
+    boxes.push(solid(MAILBOX_CENTER, MAILBOX_HALF, MAILBOX_COLOR, false));
     boxes
 }
 
-// 조준선(화면 중앙)이 향한 대상 중 가장 가까운 것.
-pub fn aimed_target(cam: &Camera) -> Option<Target> {
-    let candidates = std::iter::once(Target::Door).chain((0..PROPS.len()).map(Target::Prop));
+// 조준선(화면 중앙)이 향한 대상 중 가장 가까운 것 — available 이 false 인 대상은 후보에서 뺀다
+// (아직 안 나타난 편지, 지금은 말을 못 거는 문 등).
+pub fn aimed_target(cam: &Camera, available: impl Fn(Target) -> bool) -> Option<Target> {
+    let candidates = [Target::Door, Target::Letter, Target::Mailbox].into_iter().chain((0..PROPS.len()).map(Target::Prop));
     candidates
+        .filter(|&t| available(t))
         .filter_map(|t| aim_dist(cam, t.pos()).map(|d| (t, d)))
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(t, _)| t)

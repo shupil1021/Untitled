@@ -186,32 +186,44 @@ cargo run
   **맵**: 바닥/천장/벽 4면으로 사방이 막힌 방(`build_room()`), 플레이어 정면(-Z) 벽
   가운데 닫힌 문 하나(문간 좌우 벽 조각 + 상인방으로 빈틈 없음). 그 문이 도어즈 NPC —
   손잡이를 조준하고 `E`를 누르면 "보리지꽃을 줘." 한마디와 `[Y]/[N]` 선택지만
-  나온다. 지금은 수락하면 그냥 "수락됨"(`quest_accepted`)으로 기록만 되고(꽃을 구하는
-  미니게임/보상은 아직 없다) 그 뒤로는 더 말을 걸 수 없다. 거부하면 그냥 닫히고 다시
-  말을 걸 수 있다.
+  나온다. 수락하면 "수락됨"(`quest_accepted`)으로 기록되고 문은 잠시 말이 없다(거부하면 그냥
+  닫히고 다시 말을 걸 수 있다). **편지 이벤트(시트 오른쪽 표)**: 수락하면 책상 위에 편지
+  (`world.rs::letter_box`)가 나타나고 → 집으면(`has_letter`) 문(도어즈)이 쓴 편지 내용이 대사로
+  나오며(OS 로 가는 메일과 같은 글 — `strings.rs::mail::LETTER_MAIL_BODY`) → 서쪽의 **우편함**
+  (`Target::Mailbox`)에 넣으면(`letter_sent`) 게임 화면이 어두워지며 "일시 정지 / 모니터에 새 메일이
+  도착했다." 안내가 뜨고 입력이 멈추고, 대화가 끝나면 `AppAction::LetterSent` 로 OS 에 같은 내용의
+  **편지 메일**이 도착한다 → 플레이어가 게임 창을 최소화하고 메일을 읽은 뒤 이 창으로 돌아오면
+  (`signals::letter_mail_read()` — OS 가 매 프레임 `fs.is_mail_read(Letter)` 를 써두는 상태 신호,
+  + 창 포커스) 일시 정지가 풀리면서(`door_changed`) 문의 대사가 달라진다("편지는 잘 읽었어. / 꽃은...
+  조금만 더 기다려 줘."). 편지 일을 끝내기 전엔 방 물건을 조사해도 꽃이 없다는 걸 못 깨닫는다(바로
+  아래 단계의 조건). 단위 테스트가 이 순서를 검사한다.
   **방 물건 조사**(`world.rs::PROPS` — 책상/상자/선반/쓰레기 더미, 각자 충돌 있는
   `Box3D`): 조준선을 가까이 대면 "[E] Examine 이름"이 뜨고(`aimed_target()`이 문
   손잡이와 물건들 중 가장 가까운 것 하나를 고른다), `E`로 그 물건의 한 줄을 보여준다.
-  도어즈의 부탁을 수락한 뒤 처음 조사하면 이어서 "방에는 꽃이 없는 것 같다..."가
-  나오고 `flower_absence_checked`가 켜진다 — 시트(이벤트 흐름표)의 MAIN A-3 이고,
+  도어즈의 부탁을 수락하고 편지 이벤트까지 끝낸 뒤(`door_changed`) 처음 조사하면 이어서 "방에는 꽃이
+  없는 것 같다..."가 나오고 `flower_absence_checked`가 켜진다 — 시트(이벤트 흐름표)의 MAIN A-3 이고,
   두 번째 메일의 조건이다 — 그 대화가 다 끝나면 게임 앱이 `AppAction::
-  FlowerAbsenceChecked`를 한 번 돌려주고, desktop.rs 가 `fs.mail2_arrived`를 켜서
-  **두 번째 메일**을 도착시킨다(첫 메일 때처럼 토스트 알림 + 열려있는 Mail 새로고침 +
+  FlowerAbsenceChecked`를 한 번 돌려주고, desktop.rs 가 꽃 위치 메일(`MailId::Flower`)을
+  도착시킨다(첫 메일 때처럼 토스트 알림 + 열려있는 Mail 새로고침 +
   즉시 저장). 발신자 이름이 깨져 있고(`SECOND_MAIL_FROM` — 폰트에 없는 U+FFFD 를 렌더러가
   마름모로 그린다) 제목/본문은 "내가 꽃을 구할 수 있는 곳을 알고 있어"(3개 언어)다. 받은
-  편지함은 `fs.mail_arrived_count()`만큼 도착 순서대로 앞에서부터 보여준다. 첨부/두 번째
-  게임은 아래 "서브 게임" 참고.
-  **다운로드 완료 + `test2.exe`**(시트의 CRT B-0): 두 번째 메일이 온 뒤 `SUB_GAME_DELAY`(6초)
+  편지함은 `fs.mail_log`(도착한 메일 `MailId`들, **도착한 순서대로**)를 그대로 보여준다 — 메일
+  종류는 `MailId`(Friend/Letter/Flower/Hint/Photo)로 구분하고, 게임 진행에 따라 도착 순서가
+  달라져도(편지 메일이 꽃 위치 메일보다 먼저 온다) 읽음 인덱스(`mail_read`)가 안 꼬인다.
+  `fs.deliver_mail(id)`가 중복 도착을 막고, desktop.rs 의 `deliver_mail()`이 Mail 새로고침 +
+  토스트 + 저장을 한꺼번에 한다. mail_log 가 생기기 전 저장 파일(도착을 bool/개수로 기록)은
+  `migrate_mail_log()`가 같은 순서로 옮긴다(단위 테스트). 첨부/두 번째 게임은 아래 "서브 게임" 참고.
+  **다운로드 완료 + `test2.exe`**(시트의 CRT B-0): 꽃 위치 메일이 온 뒤 `SUB_GAME_DELAY`(6초)
   뒤에 "다운로드 완료" 알림(`Toast`, 누르면 그냥 닫힘 — 새 메일 알림은 누르면 Mail 을 연다)이
   뜨면서 바탕화면 빈 칸에 서브 게임 아이콘 `test2.exe`(`FileKind::SubGame`,
   `fs.sub_game_ready`로 한 번만)가 생긴다. 이름은 임시다. 두 번째 메일만 오고 종료했어도
   다음 실행에서 이어서 센다.
-  **세 번째/네 번째 메일**: 씨앗을 심은 뒤 12초 뒤 오는 시간 힌트 메일(`fs.extra_mails` = 1,
-  `fs.seed_planted`), 꽃을 우체통에 넣으면 오는 꽃 사진 메일(`extra_mails` = 2, 첨부 `flower.png`
+  **힌트 메일/꽃 사진 메일**: 씨앗을 심은 뒤 12초 뒤 오는 시간 힌트 메일(`MailId::Hint`,
+  `fs.seed_planted`), 꽃을 우체통에 넣으면 오는 꽃 사진 메일(`MailId::Photo`, 첨부 `flower.png`
   = `FileKind::Img(FLOWER_IMAGE)` 노드를 `fs.ensure_flower_image()`가 만든다 — "Download"하면
   Downloads 에 생기고 이미지 뷰어로 열린다; 코드로 그린 파란 별 모양 보리지꽃 그림). 둘 다 발신자 이름이
   깨져 있고 알림 토스트가 뜬다. 메일 앱은 메시지마다 첨부를 따로 받는다(`MailApp::new`의
-  `attachments`, `fs.mail_attachments()` 가 메시지 순서대로). 꽃 사진이 먼저 와도 순서가 안
+  `attachments`, `fs.mail_attachments()` 가 mail_log 순서대로). 꽃 사진이 먼저 와도 순서가 안
   꼬이게 힌트 메일도 같이 도착한다. **시계 팝업**: 작업표시줄 시계를 누르면 위에 날짜
   (`YYYY-MM-DD`, 시스템 시간 KST)가 뜬다 — 시스템 시간을 돌렸을 때 날짜가 실제로 바뀌었는지
   확인하라고 넣었다(달력 계산 `civil_date`는 단위 테스트).
@@ -286,6 +298,7 @@ src/
 ├── strings.rs          # 다국어(en/ko/ja) 문자열 테이블
 ├── gamefiles.rs        # 설치 연출 — 게임 안 AppData\test\ 에 가짜 게임 파일(소스/이미지/사운드) 만들기
 ├── random.rs           # 연출용 xorshift 난수(Rng) + 들쭉날쭉한 로딩 바 곡선(LoadCurve)
+├── signals.rs          # OS ↔ 창 안 게임 상태 신호(편지 메일을 읽었는지 등)
 ├── secrets.rs          # 스토리 스포일러 상수(따로 분리)
 ├── window_manager.rs   # 창 관리자 (z순서, 드래그, 크기조절, 타이틀바 버튼)
 ├── director_ipc.rs     # director/director_panel 간 JSON IPC (게임은 안 씀)

@@ -149,6 +149,14 @@ pub mod mail {
         ja: "花を手に入れられる場所を知っている。\nたった今送ったよ。届いたら起動してみて。",
     };
 
+    // 문(도어즈)의 편지 — 방에서 주운 편지와 같은 내용이 메일로 온다(시트 오른쪽 표).
+    pub const LETTER_MAIL_SUBJECT: S = S { en: "A letter", ko: "편지", ja: "手紙" };
+    pub const LETTER_MAIL_BODY: S = S {
+        en: "Thank you for hearing me out.\nI cannot leave this room.\nI will find out where the flowers are instead.\nPlease wait a little.",
+        ko: "부탁을 들어줘서 고마워.\n나는 이 방 밖으로 나갈 수 없어.\n대신 꽃이 있는 곳을 알아볼게.\n조금만 기다려 줘.",
+        ja: "頼みを聞いてくれてありがとう。\n私はこの部屋から出られない。\nかわりに花のある場所を調べてみる。\nもう少しだけ待っていて。",
+    };
+
     // 세 번째 메일 — 씨앗을 심은 뒤 오는 힌트(시트의 "메일 가이딩").
     pub const HINT_MAIL_SUBJECT: S = S { en: "hmm...", ko: "음...", ja: "うーん..." };
     pub const HINT_MAIL_BODY: S = S {

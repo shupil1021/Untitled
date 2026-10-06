@@ -64,6 +64,7 @@ pub enum DeskAction {
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
     InstallComplete,
     FlowerAbsenceChecked,
+    LetterSent,
     SeedPlanted,
     FlowerSent,
 }
@@ -497,6 +498,7 @@ impl WindowManager {
                 AppAction::Restore(ids) => actions.push(DeskAction::Restore(ids)),
                 AppAction::InstallComplete => actions.push(DeskAction::InstallComplete),
                 AppAction::FlowerAbsenceChecked => actions.push(DeskAction::FlowerAbsenceChecked),
+                AppAction::LetterSent => actions.push(DeskAction::LetterSent),
                 AppAction::SeedPlanted => actions.push(DeskAction::SeedPlanted),
                 AppAction::FlowerSent => actions.push(DeskAction::FlowerSent),
             }

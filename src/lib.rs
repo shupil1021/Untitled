@@ -16,6 +16,7 @@ pub mod platform;
 pub mod random;
 pub mod render;
 pub mod scenes;
+pub mod signals;
 pub mod secrets;
 pub mod strings;
 pub mod ui;
