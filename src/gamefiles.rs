@@ -209,8 +209,35 @@ pub fn plant(seed: Seed, pot: &mut Pot) {\r\n\
 
 // IMAGE_NAMES 순서대로 — Assets::load 가 이 순서로 photos 에 올리므로 FileKind::Img(i) 의
 // i 가 그대로 이 목록의 인덱스다.
-pub fn generated_images() -> [image::RgbaImage; 3] {
-    [door_image(), flower_pot_image(), static_image()]
+pub fn generated_images() -> [image::RgbaImage; 4] {
+    [door_image(), flower_pot_image(), static_image(), flower_image()]
+}
+
+// 네 번째 이미지(FileKind::Img(FLOWER_IMAGE)) — 게임 폴더 파일이 아니라, 서브 게임에서 보낸
+// 꽃이 메일 첨부(flower.png)로 돌아올 때 쓰는 보리지꽃 사진.
+pub const FLOWER_IMAGE: usize = 3;
+pub const FLOWER_IMAGE_NAME: &str = "flower.png";
+
+// 어두운 배경에 줄기와 잎, 그 위에 파란 별 모양 꽃(보리지꽃)과 짙은 가운데.
+fn flower_image() -> image::RgbaImage {
+    let (w, h) = (48u32, 64u32);
+    let (cx, cy) = (24.0f32, 20.0f32);
+    image::RgbaImage::from_fn(w, h, |x, y| {
+        let (dx, dy) = (x as f32 - cx, y as f32 - cy);
+        let r = (dx * dx + dy * dy).sqrt();
+        let petal_reach = 5.0 + 8.0 * (2.5 * dy.atan2(dx)).cos().abs();
+        let stem = (23..=25).contains(&x) && y >= 30;
+        let leaf = (44..52).contains(&y) && (x as f32 - 24.0).abs() < (y as f32 - 44.0) * 1.3 && !(23..=25).contains(&x);
+        if r < 3.5 {
+            image::Rgba([46, 24, 78, 255])
+        } else if r < petal_reach {
+            image::Rgba([70, 100, 220, 255])
+        } else if stem || leaf {
+            image::Rgba([60, 130, 60, 255])
+        } else {
+            image::Rgba([12, 12, 14, 255])
+        }
+    })
 }
 
 fn door_image() -> image::RgbaImage {

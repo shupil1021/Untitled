@@ -149,6 +149,18 @@ pub mod mail {
         ja: "花を手に入れられる場所を知っている。",
     };
 
+    // 세 번째 메일 — 씨앗을 심은 뒤 오는 힌트(시트의 "메일 가이딩").
+    pub const HINT_MAIL_SUBJECT: S = S { en: "hmm...", ko: "음...", ja: "うーん..." };
+    pub const HINT_MAIL_BODY: S = S {
+        en: "Hmm... maybe I could turn the clock on the desktop forward, physically?",
+        ko: "음... 바탕화면에서 물리적으로 시간을 돌려도 괜찮지 않을까?",
+        ja: "うーん... デスクトップの時計を、物理的に進めてみてもいいんじゃないかな?",
+    };
+
+    // 네 번째 메일 — 꽃을 보낸 뒤 꽃 사진이 첨부돼 온다.
+    pub const PHOTO_MAIL_SUBJECT: S = S { en: "a flower", ko: "꽃", ja: "花" };
+    pub const PHOTO_MAIL_BODY: S = S { en: "I got the flower.\nThank you.", ko: "꽃을 받았어.\n고마워.", ja: "花を受け取ったよ。\nありがとう。" };
+
     pub const FOLDER_INBOX: S = S { en: "Inbox", ko: "받은편지함", ja: "受信トレイ" };
     pub const FOLDER_SENT: S = S { en: "Sent Items", ko: "보낸편지함", ja: "送信済みアイテム" };
     pub const FOLDER_COMPOSE: S = S { en: "Write Mail", ko: "메일 쓰기", ja: "メール作成" };
@@ -219,6 +231,7 @@ pub mod desktop {
     pub const DISCONNECTED: S = S { en: "Disconnected", ko: "연결 안 됨", ja: "未接続" };
     pub const UNKNOWN: S = S { en: "(unknown)", ko: "(알 수 없음)", ja: "(不明)" };
     pub const NEW_MAIL: S = S { en: "New Mail", ko: "새 메일", ja: "新着メール" };
+    pub const DATE_TIME: S = S { en: "Date and Time", ko: "날짜 및 시간", ja: "日付と時刻" };
     pub const DOWNLOAD_COMPLETE: S = S { en: "Download Complete", ko: "다운로드 완료", ja: "ダウンロード完了" };
 }
 

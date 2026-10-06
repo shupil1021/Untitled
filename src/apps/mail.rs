@@ -60,7 +60,8 @@ pub const SECOND_MAIL_FROM: &str = "\u{FFFD}\u{FFFD}\u{FFFD}@mail.com";
 // 비어있다(DesktopScene 이 도착시킨다). from/to 는 이메일 주소라 언어와 무관하게
 // 그대로 두고, subject/body 는 지금 언어로 고른다. attachment 는 첫 메일에만 붙는다
 // (fs 의 Mail 노드에 붙은 첨부 — apps/mod.rs::open() 이 fs.mail_attachment() 로 구해 넘긴다).
-fn seed_messages(arrived_count: usize, lang: Language, attachment: Option<(FileId, String, IconType)>) -> Vec<MailMsg> {
+fn seed_messages(arrived_count: usize, lang: Language, mut attachments: Vec<Option<(FileId, String, IconType)>>) -> Vec<MailMsg> {
+    attachments.resize(4, None);
     let mut messages = vec![
         MailMsg {
             from: FIRST_MAIL_FROM,
@@ -68,7 +69,7 @@ fn seed_messages(arrived_count: usize, lang: Language, attachment: Option<(FileI
             cc: "",
             subject: t(lang, s::GAME_MAIL_SUBJECT),
             body: t(lang, s::GAME_MAIL_BODY),
-            attachment,
+            attachment: attachments[0].take(),
         },
         MailMsg {
             from: SECOND_MAIL_FROM,
@@ -77,6 +78,24 @@ fn seed_messages(arrived_count: usize, lang: Language, attachment: Option<(FileI
             subject: t(lang, s::FLOWER_MAIL_SUBJECT),
             body: t(lang, s::FLOWER_MAIL_BODY),
             attachment: None,
+        },
+        // (3) 씨앗을 심은 뒤 오는 힌트 — 바탕화면(진짜 컴퓨터)의 시간을 돌려보라는.
+        MailMsg {
+            from: SECOND_MAIL_FROM,
+            to: "you@mail.com",
+            cc: "",
+            subject: t(lang, s::HINT_MAIL_SUBJECT),
+            body: t(lang, s::HINT_MAIL_BODY),
+            attachment: None,
+        },
+        // (4) 꽃을 우체통에 넣은 뒤 꽃 사진이 첨부돼 돌아오는 메일.
+        MailMsg {
+            from: SECOND_MAIL_FROM,
+            to: "you@mail.com",
+            cc: "",
+            subject: t(lang, s::PHOTO_MAIL_SUBJECT),
+            body: t(lang, s::PHOTO_MAIL_BODY),
+            attachment: attachments[3].take(),
         },
     ];
     messages.truncate(arrived_count);
@@ -252,16 +271,18 @@ impl MailApp {
     pub(super) fn new(
         arrived_count: usize,
         read_indices: &[usize],
-        game_attachment: Option<MailAttachment>,
+        attachments: Vec<Option<MailAttachment>>,
         attachable: Vec<(FileId, String, IconType)>,
         sent: Vec<SentMailView>,
         settings: Rc<RefCell<Settings>>,
     ) -> MailApp {
         let lang = settings.borrow().language;
-        let already_downloaded = game_attachment.as_ref().is_some_and(|a| a.downloaded);
-        let messages = seed_messages(arrived_count, lang, game_attachment.map(|a| (a.id, a.name, a.icon)));
+        // 메시지마다 "이미 받은 적 있는지"(fs.ever_downloaded) — 창을 새로 열어도 다시 "Download"
+        // 버튼이 안 뜨게 초기 표시 상태로 쓴다.
+        let already: Vec<bool> = (0..4).map(|i| attachments.get(i).and_then(|a| a.as_ref()).is_some_and(|a| a.downloaded)).collect();
+        let messages = seed_messages(arrived_count, lang, attachments.into_iter().map(|a| a.map(|a| (a.id, a.name, a.icon))).collect());
         let read = (0..messages.len()).map(|i| read_indices.contains(&i)).collect();
-        let downloaded = messages.iter().map(|m| m.attachment.is_some() && already_downloaded).collect();
+        let downloaded = messages.iter().enumerate().map(|(i, m)| m.attachment.is_some() && already[i]).collect();
         let downloading = vec![None; messages.len()];
         MailApp {
             messages,

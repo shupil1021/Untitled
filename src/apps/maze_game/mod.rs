@@ -6,8 +6,11 @@
 //! 올라온다. 화분을 조사하면(이미 누가 꺾어갔다) 뒤에 사물함이 나타나고, 사물함을 조사하면
 //! 열쇠 3개가 필요하다는 걸 알면서 북쪽 문 3개가 열린다 → (3) 문마다 새 미로로 들어가 도착
 //! 지점의 열쇠를 줍고, 내려온 밧줄을 조사해 방으로 돌아온다(문 3개 반복) → (4) 열쇠 3개로
-//! 사물함을 열어 씨앗을 얻고 화분에 심는다("시간이 1년은 필요할 것 같다"). 다음 이벤트(CRT
-//! 모니터에서 시간 조작으로 꽃이 핌)는 아직 없다. 진행 상태는 저장하지 않는다(창을 닫으면 처음부터).
+//! 사물함을 열어 씨앗을 얻고 화분에 심는다("시간이 1년은 필요할 것 같다") → (5) 심은 뒤 잠깐 있다
+//! 가 OS 로 힌트 메일이 오고("바탕화면에서 물리적으로 시간을 돌려도 괜찮지 않을까?"), 진짜 컴퓨터의
+//! 시스템 시간이 심은 때보다 1년 이상 앞서가면 꽃이 핀다 → (6) 꽃을 꺾어 우체통에 넣으면 OS 로
+//! 꽃 사진이 첨부된 메일이 도착한다(시트의 SUB A+a-15 ~ 18). 진행 상태는 저장하지 않는다(창을
+//! 닫으면 처음부터).
 
 mod hub;
 mod maze;
@@ -26,6 +29,13 @@ use maze::Maze;
 
 const CLEAR_COLOR: [f32; 4] = [0.01, 0.02, 0.02, 1.0];
 const KEYS_NEEDED: usize = 3;
+const YEAR_SECS: f64 = 365.0 * 86_400.0; // "시간이 1년은 필요하다" — 심은 때보다 시스템 시간이 이만큼 앞서가면 핀다
+
+// 심은 때(planted_at)보다 시스템 시간(now, 유닉스 초)이 1년 이상 앞서갔는지 — 시계를 뒤로 돌린
+// 경우(now < planted_at)는 당연히 아니다.
+fn year_passed(planted_at: f64, now: f64) -> bool {
+    now - planted_at >= YEAR_SECS
+}
 
 // 지금 있는 곳.
 enum Place {
@@ -49,6 +59,8 @@ enum Target {
     Pot,
     Locker,
     Door(usize),
+    Flower,
+    Mailbox,
 }
 
 // 화면에 놓인 조사 가능한 물건 하나 — Box3D 로 그려지고 충돌도 있다(통과 못 한다).
@@ -82,6 +94,17 @@ struct Progress {
     keys: [bool; KEYS_NEEDED],
     seed: bool,
     planted: bool,
+    planted_at: Option<f64>, // 씨앗을 심은 때(시스템 시간, 유닉스 초)
+    bloomed: bool,           // 시스템 시간이 1년 넘게 흘러 꽃이 폈다
+    has_flower: bool,        // 꽃을 꺾어서 가지고 있다
+    flower_sent: bool,       // 꽃을 우체통에 넣어 보냈다
+}
+
+// 대화가 다 끝난 뒤 OS 에 알릴 일 — AppAction 으로 돌려준다.
+#[derive(Clone, Copy)]
+enum Notify {
+    SeedPlanted,
+    FlowerSent,
 }
 
 pub struct MazeGameApp {
@@ -94,6 +117,7 @@ pub struct MazeGameApp {
     aimed: Option<Target>,
     progress: Progress,
     pending_move: Option<Move>,
+    pending_notify: Option<Notify>,
 }
 
 fn new_maze(kind: MazeKind) -> (Vec<Box3D>, Place, Player) {
@@ -115,6 +139,7 @@ impl MazeGameApp {
             aimed: None,
             progress: Progress::default(),
             pending_move: None,
+            pending_notify: None,
         }
     }
 
@@ -142,6 +167,10 @@ impl MazeGameApp {
                 let mut items = vec![Item { target: Target::Pot, center: hub::POT.center, half: hub::POT.half, color: [0.6, 0.35, 0.2, 1.0], label: "[E] Flower pot" }];
                 if p.pot_checked {
                     items.push(Item { target: Target::Locker, center: hub::LOCKER.center, half: hub::LOCKER.half, color: [0.35, 0.4, 0.45, 1.0], label: "[E] Locker" });
+                }
+                items.push(Item { target: Target::Mailbox, center: hub::MAILBOX.center, half: hub::MAILBOX.half, color: [0.3, 0.35, 0.55, 1.0], label: "[E] Mailbox" });
+                if p.bloomed && !p.has_flower {
+                    items.push(Item { target: Target::Flower, center: hub::FLOWER.center, half: hub::FLOWER.half, color: [0.3, 0.4, 0.95, 1.0], label: "[E] Flower" });
                 }
                 const DOOR_LABELS: [&str; KEYS_NEEDED] = ["[E] Door 1", "[E] Door 2", "[E] Door 3"];
                 for (i, slot) in hub::DOORS.iter().enumerate() {
@@ -188,6 +217,8 @@ impl MazeGameApp {
             Target::Pot => {
                 if p.seed && !p.planted {
                     p.planted = true;
+                    p.planted_at = Some(miniquad::date::now());
+                    self.pending_notify = Some(Notify::SeedPlanted);
                     self.dialogue.start(vec![Self::line("화분에 씨앗을 심었다."), Self::line("시간이 1년은 필요할 것 같다...")]);
                 } else if p.planted {
                     self.dialogue.start(vec![Self::line("씨앗이 심겨 있다. 아직 아무 일도 없다.")]);
@@ -210,6 +241,21 @@ impl MazeGameApp {
                     self.dialogue.start(vec![Self::line(&format!("열쇠가 부족하다. ({got}/{KEYS_NEEDED})"))]);
                 }
             }
+            Target::Flower => {
+                p.has_flower = true;
+                self.dialogue.start(vec![Self::line("꽃을 꺾었다."), Self::line("보리지꽃이다.")]);
+            }
+            Target::Mailbox => {
+                if p.has_flower && !p.flower_sent {
+                    p.flower_sent = true;
+                    self.pending_notify = Some(Notify::FlowerSent);
+                    self.dialogue.start(vec![Self::line("꽃을 우체통에 넣었다."), Self::line("어딘가로 보내진 것 같다...")]);
+                } else if p.flower_sent {
+                    self.dialogue.start(vec![Self::line("우체통은 비어 있다.")]);
+                } else {
+                    self.dialogue.start(vec![Self::line("우체통이다. 지금은 보낼 게 없다.")]);
+                }
+            }
             Target::Door(i) => {
                 if !p.locker_checked {
                     self.dialogue.start(vec![Self::line("잠겨 있다.")]);
@@ -221,6 +267,22 @@ impl MazeGameApp {
                 }
             }
         }
+    }
+
+    // 씨앗을 심은 뒤 시스템 시간이 1년 넘게 앞서갔으면 꽃이 핀다 — 지금 대화가 떠 있지 않을 때만
+    // (이미 나오는 대화를 끊지 않게). 이번에 피었으면 true.
+    fn bloom_if_due(&mut self, now: f64) -> bool {
+        let p = &mut self.progress;
+        if let Some(t0) = p.planted_at
+            && !p.bloomed
+            && !self.dialogue.active()
+            && year_passed(t0, now)
+        {
+            p.bloomed = true;
+            self.dialogue.start(vec![Self::line("화분에서 무언가 달라졌다..."), Self::line("꽃이 피었다.")]);
+            return true;
+        }
+        false
     }
 
     fn handle_input(&mut self, win: &WinInput, in_view: bool) {
@@ -262,6 +324,8 @@ impl App for MazeGameApp {
             }
         }
 
+        self.bloom_if_due(miniquad::date::now());
+
         let items = self.items();
         // 벽 + 물건 전부가 충돌/렌더 대상이다.
         let mut scene = self.walls.clone();
@@ -294,6 +358,15 @@ impl App for MazeGameApp {
         self.draw_inventory(r, &view);
         self.dialogue.draw(r, view.rect.x, view.rect.y, view.s, win.time);
 
+        // 대화가 다 끝났으면 OS 에 알릴 일(씨앗 심음/꽃 발송)을 한 번 알린다.
+        if !self.dialogue.active()
+            && let Some(n) = self.pending_notify.take()
+        {
+            return match n {
+                Notify::SeedPlanted => AppAction::SeedPlanted,
+                Notify::FlowerSent => AppAction::FlowerSent,
+            };
+        }
         AppAction::None
     }
 }
@@ -312,6 +385,9 @@ impl MazeGameApp {
         }
         if p.seed && !p.planted {
             lines.push("씨앗".to_string());
+        }
+        if p.has_flower && !p.flower_sent {
+            lines.push("보리지꽃".to_string());
         }
         for (i, line) in lines.iter().enumerate() {
             r.text(view.px(10.0), view.py(10.0 + i as f32 * 20.0), line, 0.8 * view.s, [0.75, 0.8, 1.0, 1.0]);
@@ -373,5 +449,31 @@ mod tests {
         assert!(app.progress.seed);
         app.interact(Target::Pot);
         assert!(app.progress.planted);
+        assert!(matches!(app.pending_notify, Some(Notify::SeedPlanted)), "씨앗을 심으면 OS 에 알린다");
+        app.pending_notify = None;
+
+        // 시스템 시간이 1년 안 흘렀으면 안 피고, 넘으면 핀다(대화가 떠 있으면 그동안은 미룬다).
+        let t0 = app.progress.planted_at.unwrap();
+        app.dialogue = Dialogue::new();
+        assert!(!app.bloom_if_due(t0 + YEAR_SECS - 1.0));
+        assert!(!has(&app, Target::Flower));
+        assert!(!app.bloom_if_due(t0 - YEAR_SECS), "시계를 뒤로 돌려도 안 핀다");
+        assert!(app.bloom_if_due(t0 + YEAR_SECS) && has(&app, Target::Flower));
+
+        // 꽃을 꺾어 우체통에 넣으면 OS 에 알린다. 꽃이 없으면 보낼 게 없다.
+        app.dialogue = Dialogue::new();
+        app.interact(Target::Mailbox);
+        assert!(!app.progress.flower_sent);
+        app.interact(Target::Flower);
+        assert!(app.progress.has_flower && !has(&app, Target::Flower));
+        app.interact(Target::Mailbox);
+        assert!(app.progress.flower_sent && matches!(app.pending_notify, Some(Notify::FlowerSent)));
+    }
+
+    #[test]
+    fn year_boundary() {
+        assert!(year_passed(0.0, YEAR_SECS));
+        assert!(!year_passed(0.0, YEAR_SECS - 1.0));
+        assert!(!year_passed(100.0, 50.0));
     }
 }

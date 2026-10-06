@@ -26,6 +26,10 @@ pub struct Slot {
 // 화분 — 동쪽 벽 쪽, 사물함은 그 바로 뒤(벽 쪽)에 생긴다.
 pub const POT: Slot = Slot { center: [2.7, 0.25, -1.0], half: [0.25, 0.25, 0.25] };
 pub const LOCKER: Slot = Slot { center: [3.55, 0.9, -1.0], half: [0.25, 0.9, 0.5] };
+// 서쪽 벽 쪽의 우체통 — 꽃이 피면 꺾어서 여기에 넣어 보낸다(시트의 SUB A+a-17).
+pub const MAILBOX: Slot = Slot { center: [-3.55, 0.6, -1.0], half: [0.25, 0.6, 0.25] };
+// 화분에 꽃이 피면 그 위에 서는 꽃(가는 기둥 하나).
+pub const FLOWER: Slot = Slot { center: [2.7, 0.75, -1.0], half: [0.06, 0.3, 0.06] };
 // 북쪽 벽에 나란히 있는 문 3개(미로 1, 2, 3).
 pub const DOORS: [Slot; 3] = [
     Slot { center: [-2.5, 1.1, MIN_Z + WALL_THICK + 0.06], half: [0.6, 1.1, 0.06] },

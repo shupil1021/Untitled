@@ -227,6 +227,8 @@ pub struct DesktopScene {
     // true 였거나 이번 세션에서 이미 울렸으면) 더 안 잰다.
     mail_timer: f32,
     toast: Option<Toast>, // 우측 하단에 잠깐 뜨는 알림 — 없으면 안 보임
+    hint_timer: f32,      // 씨앗을 심은 뒤 흐른 시간 — HINT_MAIL_DELAY 가 지나면 시간 힌트 메일이 온다
+    clock_popup: bool,    // 시계를 눌러서 연 날짜 팝업
     sub_game_timer: f32,  // 두 번째 메일이 온 뒤 흐른 시간 — SUB_GAME_DELAY 가 지나면 서브 게임 아이콘이 생긴다
     toast_timer: f32,                // 위 알림이 사라지기까지 남은 시간
     erase_confirm: bool,   // "Erase All Memory" 확인창 — 화면 전체(다른 창 포함)를 덮는 진짜 모달
@@ -240,6 +242,7 @@ pub struct DesktopScene {
 const AUTOSAVE_INTERVAL: f32 = 5.0; // 이 주기(초)마다 설정/바탕화면 상태를 자동 저장한다.
 const MAIL_ARRIVAL_DELAY: f32 = 5.0; // 게임 시작 후 이만큼(초) 지나면 메일이 도착한다.
 const TOAST_DURATION: f32 = 5.0; // 우측 하단 알림이 떠있는 시간(초)
+const HINT_MAIL_DELAY: f32 = 12.0; // 씨앗을 심은 뒤 이만큼(초) 지나면 "시간을 돌려보라"는 힌트 메일이 온다
 const SUB_GAME_DELAY: f32 = 6.0; // 두 번째 메일이 도착한 뒤 이만큼(초) 지나면 "다운로드 완료" + 서브 게임 아이콘
 
 // 우측 하단 알림 한 개 — 제목줄/두 줄 내용. opens_mail 이면 누를 때 Mail 을 연다(새 메일
@@ -322,6 +325,8 @@ impl DesktopScene {
             mail_timer: 0.0,
             toast: None,
             sub_game_timer: 0.0,
+            hint_timer: 0.0,
+            clock_popup: false,
             toast_timer: 0.0,
             erase_confirm: false,
             window_geometry,
@@ -986,6 +991,23 @@ impl DesktopScene {
         }
     }
 
+    // 시계를 누르면 그 위에 뜨는 날짜 팝업 자리 — 오른쪽 끝을 시계에 맞춘다.
+    fn clock_popup_rect(&self) -> Rect {
+        let (w, h) = (150.0, 50.0);
+        let ck = self.clock_rect();
+        Rect::new((ck.x + ck.w - w).max(4.0), SCREEN_H - TASKBAR_H - h, w, h)
+    }
+
+    fn draw_clock_popup(&self, r: &mut Renderer, lang: Language) {
+        let pr = self.clock_popup_rect();
+        raised(r, pr.x, pr.y, pr.w, pr.h);
+        r.rect(pr.x, pr.y, pr.w, 20.0, DARK_GRAY);
+        r.text(pr.x + 6.0, pr.y + 2.0, t(lang, s::DATE_TIME), 0.85, WHITE);
+        // 진짜 컴퓨터의 시스템 시간(KST) — 시계와 같은 값. 서브 게임의 "시간이 1년은 필요하다"가 이걸 본다.
+        let (y, mo, d) = civil_date(miniquad::date::now() as i64 + 9 * 3600);
+        r.text(pr.x + 8.0, pr.y + 26.0, &format!("{y:04}-{mo:02}-{d:02}"), 0.95, BLACK);
+    }
+
     // 와이파이 아이콘을 누르면 뜨는 연결 정보(상태/SSID/IP) 팝업.
     fn draw_wifi_popup(&self, r: &mut Renderer, lang: Language) {
         let pr = self.wifi_popup_rect();
@@ -1159,6 +1181,7 @@ impl Scene for DesktopScene {
             // 컨텍스트 메뉴를 띄울 때 다른 떠있는 패널/팝업들은 다 닫는다
             // (와이파이 정보 팝업, 시작 메뉴).
             self.wifi_info = None;
+            self.clock_popup = false;
             self.start_open = false;
         } else if let Some(pos) = self.context_menu
             && click
@@ -1177,6 +1200,10 @@ impl Scene for DesktopScene {
             consumed = true;
             if self.start_button_rect().contains(m.0, m.1) {
                 self.start_open = !self.start_open;
+            } else if self.clock_rect().contains(m.0, m.1) {
+                // 시계를 누르면 날짜 팝업 — 시스템 시간을 돌렸을 때 날짜가 실제로 바뀌었는지 확인할 수 있다.
+                self.clock_popup = !self.clock_popup;
+                self.wifi_info = None;
             } else if self.wifi_rect().contains(m.0, m.1) {
                 // 열려있으면 닫고, 닫혀있으면 그제서야 조회한다(SSID/IP 조회가 가벼운 건
                 // 아니라서 매 프레임/아이콘 그릴 때마다 하지 않고 누를 때만 한다).
@@ -1189,6 +1216,15 @@ impl Scene for DesktopScene {
                         break;
                     }
                 }
+            }
+        }
+
+        // 2.5) 날짜 팝업: 팝업 위 클릭은 흡수, 바깥을 클릭하면 닫는다(시계를 누른 그 클릭은 위에서 이미 처리).
+        if self.clock_popup && click && !consumed {
+            if self.clock_popup_rect().contains(m.0, m.1) {
+                consumed = true;
+            } else {
+                self.clock_popup = false;
             }
         }
 
@@ -1275,6 +1311,24 @@ impl Scene for DesktopScene {
                     }
                 }
                 DeskAction::RequestErase => self.erase_confirm = true,
+                // 서브 게임에서 씨앗을 심음 — 힌트 메일은 HINT_MAIL_DELAY 뒤에(update 의 타이머).
+                DeskAction::SeedPlanted => {
+                    self.fs.seed_planted = true;
+                    self.write_save(&f.settings);
+                }
+                // 서브 게임에서 꽃을 우체통에 넣음 — 꽃 사진이 첨부된 메일이 도착한다(시트의 SUB A+a-17/18).
+                // 힌트 메일보다 먼저 와버려도(타이머가 아직인데 시간을 돌린 경우) 순서가 안 꼬이게 둘 다 도착시킨다.
+                DeskAction::FlowerSent => {
+                    if self.fs.extra_mails < 2 {
+                        self.fs.extra_mails = 2;
+                        self.fs.ensure_flower_image();
+                        self.refresh_mail_if_open(&f.settings);
+                        let lang = f.settings.borrow().language;
+                        self.toast = Some(Toast::new_mail(SECOND_MAIL_FROM, t(lang, crate::strings::mail::PHOTO_MAIL_SUBJECT)));
+                        self.toast_timer = TOAST_DURATION;
+                        self.write_save(&f.settings);
+                    }
+                }
                 // 게임 안에서 방에 꽃이 없다는 걸 확인함 — 두 번째 메일을 한 번만 도착시키고
                 // 첫 메일 때처럼 토스트로 알린다.
                 DeskAction::FlowerAbsenceChecked => {
@@ -1526,6 +1580,18 @@ impl Scene for DesktopScene {
                 self.write_save(&f.settings);
             }
         }
+        // 씨앗을 심은 뒤 잠깐 있다가 시간 힌트 메일(시트 SUB A+a-15 의 메일 가이딩)이 온다.
+        if self.fs.seed_planted && self.fs.extra_mails < 1 {
+            self.hint_timer += f.dt;
+            if self.hint_timer >= HINT_MAIL_DELAY {
+                self.fs.extra_mails = 1;
+                self.refresh_mail_if_open(&f.settings);
+                let lang = f.settings.borrow().language;
+                self.toast = Some(Toast::new_mail(SECOND_MAIL_FROM, t(lang, crate::strings::mail::HINT_MAIL_SUBJECT)));
+                self.toast_timer = TOAST_DURATION;
+                self.write_save(&f.settings);
+            }
+        }
         // 두 번째 메일이 온 뒤 잠깐 있다가 "다운로드 완료" 알림과 함께 서브 게임 아이콘이 생긴다
         // (시트의 CRT B-0). 저장된 상태(mail2_arrived 만 켜진 채 종료)도 이어서 센다.
         if self.fs.mail2_arrived && !self.fs.sub_game_ready {
@@ -1565,6 +1631,9 @@ impl Scene for DesktopScene {
         }
         if self.wifi_info.is_some() {
             self.draw_wifi_popup(f.r, lang);
+        }
+        if self.clock_popup {
+            self.draw_clock_popup(f.r, lang);
         }
         if !self.erase_confirm {
             self.update_toast(f, work, lang);
@@ -1626,12 +1695,14 @@ impl Scene for DesktopScene {
             || (self.start_open && self.start_menu_rect(f.r, lang).contains(m.0, m.1))
             || self.context_menu.is_some_and(|pos| Self::context_menu_rect(f.r, lang, pos).contains(m.0, m.1))
             || (self.wifi_info.is_some() && self.wifi_popup_rect().contains(m.0, m.1))
+            || (self.clock_popup && self.clock_popup_rect().contains(m.0, m.1))
             || (self.toast.is_some() && Self::toast_rect().contains(m.0, m.1));
         f.cursor = if over_overlay { CursorKind::Arrow } else { wm_cursor };
         if f.cursor == CursorKind::Arrow {
             let dragging_icon = self.drag.as_ref().is_some_and(|d| d.moved);
             let over_clickable = self.start_button_rect().contains(m.0, m.1)
                 || self.wifi_rect().contains(m.0, m.1)
+                || self.clock_rect().contains(m.0, m.1)
                 || (self.start_open && self.start_menu_rect(f.r, lang).contains(m.0, m.1))
                 || self.context_menu.is_some_and(|pos| Self::context_menu_rect(f.r, lang, pos).contains(m.0, m.1))
                 || taskbar_buttons.iter().any(|(_, _, r, ..)| r.contains(m.0, m.1))
@@ -1658,5 +1729,33 @@ impl Scene for DesktopScene {
         } else {
             Transition::None
         }
+    }
+}
+
+
+// 유닉스 초(KST 로 이미 보정한 값) → (년, 월, 일) — 달력 계산(Howard Hinnant 의 civil_from_days).
+fn civil_date(unix: i64) -> (i64, u32, u32) {
+    let z = unix.div_euclid(86400) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    (y, m, d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::civil_date;
+
+    #[test]
+    fn civil_date_known_values() {
+        assert_eq!(civil_date(0), (1970, 1, 1));
+        assert_eq!(civil_date(951_782_400), (2000, 2, 29)); // 윤일
+        assert_eq!(civil_date(1_759_708_800), (2025, 10, 6));
+        assert_eq!(civil_date(-86_400), (1969, 12, 31));
     }
 }

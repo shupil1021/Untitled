@@ -91,6 +91,17 @@ pub struct FileSystem {
     // FlowerAbsenceChecked)로 도착한다.
     #[serde(default)]
     pub mail2_arrived: bool,
+    // 두 번째 메일 뒤에 더 도착한 메일 수 — (1) 씨앗을 심은 뒤 오는 시간 힌트 메일, (2) 꽃을
+    // 우체통에 넣은 뒤 꽃 사진이 첨부돼 돌아오는 메일. 모두 게임 안 이벤트로 도착한다.
+    #[serde(default)]
+    pub extra_mails: usize,
+    // 서브 게임에서 씨앗을 심었는지 — 힌트 메일이 올 차례인지 판단하는 데 쓴다.
+    #[serde(default)]
+    pub seed_planted: bool,
+    // 꽃 사진 첨부 노드(flower.png) — 꽃이 발송될 때 처음 만들어진다. 바탕화면/Downloads 어디에도
+    // 안 놓이고 메일에서 "Download" 해야 Downloads 에 생긴다.
+    #[serde(default)]
+    pub flower_image: Option<FileId>,
     #[serde(default, rename = "email_read")]
     pub mail_read: Vec<usize>,
     // Mail 의 "Write Mail" 탭에서 실제로 보낸 메일들 — Mail 앱의 "Sent Items" 탭에
@@ -181,6 +192,9 @@ impl FileSystem {
             ever_downloaded: Vec::new(),
             mail_arrived: false,
             mail2_arrived: false,
+            extra_mails: 0,
+            seed_planted: false,
+            flower_image: None,
             mail_read: Vec::new(),
             sent_mail: Vec::new(),
             trash_origin: Vec::new(),
@@ -217,7 +231,24 @@ impl FileSystem {
 
     // 지금까지 도착한 메일 개수(도착 순서대로 앞에서부터) — MailApp 이 그만큼만 보여준다.
     pub fn mail_arrived_count(&self) -> usize {
-        self.mail_arrived as usize + self.mail2_arrived as usize
+        self.mail_arrived as usize + self.mail2_arrived as usize + self.extra_mails
+    }
+
+    // 꽃 사진 첨부 노드를 (없으면) 만든다.
+    pub fn ensure_flower_image(&mut self) -> FileId {
+        match self.flower_image {
+            Some(id) => id,
+            None => {
+                let id = self.add(crate::gamefiles::FLOWER_IMAGE_NAME, FileKind::Img(crate::gamefiles::FLOWER_IMAGE));
+                self.flower_image = Some(id);
+                id
+            }
+        }
+    }
+
+    // 받은편지함 메시지 순서대로의 첨부 노드 — (1) 게임 설치 파일, (2) 없음, (3) 없음, (4) 꽃 사진.
+    pub fn mail_attachments(&self) -> Vec<Option<FileId>> {
+        vec![self.mail_attachment(), None, None, self.flower_image]
     }
 
     // Mail 노드의 첨부(첫 메일에 붙어오는 게임 설치 파일)가 아직 없으면 만들어

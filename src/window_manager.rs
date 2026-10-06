@@ -64,6 +64,8 @@ pub enum DeskAction {
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
     InstallComplete,
     FlowerAbsenceChecked,
+    SeedPlanted,
+    FlowerSent,
 }
 
 // 창 관리자에 넘기는 입력 상태.
@@ -495,6 +497,8 @@ impl WindowManager {
                 AppAction::Restore(ids) => actions.push(DeskAction::Restore(ids)),
                 AppAction::InstallComplete => actions.push(DeskAction::InstallComplete),
                 AppAction::FlowerAbsenceChecked => actions.push(DeskAction::FlowerAbsenceChecked),
+                AppAction::SeedPlanted => actions.push(DeskAction::SeedPlanted),
+                AppAction::FlowerSent => actions.push(DeskAction::FlowerSent),
             }
         }
 
