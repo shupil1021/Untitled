@@ -1,5 +1,5 @@
 # v 로 시작하는 태그(예: v0.1.0)를 올리면 윈도우에서 릴리스 빌드를 해서 GitHub Releases 에
-# Untitled-<태그>-windows.zip 을 자동으로 올린다. 릴리스는 이 워크플로우가 GitHub 토큰으로
+# 단독 실행 파일 Untitled.exe, Untitled-<태그>-windows.zip(exe + README), Untitled-<태그>-source.zip(소스 코드)을 자동으로 올린다. 릴리스는 이 워크플로우가 GitHub 토큰으로
 # 직접 만들기 때문에 개인 토큰이 따로 필요 없다.
 #
 # 쓰는 법:  git tag v0.1.0  →  git push origin v0.1.0
@@ -36,8 +36,17 @@ jobs:
           Copy-Item README.md dist/README.md
           Compress-Archive -Path dist/* -DestinationPath "Untitled-${{ github.ref_name }}-windows.zip"
 
+      # 소스 코드 — 태그 시점의 저장소 내용 그대로(.git 은 빠진다).
+      - name: Source archive
+        shell: pwsh
+        run: git archive --format=zip --prefix="Untitled-${{ github.ref_name }}/" -o "Untitled-${{ github.ref_name }}-source.zip" HEAD
+
+      # 릴리스에 실행 파일(단독 exe + 압축본)과 소스 코드 압축본을 같이 올린다.
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: Untitled-*-windows.zip
+          files: |
+            dist/Untitled.exe
+            Untitled-*-windows.zip
+            Untitled-*-source.zip
           generate_release_notes: true
