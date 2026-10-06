@@ -37,7 +37,7 @@ git push            # 이미 origin/master 를 추적 중이라 이것만 하면
 
 ## 릴리스 (진짜 Release — 태그만이 아니라)
 
-현재 릴리스: **v0.1.0** (https://github.com/shupil1021/Untitled/releases/tag/v0.1.0), 파일 3개:
+현재 릴리스: **v0.1.0**(저장소를 새로 만든 뒤 2026-10-07 에 다시 올림 — 게임 진행 저장/짧은 README 포함) (https://github.com/shupil1021/Untitled/releases/tag/v0.1.0), 파일 3개:
 
 - `Untitled.exe` — 단독 실행 파일(에셋이 전부 exe 안에 들어 있다)
 - `Untitled-v0.1.0-windows.zip` — exe + README
