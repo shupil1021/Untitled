@@ -32,10 +32,10 @@ impl BootScene {
 
 // BIOS POST 화면에 고정 딜레이로 하나씩 나타나는 줄들 (메모리 테스트 줄은 별도 애니메이션).
 const POST_LINES: &[&str] = &[
-    "PalaceOS BIOS v4.51PG, An Award Software, Inc.",
+    "Untitled BIOS v4.51PG, An Award Software, Inc.",
     "Copyright (C) 1996-2026, Award Software Inc.",
     "",
-    "CPU : PalaceOS Virtual CPU 486DX2-66",
+    "CPU : Untitled Virtual CPU 486DX2-66",
     "Detecting IDE drives ...",
     "  Primary Master   : PALACE-HD01",
     "  Primary Slave    : None",

@@ -264,7 +264,7 @@ fn recenter_cursor() {
 
 fn main() {
     let conf = conf::Conf {
-        window_title: "PalaceOS".to_owned(),
+        window_title: "Untitled".to_owned(),
         fullscreen: true,
         high_dpi: true,
         ..Default::default()

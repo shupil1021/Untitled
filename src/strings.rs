@@ -212,7 +212,7 @@ pub mod mail {
 pub mod boot {
     use super::S;
     pub const WELCOME: S =
-        S { en: "Welcome to PalaceOS ver.1.0.0", ko: "PalaceOS ver.1.0.0에 오신 것을 환영합니다", ja: "PalaceOS ver.1.0.0へようこそ" };
+        S { en: "Welcome to Untitled ver.1.0.0", ko: "Untitled ver.1.0.0에 오신 것을 환영합니다", ja: "Untitled ver.1.0.0へようこそ" };
 }
 
 // scenes/lobby.rs — 시작 화면(New Start/Continue/Settings/Quit 메뉴).
@@ -222,7 +222,7 @@ pub mod lobby {
     pub const CONTINUE: S = S { en: "Continue", ko: "이어하기", ja: "続ける" };
     pub const QUIT: S = S { en: "Quit", ko: "종료", ja: "終了" };
     pub const CONFIRM_QUIT: S =
-        S { en: "Really quit PalaceOS?", ko: "정말 PalaceOS를 종료하시겠습니까?", ja: "本当にPalaceOSを終了しますか?" };
+        S { en: "Really quit Untitled?", ko: "정말 Untitled를 종료하시겠습니까?", ja: "本当にUntitledを終了しますか?" };
 }
 
 // scenes/desktop.rs — 바탕화면/시작 메뉴/작업표시줄/시스템 메시지 패널.
@@ -231,7 +231,7 @@ pub mod desktop {
     pub const SHUT_DOWN: S = S { en: "Shut Down", ko: "시스템 종료", ja: "シャットダウン" };
     pub const ERASE_LINE1: S = S { en: "Erase all saved progress", ko: "저장된 모든 진행 상태를", ja: "保存された進行状況を" };
     pub const ERASE_LINE2: S =
-        S { en: "and restart PalaceOS?", ko: "지우고 PalaceOS를 다시 시작할까요?", ja: "すべて消去してPalaceOSを再起動?" };
+        S { en: "and restart Untitled?", ko: "지우고 Untitled를 다시 시작할까요?", ja: "すべて消去してUntitledを再起動?" };
     pub const ERASE: S = S { en: "Erase", ko: "지우기", ja: "消去" };
     pub const NETWORK: S = S { en: "Network", ko: "네트워크", ja: "ネットワーク" };
     pub const STATUS: S = S { en: "Status", ko: "상태", ja: "状態" };
