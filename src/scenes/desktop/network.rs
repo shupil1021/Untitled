@@ -2,6 +2,12 @@
 
 // 작업표시줄 와이파이 아이콘용 — 실제 이 PC 의 인터넷 연결 상태를 물어본다.
 // (와이파이인지 유선인지까지는 구분 안 하고, 그냥 "연결돼 있는지"만 확인)
+#[cfg(not(windows))]
+pub(super) fn network_connected() -> bool {
+    false
+}
+
+#[cfg(windows)]
 pub(super) fn network_connected() -> bool {
     use windows::Win32::Networking::WinInet::{InternetGetConnectedState, INTERNET_CONNECTION};
     let mut flags = INTERNET_CONNECTION(0);
@@ -23,6 +29,12 @@ pub(super) fn query_wifi_info(connected: bool) -> WifiInfo {
 // 방화벽이 "이 앱의 네트워크 접근을 허용할까요?" 팝업을 띄운다 — 소켓/실제 통신을
 // 아예 안 하고 OS 가 이미 들고 있는 어댑터 설정을 순수 조회만 하는 IP Helper API
 // (GetAdaptersAddresses) 를 쓰면 그 팝업 자체가 안 뜬다.
+#[cfg(not(windows))]
+pub(super) fn local_ip() -> Option<String> {
+    None
+}
+
+#[cfg(windows)]
 pub(super) fn local_ip() -> Option<String> {
     use windows::Win32::NetworkManagement::IpHelper::{
         GetAdaptersAddresses, GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST,
@@ -67,6 +79,12 @@ pub(super) fn local_ip() -> Option<String> {
 
 // 현재 연결된 와이파이 인터페이스의 SSID 를 WLAN API 로 조회. 실패하거나 와이파이가
 // 아니면(유선 등) None.
+#[cfg(not(windows))]
+pub(super) fn current_ssid() -> Option<String> {
+    None
+}
+
+#[cfg(windows)]
 pub(super) fn current_ssid() -> Option<String> {
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::NetworkManagement::WiFi::*;

@@ -142,6 +142,10 @@ impl EventHandler for Stage {
             recenter_cursor();
             self.look_skip = true;
         }
+        #[cfg(not(windows))]
+        if want_look != self.mouse_look {
+            window::set_cursor_grab(want_look);
+        }
         self.mouse_look = want_look;
         let show_cursor = show_cursor && !self.mouse_look;
 
@@ -188,6 +192,11 @@ impl EventHandler for Stage {
     }
 
     fn mouse_motion_event(&mut self, x: f32, y: f32) {
+        #[cfg(not(windows))]
+        if self.mouse_look {
+            return; // 상대 이동량은 raw_mouse_motion 으로 받는다.
+        }
+        #[cfg(windows)]
         if self.mouse_look {
             // 마우스 시점 모드 — 가상 커서는 그 자리에 멈춰두고, 화면 가운데에서
             // 벗어난 만큼만 look_delta 로 넘긴 뒤 다시 가운데로 되돌린다.
@@ -206,6 +215,14 @@ impl EventHandler for Stage {
             return;
         }
         self.input.mouse = self.to_virtual(x, y);
+    }
+
+    #[cfg(not(windows))]
+    fn raw_mouse_motion(&mut self, dx: f32, dy: f32) {
+        if self.mouse_look {
+            self.input.look_delta.0 += dx;
+            self.input.look_delta.1 += dy;
+        }
     }
 
     fn mouse_button_down_event(&mut self, button: MouseButton, x: f32, y: f32) {
@@ -244,6 +261,7 @@ impl EventHandler for Stage {
 
 // 실제 커서를 이 창의 클라이언트 영역 정가운데로 되돌린다 — miniquad 0.4 엔 커서
 // 위치를 지정하는 API 가 없어서 Win32 를 직접 부른다(이 프로젝트는 Windows 전용).
+#[cfg(windows)]
 fn recenter_cursor() {
     use windows::Win32::Foundation::POINT;
     use windows::Win32::Graphics::Gdi::ClientToScreen;
@@ -261,6 +279,11 @@ fn recenter_cursor() {
         }
     }
 }
+
+// Windows 가 아니면 커서를 직접 옮기지 않는다 — 대신 시점 모드 동안 커서를 창에 가두고
+// (set_cursor_grab) raw_mouse_motion 의 상대 이동량을 쓴다.
+#[cfg(not(windows))]
+fn recenter_cursor() {}
 
 fn main() {
     let conf = conf::Conf {

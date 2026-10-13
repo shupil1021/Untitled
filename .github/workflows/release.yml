@@ -1,0 +1,40 @@
+# 수동 실행 전용(Actions 탭 → Build binaries → Run workflow) — 태그/푸시에는 자동으로 돌지 않는다.
+name: Build binaries
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: Untitled-windows.exe
+            bin: crackhead.exe
+          - os: ubuntu-latest
+            artifact: Untitled-linux
+            bin: crackhead
+          - os: macos-latest
+            artifact: Untitled-macos
+            bin: crackhead
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dev libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --bin crackhead
+      - name: Rename
+        shell: bash
+        run: cp "target/release/${{ matrix.bin }}" "${{ matrix.artifact }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}

@@ -1,6 +1,6 @@
 [package]
 name = "crackhead"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 # director/director_panel(연출·영상 제작용 별개 실행 파일)이 추가되면서 `cargo
 # run`이 "어느 걸 실행할지 모르겠다"며 --bin 을 요구하기 시작했다 — 실제 게임
@@ -12,6 +12,14 @@ default-run = "crackhead"
 miniquad = "0.4"
 # PNG(에셋)/JPEG(Official Site 캡처, PNG보다 인코딩이 훨씬 가벼워 프레임레이트에 유리) 디코딩용.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+# Terrarum Sans Bitmap(한/영 겸용 비트맵 폰트) 를 시작할 때 래스터라이즈해서 폰트
+# 아틀라스를 만드는 용도 — gfx.rs::build_font_atlas 참고.
+fontdue = "0.9"
+
+# Windows 전용 — 영상/오디오/웹뷰/IME/와이파이 조회. macOS/Linux 빌드에서는 아예 받지 않는다.
+[target.'cfg(windows)'.dependencies]
 # mp4 재생: Windows Media Foundation(OS 내장 디코더)로 데믹싱+디코딩 + WASAPI 오디오 출력.
 windows = { version = "0.58", features = [
     "Win32_Foundation",
@@ -39,11 +47,6 @@ windows = { version = "0.58", features = [
     # 숨기는 용도(GetCurrentProcessId) — src/ime.rs::hide_cicero_windows 참고.
     "Win32_System_Threading",
 ] }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
-# Terrarum Sans Bitmap(한/영 겸용 비트맵 폰트) 를 시작할 때 래스터라이즈해서 폰트
-# 아틀라스를 만드는 용도 — gfx.rs::build_font_atlas 참고.
-fontdue = "0.9"
 # Official Site 창 안에 실제 웹페이지를 렌더링하고 주기적으로 캡처해서 우리 텍스처로
 # 올리는 용도 — 이렇게 하면 그 이미지도 다른 모든 화면처럼 CRT 셰이더를 그대로 탄다.
 webview2-com = "0.34"
