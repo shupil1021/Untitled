@@ -2,6 +2,8 @@
 
 use crate::render::mesh3d::{Box3D, Camera};
 
+use super::super::game3d::boxes::solid;
+
 use super::super::game3d::player::aim_dist;
 
 const FLOOR_COLOR: [f32; 4] = [0.28, 0.26, 0.24, 1.0];
@@ -82,10 +84,6 @@ impl Target {
             Target::Mailbox => MAILBOX_CENTER,
         }
     }
-}
-
-fn solid(center: [f32; 3], half: [f32; 3], color: [f32; 4], walkable: bool) -> Box3D {
-    Box3D { center, half, yaw: 0.0, pitch: 0.0, roll: 0.0, color, texture: None, walkable, solid: true }
 }
 
 // 사방이 막힌 방 — 바닥/천장/벽 4면(앞쪽 벽은 문간만 비우고 좌우 조각 + 상인방) + 문. lift 는 문이

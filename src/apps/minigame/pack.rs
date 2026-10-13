@@ -158,7 +158,7 @@ mod tests {
     fn only_the_moment_the_box_overlaps_the_bar_counts() {
         let (r, _) = play(&[Some(0.08), Some(-0.08), Some(0.2), Some(-0.2)]);
         assert_eq!(r.hits(), 2, "바에 걸쳐 있을 때(±0.1초)만 성공, 그 밖은 실패");
-        assert!(WINDOW > 0.09 && WINDOW < 0.13, "{WINDOW}");
+        const { assert!(WINDOW > 0.09 && WINDOW < 0.13) };
     }
 
     // 마구 연타하면 구간 밖에서 누른 것이 상자를 망쳐 합격 못 한다.

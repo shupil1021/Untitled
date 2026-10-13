@@ -5,6 +5,7 @@
 
 use crate::render::mesh3d::Box3D;
 
+use super::super::game3d::boxes::{deco, solid};
 use super::super::game3d::item::Item;
 
 pub const CLEAR_COLOR: [f32; 4] = [0.1, 0.17, 0.2, 1.0];
@@ -80,14 +81,6 @@ const ENVELOPE_POS: [f32; 3] = [SOFA[0] + 0.3, 0.8, SOFA[2] - 0.1];
 pub fn gate_front(gate: Gate) -> [f32; 3] {
     let c = gate.center();
     [c[0], 0.0, c[2] + 1.8]
-}
-
-fn solid(center: [f32; 3], half: [f32; 3], color: [f32; 4], walkable: bool) -> Box3D {
-    Box3D { center, half, yaw: 0.0, pitch: 0.0, roll: 0.0, color, texture: None, walkable, solid: true }
-}
-
-fn deco(center: [f32; 3], half: [f32; 3], color: [f32; 4]) -> Box3D {
-    Box3D { solid: false, ..solid(center, half, color, false) }
 }
 
 // 매번 똑같은 숲이 되게 하는 작은 난수(고정 시드).

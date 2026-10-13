@@ -6,6 +6,7 @@ use crate::foundation::MiniKind;
 use crate::render::mesh3d::Box3D;
 
 use super::super::game3d::ena::{ena_time, smooth};
+use super::super::game3d::boxes::{block, deco};
 use super::super::game3d::item::Item;
 
 const MIN_X: f32 = -5.0;
@@ -33,14 +34,6 @@ pub struct Room {
     pub barriers: Vec<Box3D>,
 }
 
-fn solid(center: [f32; 3], half: [f32; 3], color: [f32; 4]) -> Box3D {
-    Box3D { center, half, yaw: 0.0, pitch: 0.0, roll: 0.0, color, texture: None, walkable: false, solid: true }
-}
-
-fn deco(center: [f32; 3], half: [f32; 3], color: [f32; 4]) -> Box3D {
-    Box3D { solid: false, ..solid(center, half, color) }
-}
-
 // 바닥/천장/벽 4면. floor_to_z 는 바닥이 어디까지 깔려 있는지(계단 입구는 안쪽이 낭떠러지).
 fn shell(wall: [f32; 4], floor: [f32; 4], floor_min_z: f32) -> Vec<Box3D> {
     let (cx, cz) = ((MIN_X + MAX_X) / 2.0, (MIN_Z + MAX_Z) / 2.0);
@@ -50,18 +43,18 @@ fn shell(wall: [f32; 4], floor: [f32; 4], floor_min_z: f32) -> Vec<Box3D> {
     let floor_cz = (floor_min_z + MAX_Z) / 2.0;
     let floor_hz = (MAX_Z - floor_min_z) / 2.0 + THICK;
     vec![
-        Box3D { walkable: true, ..solid([cx, -0.1, floor_cz], [hx, 0.1, floor_hz], floor) },
-        solid([cx, HEIGHT + 0.1, cz], [hx, 0.1, hz], [wall[0] * 0.8, wall[1] * 0.8, wall[2] * 0.8, 1.0]),
-        solid([MIN_X, hy, cz], [THICK, hy, hz], wall),
-        solid([MAX_X, hy, cz], [THICK, hy, hz], wall),
-        solid([cx, hy, MIN_Z], [hx, hy, THICK], wall),
-        solid([cx, hy, MAX_Z], [hx, hy, THICK], wall),
+        Box3D { walkable: true, ..block([cx, -0.1, floor_cz], [hx, 0.1, floor_hz], floor) },
+        block([cx, HEIGHT + 0.1, cz], [hx, 0.1, hz], [wall[0] * 0.8, wall[1] * 0.8, wall[2] * 0.8, 1.0]),
+        block([MIN_X, hy, cz], [THICK, hy, hz], wall),
+        block([MAX_X, hy, cz], [THICK, hy, hz], wall),
+        block([cx, hy, MIN_Z], [hx, hy, THICK], wall),
+        block([cx, hy, MAX_Z], [hx, hy, THICK], wall),
     ]
 }
 
 fn exit_door(items: &mut Vec<Item<Spot>>, boxes: &mut Vec<Box3D>) {
     // 나가는 문 — 시작한 자리 뒤(남쪽 벽) 가운데.
-    boxes.push(solid([0.0, 1.1, MAX_Z - THICK - 0.06], [0.6, 1.1, 0.06], [0.35, 0.24, 0.16, 1.0]));
+    boxes.push(block([0.0, 1.1, MAX_Z - THICK - 0.06], [0.6, 1.1, 0.06], [0.35, 0.24, 0.16, 1.0]));
     items.push(Item::marker(Spot::Exit, [0.0, 1.1, MAX_Z - THICK - 0.1], [0.65, 1.1, 0.2], "[E] Exit"));
 }
 
@@ -85,13 +78,13 @@ fn eye_room(done: bool, received: bool) -> Room {
         boxes.push(deco([0.0, 2.45, MIN_Z + THICK + 0.22], [2.25, 0.45, 0.06], [0.35, 0.1, 0.12, 1.0]));
     }
     // 렌즈 얼굴 NPC — 몸통, 머리, 렌즈. 끝나면 렌즈가 꺼진다.
-    boxes.push(solid([-2.5, 0.9, -4.0], [0.35, 0.9, 0.25], [0.3, 0.32, 0.4, 1.0]));
-    boxes.push(solid([-2.5, 2.0, -4.0], [0.42, 0.42, 0.4], [0.4, 0.42, 0.5, 1.0]));
+    boxes.push(block([-2.5, 0.9, -4.0], [0.35, 0.9, 0.25], [0.3, 0.32, 0.4, 1.0]));
+    boxes.push(block([-2.5, 2.0, -4.0], [0.42, 0.42, 0.4], [0.4, 0.42, 0.5, 1.0]));
     let lens = if done { [0.12, 0.12, 0.14, 1.0] } else { [0.7, 0.9, 1.0, 1.0] };
     boxes.push(deco([-2.5, 2.0, -3.57], [0.3, 0.3, 0.04], lens));
     items.push(Item::marker(Spot::Npc, [-2.5, 1.7, -4.0], [0.6, 1.0, 0.6], "[E] Talk"));
     // 아케이드 기계
-    boxes.push(solid([2.8, 0.9, -4.5], [0.5, 0.9, 0.4], [0.1, 0.1, 0.16, 1.0]));
+    boxes.push(block([2.8, 0.9, -4.5], [0.5, 0.9, 0.4], [0.1, 0.1, 0.16, 1.0]));
     boxes.push(deco([2.8, 1.35, -4.09], [0.38, 0.3, 0.03], [0.3, 0.95, 1.0, 1.0]));
     boxes.push(deco([2.8, 0.85, -4.07], [0.3, 0.06, 0.04], [0.9, 0.2, 0.25, 1.0]));
     items.push(Item::marker(Spot::Machine, [2.8, 1.2, -4.1], [0.6, 0.9, 0.5], "[E] Arcade machine"));
@@ -116,13 +109,13 @@ fn brain_room(done: bool, clock: f32) -> Room {
         boxes.push(deco([MAX_X - THICK - 0.09, 0.9 + h / 2.0, z], [0.03, h / 2.0, 0.22], [0.2 + 0.1 * i as f32 / 6.0, 0.3, 0.35, 1.0]));
     }
     // 도로 표지판 NPC — 기둥 하나에 둥근 판(박스).
-    boxes.push(solid([-2.6, 0.9, -4.2], [0.08, 0.9, 0.08], [0.5, 0.5, 0.52, 1.0]));
-    boxes.push(solid([-2.6, 1.95, -4.2], [0.55, 0.4, 0.07], [0.15, 0.4, 0.2, 1.0]));
+    boxes.push(block([-2.6, 0.9, -4.2], [0.08, 0.9, 0.08], [0.5, 0.5, 0.52, 1.0]));
+    boxes.push(block([-2.6, 1.95, -4.2], [0.55, 0.4, 0.07], [0.15, 0.4, 0.2, 1.0]));
     let arrow = if done { [0.9, 0.5, 0.5, 1.0] } else { [0.95, 0.95, 0.95, 1.0] };
     boxes.push(deco([-2.6, 1.95, -4.12], [0.35, 0.07, 0.02], arrow));
     items.push(Item::marker(Spot::Npc, [-2.6, 1.6, -4.2], [0.65, 1.0, 0.5], "[E] Talk"));
     // 운전대 기계
-    boxes.push(solid([2.8, 0.55, -4.5], [0.5, 0.55, 0.4], [0.18, 0.15, 0.2, 1.0]));
+    boxes.push(block([2.8, 0.55, -4.5], [0.5, 0.55, 0.4], [0.18, 0.15, 0.2, 1.0]));
     boxes.push(deco([2.8, 1.25, -4.2], [0.42, 0.04, 0.42], [0.1, 0.1, 0.1, 1.0]));
     boxes.push(deco([2.8, 1.25, -4.2], [0.08, 0.06, 0.08], [0.9, 0.2, 0.25, 1.0]));
     items.push(Item::marker(Spot::Machine, [2.8, 1.1, -4.2], [0.6, 0.7, 0.5], "[E] Driving machine"));
@@ -134,21 +127,21 @@ fn finger_room(done: bool) -> Room {
     let mut boxes = shell([0.52, 0.44, 0.34, 1.0], [0.3, 0.26, 0.2, 1.0], MIN_Z);
     let mut items = Vec::new();
     // 컨베이어와 쌓인 상자들
-    boxes.push(solid([0.0, 0.35, -3.2], [3.4, 0.35, 0.55], [0.18, 0.18, 0.2, 1.0]));
+    boxes.push(block([0.0, 0.35, -3.2], [3.4, 0.35, 0.55], [0.18, 0.18, 0.2, 1.0]));
     for i in 0..5 {
         boxes.push(deco([-2.4 + i as f32 * 1.1, 0.95, -3.2], [0.3, 0.25, 0.3], [0.68, 0.5, 0.3, 1.0]));
     }
     for k in 0..3 {
-        boxes.push(solid([-4.2, 0.3 + k as f32 * 0.6, -5.2], [0.5, 0.3, 0.5], [0.6, 0.44, 0.26, 1.0]));
+        boxes.push(block([-4.2, 0.3 + k as f32 * 0.6, -5.2], [0.5, 0.3, 0.5], [0.6, 0.44, 0.26, 1.0]));
     }
     // 장갑 NPC — 몸통, 머리, 하얀 장갑 두 개
-    boxes.push(solid([-2.8, 0.9, -4.6], [0.35, 0.9, 0.25], [0.25, 0.3, 0.45, 1.0]));
-    boxes.push(solid([-2.8, 1.95, -4.6], [0.32, 0.32, 0.3], [0.75, 0.6, 0.5, 1.0]));
+    boxes.push(block([-2.8, 0.9, -4.6], [0.35, 0.9, 0.25], [0.25, 0.3, 0.45, 1.0]));
+    boxes.push(block([-2.8, 1.95, -4.6], [0.32, 0.32, 0.3], [0.75, 0.6, 0.5, 1.0]));
     boxes.push(deco([-3.3, 1.2, -4.2], [0.18, 0.2, 0.15], [0.97, 0.97, 0.97, 1.0]));
     boxes.push(deco([-2.3, 1.2, -4.2], [0.18, 0.2, 0.15], [0.97, 0.97, 0.97, 1.0]));
     items.push(Item::marker(Spot::Npc, [-2.8, 1.6, -4.6], [0.6, 1.0, 0.5], "[E] Talk"));
     // 포장 기계 — 멈춰 있고, 앞에 대기 버튼.
-    boxes.push(solid([2.8, 1.0, -4.8], [0.7, 1.0, 0.6], [0.3, 0.32, 0.3, 1.0]));
+    boxes.push(block([2.8, 1.0, -4.8], [0.7, 1.0, 0.6], [0.3, 0.32, 0.3, 1.0]));
     let lamp = if done { [0.3, 0.9, 0.4, 1.0] } else { [0.9, 0.7, 0.2, 1.0] };
     boxes.push(deco([2.8, 1.1, -4.18], [0.2, 0.2, 0.05], [0.85, 0.15, 0.18, 1.0]));
     boxes.push(deco([2.8, 1.7, -4.18], [0.1, 0.06, 0.03], lamp));
@@ -170,7 +163,7 @@ pub fn stair_hall(fed: bool, unfold: f32) -> Room {
         // 웅크린 계단 NPC: 계단 모양 덩어리 + 눈 둘 + 입.
         let squash = if fed { 1.0 - smooth(unfold) } else { 1.0 };
         let h = 0.5 + 0.9 * squash;
-        boxes.push(solid([0.0, h, pit_z - 0.6], [1.7 * (0.6 + 0.4 * squash), h, 0.7], [0.32, 0.28, 0.4, 1.0]));
+        boxes.push(block([0.0, h, pit_z - 0.6], [1.7 * (0.6 + 0.4 * squash), h, 0.7], [0.32, 0.28, 0.4, 1.0]));
         boxes.push(deco([-0.5, h * 1.6, pit_z + 0.12], [0.16, 0.16, 0.04], [0.95, 0.95, 0.8, 1.0]));
         boxes.push(deco([0.5, h * 1.6, pit_z + 0.12], [0.16, 0.16, 0.04], [0.95, 0.95, 0.8, 1.0]));
         let mouth = if fed { 0.18 } else { 0.07 };
@@ -184,7 +177,7 @@ pub fn stair_hall(fed: bool, unfold: f32) -> Room {
         let shown = ((ena_time(unfold) * STAIR_STEPS as f32).ceil() as usize).min(STAIR_STEPS);
         for n in 0..shown {
             let y = -0.32 * n as f32 - 0.15;
-            boxes.push(Box3D { walkable: true, ..solid([0.0, y, pit_z - 0.6 - 1.0 * n as f32], [1.4, 0.15, 0.5], [0.3 + 0.02 * n as f32, 0.26, 0.36, 1.0]) });
+            boxes.push(Box3D { walkable: true, ..block([0.0, y, pit_z - 0.6 - 1.0 * n as f32], [1.4, 0.15, 0.5], [0.3 + 0.02 * n as f32, 0.26, 0.36, 1.0]) });
         }
         if unfold >= 1.0 {
             items.push(Item::marker(Spot::StairStep, [0.0, 0.6, pit_z + 0.4], [1.2, 0.8, 0.8], "[E] Stairs"));
@@ -192,7 +185,7 @@ pub fn stair_hall(fed: bool, unfold: f32) -> Room {
     }
     exit_door(&mut items, &mut boxes);
     // 낭떠러지 입구는 막혀 있고, 다 펼쳐진 뒤엔 계단 폭만큼만 열린다(양옆과 끝은 벽).
-    let wall = |c: [f32; 3], half: [f32; 3]| solid(c, half, [0.0; 4]);
+    let wall = |c: [f32; 3], half: [f32; 3]| block(c, half, [0.0; 4]);
     let mut barriers = vec![wall([-3.4, 1.5, pit_z - 0.2], [1.7, 1.5, 0.2]), wall([3.4, 1.5, pit_z - 0.2], [1.7, 1.5, 0.2])];
     if fed && unfold >= 1.0 {
         let end_z = pit_z - 0.6 - STAIR_STEPS as f32;

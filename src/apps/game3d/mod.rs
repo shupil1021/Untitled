@@ -5,6 +5,7 @@
 //! 전체에 이미 걸려 있어서 따로 안 입힌다. HUD 좌표는 전부 VIEW_W x VIEW_H 기준이고
 //! 그릴 때 View 가 배율을 곱해준다.
 
+pub mod boxes;
 pub mod dialogue;
 pub mod ena;
 pub mod item;
@@ -16,7 +17,7 @@ use std::cell::RefCell;
 use miniquad::{KeyCode, RenderingBackend, TextureId};
 
 use crate::render::gfx::{Rect, Renderer};
-use crate::render::mesh3d::{v_dot, v_sub, Box3D, Camera, Mesh3D};
+use crate::render::mesh3d::{v_dot, v_sub, Box3D, Camera, Mesh3D, MeshObject};
 
 use super::WinInput;
 use player::Player;
@@ -101,10 +102,10 @@ impl View {
         r.rect(self.px(VIEW_W / 2.0 - 1.5), self.py(VIEW_H / 2.0 - 1.5), 3.0 * s, 3.0 * s, [1.0, 1.0, 1.0, 0.7]);
     }
 
-    // draw_scene 과 같지만 가운데 조준선을 안 그린다(레이싱처럼 조준이 없는 화면).
+    // 가운데 조준선 없이(레이싱처럼 조준이 없는 화면) 상자와 임의 메시(MeshObject)를 같이 그린다.
     #[allow(clippy::too_many_arguments)]
-    pub fn draw_scene_plain(&self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, area: Rect, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D]) {
-        let tex = render_scene(ctx, slot, clear, cam, boxes);
+    pub fn draw_scene_meshes(&self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, area: Rect, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D], meshes: &[MeshObject]) {
+        let tex = render_scene_meshes(ctx, slot, clear, cam, boxes, meshes);
         r.rect(area.x, area.y, area.w, area.h, [0.0, 0.0, 0.0, 1.0]);
         r.sprite_uv(tex, self.rect.x, self.rect.y, self.rect.w, self.rect.h, 0.0, 1.0, 1.0, 0.0, [1.0, 1.0, 1.0, 1.0]);
     }
@@ -127,6 +128,16 @@ impl View {
         r.rect(cx - tw / 2.0 - 6.0 * s, self.py(VIEW_H - 30.0), tw + 12.0 * s, 20.0 * s, [0.0, 0.0, 0.0, 0.6]);
         r.text(cx - tw / 2.0, self.py(VIEW_H - 27.0), hint, 0.7 * s, [0.9, 0.9, 0.9, 1.0]);
     }
+}
+
+// 상자와 함께 임의 삼각형 메시(MeshObject)도 그리는 버전 — 길처럼 상자로는 이음매 없이 만들기 어려운 곡면용.
+fn render_scene_meshes(ctx: &mut dyn RenderingBackend, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D], meshes: &[MeshObject]) -> TextureId {
+    POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        let mesh = pool.targets[slot.0].get_or_insert_with(|| Mesh3D::new(ctx, VIEW_W as u32, VIEW_H as u32));
+        mesh.render_ex(ctx, clear, cam, boxes, meshes, FOV_Y);
+        mesh.color_texture()
+    })
 }
 
 fn render_scene(ctx: &mut dyn RenderingBackend, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D]) -> TextureId {

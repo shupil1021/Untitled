@@ -1,20 +1,28 @@
-//! 이미지 뷰어 — 게임 폴더의 이미지나 메일로 받은 꽃 사진 같은 사진을 창 안에 꽉 차게(종횡비
-//! 유지) 보여주는 최소 버전이다.
+//! 이미지 뷰어 — 지금은 이미지에 입힐 텍스처(그림)가 없어서, 모든 이미지를 이미지 파일 아이콘으로
+//! 미리보기처럼 크게 보여주고 그 아래에 파일 이름과 크기를 적는다(게임 폴더의 이미지나 메일로 받은 사진
+//! 모두 같다). 그림이 준비되면 여기서 다시 그리게 하면 된다.
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use miniquad::RenderingBackend;
 
+use crate::foundation::Settings;
 use crate::render::gfx::{Assets, Rect, Renderer};
-use crate::ui::WHITE;
+use crate::strings::{image_viewer as s, t};
+use crate::ui::{draw_icon, wrap_lines, IconType, WHITE};
 
 use super::{App, AppAction, WinInput};
 
 pub struct ImageViewerApp {
     photo_idx: usize,
+    name: String,
+    settings: Rc<RefCell<Settings>>,
 }
 
 impl ImageViewerApp {
-    pub fn new(photo_idx: usize) -> ImageViewerApp {
-        ImageViewerApp { photo_idx }
+    pub fn new(photo_idx: usize, name: String, settings: Rc<RefCell<Settings>>) -> ImageViewerApp {
+        ImageViewerApp { photo_idx, name, settings }
     }
 }
 
@@ -24,20 +32,28 @@ impl App for ImageViewerApp {
     }
 
     fn update(&mut self, _ctx: &mut dyn RenderingBackend, r: &mut Renderer, assets: &Assets, area: Rect, _win: &WinInput) -> AppAction {
-        r.rect(area.x, area.y, area.w, area.h, [0.1, 0.1, 0.1, 1.0]); // 사진 밖 여백(레터박스)은 어둡게
-
-        let Some(&(tex, iw, ih)) = assets.photos.get(self.photo_idx) else {
-            return AppAction::None;
+        r.rect(area.x, area.y, area.w, area.h, [0.1, 0.1, 0.1, 1.0]);
+        let lang = self.settings.borrow().language;
+        // 가운데에 이미지 아이콘(미리보기), 그 아래에 파일 이름(크게)과 "이미지 파일 (가로 x 세로)".
+        let mut lines = vec![(self.name.clone(), 1.2f32, WHITE)];
+        let kind = match assets.photos.get(self.photo_idx) {
+            Some(&(_, w, h)) => format!("{} ({w} x {h})", t(lang, s::IMAGE_FILE)),
+            None => t(lang, s::IMAGE_FILE).to_string(),
         };
-        // 창 안에 종횡비를 유지한 채 최대한 크게 — 사진이 잘리거나 늘어나 보이면 안
-        // 되므로 폭/높이 중 더 좁게 맞춰지는 쪽 배율을 쓴다(레터박스).
-        let (iw, ih) = (iw as f32, ih as f32);
-        let scale = (area.w / iw).min(area.h / ih);
-        let (dw, dh) = (iw * scale, ih * scale);
-        let dx = area.x + (area.w - dw) / 2.0;
-        let dy = area.y + (area.h - dh) / 2.0;
-        r.sprite(tex, dx, dy, dw, dh, WHITE);
-
+        lines.push((kind, 0.85, [0.65, 0.65, 0.7, 1.0]));
+        let total_h: f32 = lines.iter().map(|(_, scale, _)| 22.0 * scale + 6.0).sum();
+        // 아이콘은 창 크기에 맞춰 키운다(작은 창에서도 글자가 들어갈 자리를 남긴다).
+        let icon = (area.h - total_h - 24.0).min(area.w - 24.0).clamp(24.0, 128.0);
+        let mut y = area.y + (area.h - total_h - icon - 12.0) / 2.0;
+        draw_icon(r, assets, &IconType::Img, area.x + (area.w - icon) / 2.0, y.max(area.y + 6.0), icon);
+        y = y.max(area.y + 6.0) + icon + 12.0;
+        for (text, scale, color) in lines {
+            for line in wrap_lines(r, &text, scale, (area.w - 20.0).max(40.0)) {
+                let tw = r.text_width(&line, scale);
+                r.text(area.x + (area.w - tw) / 2.0, y, &line, scale, color);
+                y += 22.0 * scale + 6.0;
+            }
+        }
         AppAction::None
     }
 }

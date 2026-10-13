@@ -4,6 +4,8 @@
 
 use crate::render::mesh3d::Box3D;
 
+use super::super::game3d::boxes::solid;
+
 const MIN_X: f32 = -7.0;
 const MAX_X: f32 = 7.0;
 const MIN_Z: f32 = -9.0; // 문이 있는 벽
@@ -38,10 +40,6 @@ pub const DOORS: [Slot; 3] = [
     Slot { center: [0.0, 1.1, MIN_Z + WALL_THICK + 0.06], half: [0.6, 1.1, 0.06] },
     Slot { center: [4.5, 1.1, MIN_Z + WALL_THICK + 0.06], half: [0.6, 1.1, 0.06] },
 ];
-
-fn solid(center: [f32; 3], half: [f32; 3], color: [f32; 4], walkable: bool) -> Box3D {
-    Box3D { center, half, yaw: 0.0, pitch: 0.0, roll: 0.0, color, texture: None, walkable, solid: true }
-}
 
 // 바닥/천장/벽 4면.
 pub fn build_walls() -> Vec<Box3D> {

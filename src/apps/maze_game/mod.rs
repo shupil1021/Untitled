@@ -449,10 +449,10 @@ impl App for MazeGameApp {
         self.bloom_if_due(miniquad::date::now());
 
         let items = self.items();
-        // 벽 + 물건 전부가 충돌/렌더 대상이다.
+        // 벽 + 물건 + 장식(막지 않는 상자)을 한 목록에 모아 충돌과 그리기에 같이 쓴다(프레임당 한 번만 만든다).
         let mut scene = self.walls.clone();
         scene.extend(items.iter().filter(|it| it.draw).map(Item::to_box));
-        let decor = self.decor();
+        scene.extend(self.decor());
         let frozen = self.dialogue.active() || self.fade.active() || self.can_anim.is_some();
         if !frozen {
             self.look.apply(&mut self.player, win);
@@ -467,9 +467,7 @@ impl App for MazeGameApp {
         }
 
         let cam = self.player.camera();
-        let mut shown = scene.clone();
-        shown.extend(decor);
-        view.draw_scene(ctx, r, area, &self.slot, CLEAR_COLOR, &cam, &shown);
+        view.draw_scene(ctx, r, area, &self.slot, CLEAR_COLOR, &cam, &scene);
         self.draw_sprout(r, &view, &cam);
 
         if let Some(target) = self.aimed

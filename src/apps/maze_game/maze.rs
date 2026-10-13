@@ -5,6 +5,8 @@
 use crate::random::Rng;
 use crate::render::mesh3d::Box3D;
 
+use super::super::game3d::boxes::solid;
+
 const N: usize = 5; // 셀 개수(한 변)
 const TILES: usize = 2 * N + 1; // 벽까지 포함한 타일 개수(한 변)
 const TILE: f32 = 2.0; // 타일 한 칸의 실제 크기(m) — 복도 폭
@@ -24,10 +26,6 @@ pub struct Maze {
 // 타일 (tx, tz) 의 중심 월드 좌표(x, z).
 fn tile_center(tx: usize, tz: usize) -> (f32, f32) {
     (tx as f32 * TILE, tz as f32 * TILE)
-}
-
-fn solid(center: [f32; 3], half: [f32; 3], color: [f32; 4], walkable: bool) -> Box3D {
-    Box3D { center, half, yaw: 0.0, pitch: 0.0, roll: 0.0, color, texture: None, walkable, solid: true }
 }
 
 type Walls = [[bool; TILES]; TILES]; // walls[tz][tx] — true 면 벽

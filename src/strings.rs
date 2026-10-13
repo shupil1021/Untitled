@@ -57,8 +57,6 @@ pub mod foundation {
     use super::S;
     pub const CAT_DOWNLOADS: S = S { en: "Downloads", ko: "다운로드", ja: "ダウンロード" };
     pub const CAT_DESKTOP: S = S { en: "Desktop", ko: "바탕화면", ja: "デスクトップ" };
-    pub const CAT_VIDEOS: S = S { en: "Videos", ko: "동영상", ja: "ビデオ" };
-    pub const CAT_IMAGES: S = S { en: "Images", ko: "사진", ja: "画像" };
     pub const MY_COMPUTER: S = S { en: "My Computer", ko: "내 컴퓨터", ja: "マイコンピュータ" };
     pub const RECYCLE_BIN: S = S { en: "Recycle Bin", ko: "휴지통", ja: "ごみ箱" };
     pub const MAIL: S = S { en: "Mail", ko: "메일", ja: "メール" };
@@ -211,9 +209,9 @@ pub mod mail {
     // 뇌의 방 — 레이싱 게임(BRAIN_DRIVE).
     pub const BRAIN_TASK_SUBJECT: S = S { en: "The road home", ko: "집으로 가는 길", ja: "家へ帰る道" };
     pub const BRAIN_TASK_BODY: S = S {
-        en: "Be the first one home. Drift through the corners.",
-        ko: "가장 먼저 집에 도착해. 코너에서는 드리프트를 써.",
-        ja: "一番に家に着いて。コーナーではドリフトを使って。",
+        en: "Be the first one home.",
+        ko: "가장 먼저 집에 도착해.",
+        ja: "一番に家に着いて。",
     };
     pub const BRAIN_REWARD_SUBJECT: S = S { en: "Did you arrive?", ko: "도착했어?", ja: "着いた?" };
     pub const BRAIN_REWARD_BODY: S = S {
@@ -373,6 +371,12 @@ pub mod credits {
     pub const DEVELOPERS: S = S { en: "Developers", ko: "개발자", ja: "開発者" };
 }
 
+// apps/image_viewer — 이미지 뷰어(지금은 그림 없이 글자로만 보여준다).
+pub mod image_viewer {
+    use super::S;
+    pub const IMAGE_FILE: S = S { en: "Image file", ko: "이미지 파일", ja: "画像ファイル" };
+}
+
 // apps/minigame — 눈/뇌/손가락의 방에서 받는 2D 미니게임(SHY_EYE / BRAIN_DRIVE / PACK).
 pub mod minigame {
     use super::S;
@@ -397,7 +401,7 @@ pub mod minigame {
     ];
     pub const DRIVE_INTRO: [S; 3] = [
         S { en: "W: gas   S: brake   A / D: steer", ko: "W: 가속   S: 브레이크   A·D: 핸들", ja: "W: アクセル   S: ブレーキ   A·D: ハンドル" },
-        S { en: "Hold Shift in a corner, release for a boost", ko: "코너에서 Shift를 누르고 있다 놓으면 부스터", ja: "コーナーでShiftを押し続け、離すとブースト" },
+        S { en: "Guard rails slow you down. Choose your fork.", ko: "가드레일에 부딪히면 느려진다. 갈림길을 골라 가라.", ja: "ガードレールにぶつかると遅くなる。分かれ道を選べ。" },
         S { en: "3 laps. Finish 1st.", ko: "3바퀴를 돌아 1등으로 들어와라.", ja: "3周して1位でゴールしろ。" },
     ];
     pub const PACK_INTRO: [S; 3] = [
@@ -412,9 +416,9 @@ pub mod minigame {
         ja: "遠くへ走らないで。近くの隙間へ動いて。当たった直後は少しの間無敵だよ。",
     };
     pub const DRIVE_HINT: S = S {
-        en: "Slow down before the corner and drift through it. Leaving the road onto the grass costs you a lot of speed.",
-        ko: "코너 앞에서 속도를 줄이고 드리프트로 돌아. 길 밖 잔디로 나가면 속도를 크게 잃어.",
-        ja: "コーナーの手前で減速して、ドリフトで曲がって。道の外の芝に出ると速度を大きく失うよ。",
+        en: "Slow down before the corner. Hitting the guard rail costs you a lot of speed.",
+        ko: "코너 앞에서 속도를 줄여. 가드레일에 부딪히면 속도를 크게 잃어.",
+        ja: "コーナーの手前で減速して。ガードレールにぶつかると速度を大きく失うよ。",
     };
     pub const PLACE: S = S { en: "PLACE", ko: "순위", ja: "順位" };
     pub const PACK_HINT: S = S {

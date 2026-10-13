@@ -797,7 +797,14 @@ pub struct Mesh3D {
     pipeline: Pipeline,
     white_tex: TextureId, // 텍스처 없는(단색) 상자용 1x1 흰 텍스처
     size: (f32, f32),
+    // 프레임마다 새로 만들지 않고 계속 쓰는 것들 — 그리기 직전에 정점 데이터만 갈아 끼운다.
+    index_buf: BufferId,                    // 0, 1, 2, ... 순서 인덱스(정점은 삼각형마다 따로 있다) — 한 번만 만든다
+    vertex_bufs: Vec<(BufferId, usize)>,    // 텍스처 묶음마다 하나씩(버퍼, 담을 수 있는 정점 수)
+    groups: Vec<(TextureId, Vec<Vertex>)>,  // 텍스처별로 모은 정점 — 매 프레임 비우고 다시 채운다(할당은 재사용)
 }
+
+// 한 번의 드로우콜에 담을 수 있는 최대 정점 수(인덱스가 u16 이라서) — 삼각형 단위로 맞춘다.
+const MAX_DRAW_VERTS: usize = 65535 / 3 * 3;
 
 #[repr(C)]
 struct Mesh3DUniform {
@@ -875,7 +882,10 @@ impl Mesh3D {
             },
         );
 
-        Mesh3D { pass, color_tex, depth_tex, pipeline, white_tex, size: (vw as f32, vh as f32) }
+        let indices: Vec<u16> = (0..MAX_DRAW_VERTS as u16).collect();
+        let index_buf = ctx.new_buffer(BufferType::IndexBuffer, BufferUsage::Immutable, BufferSource::slice(indices.as_slice()));
+
+        Mesh3D { pass, color_tex, depth_tex, pipeline, white_tex, size: (vw as f32, vh as f32), index_buf, vertex_bufs: Vec::new(), groups: Vec::new() }
     }
 
     pub fn set_resolution(&mut self, ctx: &mut dyn RenderingBackend, w: u32, h: u32) {
@@ -925,11 +935,23 @@ impl Mesh3D {
         let view = camera.view_matrix();
         let view_proj = mat_mul(&proj, &view);
 
-        // 텍스처(TextureId 없으면 흰 텍스처)별로 정점을 모은다.
-        let mut groups: std::collections::HashMap<TextureId, Vec<Vertex>> = std::collections::HashMap::new();
+        // 텍스처(TextureId 없으면 흰 텍스처)별로 정점을 모은다 — 지난 프레임의 Vec 들을 비워서 다시 쓴다.
+        for (_, verts) in &mut self.groups {
+            verts.clear();
+        }
+        let white = self.white_tex;
+        let group_of = |groups: &mut Vec<(TextureId, Vec<Vertex>)>, tex: TextureId| -> usize {
+            match groups.iter().position(|(t, _)| *t == tex) {
+                Some(i) => i,
+                None => {
+                    groups.push((tex, Vec::new()));
+                    groups.len() - 1
+                }
+            }
+        };
         for b in boxes {
-            let tex = b.texture.map(|t| t.texture).unwrap_or(self.white_tex);
-            let entry = groups.entry(tex).or_default();
+            let gi = group_of(&mut self.groups, b.texture.map(|t| t.texture).unwrap_or(white));
+            let entry = &mut self.groups[gi].1;
             for (a, bb, c) in b.to_triangles() {
                 entry.push(a);
                 entry.push(bb);
@@ -937,8 +959,8 @@ impl Mesh3D {
             }
         }
         for m in meshes {
-            let tex = m.texture.unwrap_or(self.white_tex);
-            let entry = groups.entry(tex).or_default();
+            let gi = group_of(&mut self.groups, m.texture.unwrap_or(white));
+            let entry = &mut self.groups[gi].1;
             for (a, b, c) in m.to_triangles() {
                 entry.push(a);
                 entry.push(b);
@@ -951,25 +973,30 @@ impl Mesh3D {
         ctx.apply_scissor_rect(0, 0, self.size.0 as i32, self.size.1 as i32);
         ctx.apply_pipeline(&self.pipeline);
 
-        let mut owned_buffers = Vec::new();
-        for (tex, verts) in &groups {
+        for gi in 0..self.groups.len() {
+            let (tex, verts) = (self.groups[gi].0, &mut self.groups[gi].1);
             if verts.is_empty() {
                 continue;
             }
-            let vbuf = ctx.new_buffer(BufferType::VertexBuffer, BufferUsage::Stream, BufferSource::slice(verts.as_slice()));
-            let indices: Vec<u16> = (0..verts.len() as u16).collect();
-            let ibuf = ctx.new_buffer(BufferType::IndexBuffer, BufferUsage::Stream, BufferSource::slice(indices.as_slice()));
-            let bindings = Bindings { vertex_buffers: vec![vbuf], index_buffer: ibuf, images: vec![*tex] };
+            // 인덱스가 u16 이라 한 번에 MAX_DRAW_VERTS 개까지만 그린다(넘치면 나머지는 버린다).
+            verts.truncate(MAX_DRAW_VERTS);
+            // 이 묶음의 정점 버퍼 — 모자라면 두 배로 다시 만든다.
+            while self.vertex_bufs.len() <= gi {
+                self.vertex_bufs.push((ctx.new_buffer(BufferType::VertexBuffer, BufferUsage::Stream, BufferSource::empty::<Vertex>(4096)), 4096));
+            }
+            if self.vertex_bufs[gi].1 < verts.len() {
+                ctx.delete_buffer(self.vertex_bufs[gi].0);
+                let cap = verts.len().next_power_of_two().min(MAX_DRAW_VERTS);
+                self.vertex_bufs[gi] = (ctx.new_buffer(BufferType::VertexBuffer, BufferUsage::Stream, BufferSource::empty::<Vertex>(cap)), cap);
+            }
+            let vbuf = self.vertex_bufs[gi].0;
+            ctx.buffer_update(vbuf, BufferSource::slice(verts.as_slice()));
+            let bindings = Bindings { vertex_buffers: vec![vbuf], index_buffer: self.index_buf, images: vec![tex] };
             ctx.apply_bindings(&bindings);
             let u = Mesh3DUniform { view_proj: mat_transpose(&view_proj) };
             ctx.apply_uniforms(UniformsSource::table(&u));
             ctx.draw(0, verts.len() as i32, 1);
-            owned_buffers.push(vbuf);
-            owned_buffers.push(ibuf);
         }
         ctx.end_render_pass();
-        for buf in owned_buffers {
-            ctx.delete_buffer(buf);
-        }
     }
 }

@@ -11,7 +11,7 @@ mod explorer;
 mod image_viewer;
 mod mail;
 mod maze_game;
-mod minigame;
+pub mod minigame;
 mod notepad;
 mod official_site;
 mod password;
@@ -200,7 +200,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             min_size: (150.0, 90.0),
         },
         &FileKind::Img(idx) => Opened {
-            app: Box::new(ImageViewerApp::new(idx)),
+            app: Box::new(ImageViewerApp::new(idx, raw_name.clone(), settings.clone())),
             title: name,
             size: (420.0, 320.0),
             maximized: false,
@@ -394,8 +394,7 @@ fn folder_items(fs: &FileSystem, ids: &[FileId]) -> ExplorerItems {
     ids.iter().map(|&cid| (cid, fs.get(cid).name.clone(), icon_of(fs.get(cid)))).collect()
 }
 
-// File Explorer 의 고정 카테고리 4개(Downloads/Desktop/Videos/Images). Videos/Images 는
-// 위치와 무관하게 종류로 찾고, Downloads 는 메일 등에서 실제로 "다운로드"한 파일만,
+// File Explorer 의 고정 카테고리(Downloads/Desktop/AppData). Downloads 는 메일 등에서 실제로 "다운로드"한 파일만,
 // Desktop 은 바탕화면 그대로(단, self_id — 지금 보고 있는 File Explorer 자기 자신
 // — 는 목록에 안 나오게 뺀다. 안에서 자길 또 열 이유가 없다). 탭 이름 자체("Downloads"
 // 등)는 트리 위치 찾기/드래그앤드롭 목적지 매칭에 쓰는 언어 불변 키라 번역하지
@@ -407,17 +406,12 @@ fn explorer_tabs(fs: &FileSystem, self_id: FileId) -> ExplorerTabs {
         _ => Vec::new(),
     });
     let desktop = folder_items(fs, &fs.desktop.iter().copied().filter(|&fid| fid != self_id).collect::<Vec<_>>());
-    // 휴지통에 들어간 항목은 종류가 여전히 Mp4/Img 라도 이 가상 탭에서 뺀다 — 안 그러면
-    // 휴지통 안에도 있고 Videos/Images 탭에도 그대로 남아 두 군데에 동시에 보인다.
-    let videos = folder_items(fs, &fs.all_of_kind(|k| matches!(k, FileKind::Mp4)).into_iter().filter(|&id| !fs.in_recycle_bin(id)).collect::<Vec<_>>());
-    let images = folder_items(fs, &fs.all_of_kind(|k| matches!(k, FileKind::Img(_))).into_iter().filter(|&id| !fs.in_recycle_bin(id)).collect::<Vec<_>>());
+    // (예전에 있던 Videos/Images 가상 탭은 없앴다 — 사진/영상은 그 파일이 있는 폴더에서 연다.)
     vec![
         ("Downloads".to_string(), downloads, None, None),
         ("Desktop".to_string(), desktop, None, None),
         // AppData 폴더 노드의 내용 — 설치한 게임의 폴더가 여기 생긴다(gamefiles.rs).
         (APPDATA_NAME.to_string(), appdata, None, None),
-        ("Videos".to_string(), videos, None, None),
-        ("Images".to_string(), images, None, None),
     ]
 }
 
