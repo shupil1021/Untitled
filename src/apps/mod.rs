@@ -11,6 +11,7 @@ mod explorer;
 mod image_viewer;
 mod mail;
 mod maze_game;
+mod minigame;
 mod notepad;
 mod official_site;
 mod password;
@@ -41,7 +42,7 @@ use std::rc::Rc;
 
 use miniquad::RenderingBackend;
 
-use crate::foundation::{display_name, DoorsProgress, FileId, FileKind, FileOrigin, FileSystem, MazeProgress, Settings, APPDATA_NAME};
+use crate::foundation::{display_name, DoorsProgress, FileId, FileKind, FileOrigin, FileSystem, MailId, MazeProgress, MiniKind, MiniProgress, Settings, APPDATA_NAME};
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::scenes::Input;
 use crate::ui::{icon_of, IconType};
@@ -77,7 +78,7 @@ pub enum AppAction {
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
     // 설치 마법사의 진행바가 다 참 — fs.game_installed 를 켜고 바탕화면에 게임
     // 아이콘(test.exe)을 만들어달라는 요청. 마법사 창은 그대로 둔다(Finish 로 닫음).
-    InstallComplete,
+    InstallComplete(Option<MiniKind>),
     // 게임 안에서 방에 꽃이 없다는 걸 확인함 — 두 번째 메일(꽃을 구할 수 있는 곳을 안다는)을
     // 도착시켜달라는 요청. 여러 번 와도 한 번만 도착한다.
     FlowerAbsenceChecked,
@@ -90,6 +91,10 @@ pub enum AppAction {
     SeedPlanted,
     // 서브 게임에서 꽃을 우체통에 넣음 — 꽃 사진이 첨부된 메일이 오게 해달라는 요청.
     FlowerSent,
+    // 미니게임의 진행이 바뀜 — fs 에 기록하고 저장해달라는 요청.
+    SaveMini(MiniKind, MiniProgress),
+    // 게임 안에서 한 일 때문에 이 메일이 도착해야 한다는 요청(이미 도착했으면 아무 일도 없다).
+    DeliverMail(MailId),
 }
 
 // File Explorer 사이드바 드래그로 파일을 옮길 수 있는 대상 — Desktop/Downloads 는
@@ -312,7 +317,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
         // 메일로 받은 "test Setup.exe" — 설치 마법사. 이미 설치됐으면 곧장 "이미
         // 설치됨" 페이지로 연다. 대화상자라 크기 고정.
         FileKind::GameSetup => Opened {
-            app: Box::new(GameInstallerApp::new(fs.game_installed, settings.clone())),
+            app: Box::new(GameInstallerApp::new(None, fs.game_installed, settings.clone())),
             title: name,
             size: (360.0, 220.0),
             maximized: false,
@@ -320,6 +325,28 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
             maximizable: false,
             movable: true,
             min_size: (360.0, 220.0),
+        },
+        // 미니게임 설치 파일(SHY_EYE Setup.exe 등) — 같은 설치 마법사를 그 게임 이름으로 연다.
+        FileKind::MiniSetup(kind) => Opened {
+            app: Box::new(GameInstallerApp::new(Some(*kind), fs.mini_installed[kind.index()], settings.clone())),
+            title: name,
+            size: (360.0, 220.0),
+            maximized: false,
+            resizable: false,
+            maximizable: false,
+            movable: true,
+            min_size: (360.0, 220.0),
+        },
+        // 설치된 미니게임 — 2D 게임 창.
+        FileKind::MiniGame(kind) => Opened {
+            app: minigame::new_app(*kind, fs.minis[kind.index()], settings.clone()),
+            title: name,
+            size: (minigame::WIN_W, minigame::WIN_H),
+            maximized: false,
+            resizable: false,
+            maximizable: false,
+            movable: true,
+            min_size: (minigame::WIN_W, minigame::WIN_H),
         },
         // 서브 게임(test2.exe) — 미로 게임. 창 안 3D 게임이라 test.exe 와 같은 창 설정.
         FileKind::SubGame => Opened {

@@ -36,6 +36,10 @@ pub enum FileKind {
     // 보낸 크랙 게임(STORY.md 7-1절). 열면 OS 안의 창 하나로 3D 게임
     // (apps/doors_game.rs)이 돈다.
     Game,
+    // 미니게임(눈/뇌/손가락)의 설치 파일 — 메일 첨부로 오고, 열면 설치 마법사가 뜬다.
+    MiniSetup(MiniKind),
+    // 설치가 끝나 바탕화면에 생긴 미니게임 아이콘 — 열면 2D 미니게임 창이 뜬다.
+    MiniGame(MiniKind),
     Deleted,                                            // FileSystem::delete_permanently() 로 지워진 자리 — 그 무엇에서도 더는 참조되지 않는다
 }
 
@@ -63,13 +67,62 @@ pub struct DoorsProgress {
     pub letter_sent: bool,           // 편지를 우편함에 넣었다
     pub door_changed: bool,          // 편지 메일을 읽고 돌아와서 문의 대사가 바뀌었다
     pub flower_absence_checked: bool, // 방에 꽃이 없다는 걸 확인했다
+    #[serde(default)]
+    pub flower_received: bool,       // 서브 게임에서 보낸 꽃이 인벤토리에 들어왔다(SUB A+a-20)
+    #[serde(default)]
+    pub flower_given: bool,          // 도어즈에게 꽃을 줬다(MAIN A-4)
+    #[serde(default)]
+    pub tutorial_done: bool,         // 문 잠금이 풀리고 1장 튜토리얼이 끝났다(MAIN A-5)
+    #[serde(default)]
+    pub place: MainPlace,            // 지금 있는 곳 — 창을 닫았다 열어도 거기서 이어진다
+    #[serde(default)]
+    pub jungle_visited: bool,        // 2층 정글에 이미 나와 봤다(처음엔 상황 설명 대사 + 메일)
+    #[serde(default)]
+    pub stair_met: bool,             // 계단 NPC 와 처음 이야기했다(MAIN B-2)
+    #[serde(default)]
+    pub errand_accepted: bool,       // 소파 NPC 의 재료 의뢰를 수락했다(MAIN B-3) — 미션 문 셋이 열린다
+    #[serde(default)]
+    pub missions: [MissionStep; 3],  // 눈 / 뇌 / 손가락 미션 진행(MiniKind::index())
+    #[serde(default)]
+    pub exchanged: bool,             // 재료 셋을 소파 NPC 에게 건넸다(MAIN C-1)
+    #[serde(default)]
+    pub chip_taken: bool,            // 소파 위 봉투에서 Mr. POTATO CHIP 을 받았다(MAIN C-2)
+    #[serde(default)]
+    pub chip_fed: bool,              // 계단 NPC 에게 먹였다(MAIN C-4)
+    #[serde(default)]
+    pub floor2_done: bool,           // 2층을 끝냈다(MAIN C-5)
+    #[serde(default)]
+    pub pose: Option<[f32; 4]>,      // 창이 뒤로 가기 직전 서 있던 자리(x, y, z, yaw) — 이어서 할 때 거기서 시작
+}
+
+// 2층 미션 하나의 진행 단계.
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+pub enum MissionStep {
+    #[default]
+    Start,    // 아직 NPC 와 이야기하지 않았다
+    Talked,   // NPC 의 의뢰를 들었다(E-1)
+    Sent,     // 기계에서 게임을 받았다 — CRT 로 설치 파일 메일이 갔다(E-2)
+    Received, // 보상 사진을 내려받아 재료가 인벤토리에 들어왔다(E-3)
+    Done,     // NPC 의 마지막 이야기까지 마쳤다(E-4)
+}
+
+// 메인 게임의 장소.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum MainPlace {
+    #[default]
+    StartRoom, // 1장의 시작방
+    Jungle,    // 2층 정글 허브
+    MissionRoom(MiniKind), // 눈 / 뇌 / 손가락의 방
+    StairHall, // 계단 입구
 }
 
 // 서브 게임(미로 + 방) 진행.
 #[derive(Clone, Default, PartialEq, Debug, Serialize, Deserialize)]
 pub struct MazeProgress {
     pub has_can: bool,
-    pub pot_checked: bool,    // 화분을 조사했다 → 뒤에 사물함이 나타난다
+    pub pot_checked: bool,    // 화분을 조사했다 → 플레이어가 등을 돌렸을 때 사물함이 나타난다
+    #[serde(default)]
+    pub locker_seen: bool,    // 사물함이 나타났다(화분 조사 뒤, 시야 밖에서 생긴다)
     pub locker_checked: bool, // 사물함을 조사했다 → 문 3개가 열린다
     pub keys: [bool; MAZE_KEYS],
     pub seed: bool,
@@ -81,6 +134,89 @@ pub struct MazeProgress {
     pub hub_visited: bool,       // 방에 이미 한 번 올라와 봤다(처음엔 상황 설명 대사가 나온다)
 }
 
+// 2층 미션 방 셋에서 받는 2D 미니게임들 — 눈(탄막) / 뇌(레이싱) / 손가락(포장 리듬).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum MiniKind {
+    Eye,
+    Brain,
+    Finger,
+}
+
+impl MiniKind {
+    pub const ALL: [MiniKind; 3] = [MiniKind::Eye, MiniKind::Brain, MiniKind::Finger];
+
+    pub fn index(self) -> usize {
+        match self {
+            MiniKind::Eye => 0,
+            MiniKind::Brain => 1,
+            MiniKind::Finger => 2,
+        }
+    }
+
+    // 게임 이름(.exe 뗀 것) — 설치 마법사 문구와 AppData 폴더 이름에 쓴다.
+    pub fn app_name(self) -> &'static str {
+        match self {
+            MiniKind::Eye => "SHY_EYE",
+            MiniKind::Brain => "BRAIN_DRIVE",
+            MiniKind::Finger => "PACK",
+        }
+    }
+
+    pub fn exe_name(self) -> &'static str {
+        match self {
+            MiniKind::Eye => "SHY_EYE.exe",
+            MiniKind::Brain => "BRAIN_DRIVE.exe",
+            MiniKind::Finger => "PACK.exe",
+        }
+    }
+
+    pub fn setup_name(self) -> &'static str {
+        match self {
+            MiniKind::Eye => "SHY_EYE Setup.exe",
+            MiniKind::Brain => "BRAIN_DRIVE Setup.exe",
+            MiniKind::Finger => "PACK Setup.exe",
+        }
+    }
+
+    // 보상 사진 파일 이름과 gamefiles::generated_images() 안의 인덱스.
+    pub fn image_name(self) -> &'static str {
+        match self {
+            MiniKind::Eye => "bloodshot_eye.png",
+            MiniKind::Brain => "worn_brain.png",
+            MiniKind::Finger => "severed_finger.png",
+        }
+    }
+
+    pub fn image_index(self) -> usize {
+        crate::gamefiles::REWARD_IMAGE_BASE + self.index()
+    }
+
+    // 이 미니게임의 안내 메일 / 보상 메일.
+    pub fn task_mail(self) -> MailId {
+        match self {
+            MiniKind::Eye => MailId::EyeTask,
+            MiniKind::Brain => MailId::BrainTask,
+            MiniKind::Finger => MailId::FingerTask,
+        }
+    }
+
+    pub fn reward_mail(self) -> MailId {
+        match self {
+            MiniKind::Eye => MailId::EyeReward,
+            MiniKind::Brain => MailId::BrainReward,
+            MiniKind::Finger => MailId::FingerReward,
+        }
+    }
+}
+
+// 미니게임 하나의 진행 — 중간에 창을 닫아도 유지된다(판 하나가 도중에 끊기면 그 판만 처음부터).
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct MiniProgress {
+    pub cleared: bool,       // 클리어해서 보상 상자가 나왔다
+    pub reward_taken: bool,  // 상자에서 재료를 꺼냈다
+    pub reward_sent: bool,   // 재료를 우체통에 넣어 보냈다
+}
+
 // 받은편지함에 도착할 수 있는 메일들 — 도착 순서는 게임 진행에 따라 달라서(mail_log) 번호가
 // 아니라 이 이름으로 구분한다.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -90,6 +226,15 @@ pub enum MailId {
     Flower, // "내가 꽃을 구할 수 있는 곳을 알고 있어" — 방에 꽃이 없다는 걸 확인하면 도착
     Hint,   // "바탕화면에서 시간을 돌려도..." — 서브 게임에서 씨앗을 심으면 도착
     Photo,  // 꽃 사진 첨부 메일 — 꽃을 우체통에 넣으면 도착
+    Outside, // "밖이라고?" — 2층 정글에 처음 나오면 도착(MAIN B-1)
+    Shopping, // "장보기 목록" — 소파 NPC 의 재료 의뢰를 수락하면 도착(MAIN B-3)
+    EyeTask,  // 눈의 방 탄막 게임 설치 파일 메일(MAIN E-2 → CRT E-0)
+    EyeReward,
+    BrainTask,
+    BrainReward,
+    FingerTask,
+    FingerReward,
+    Meal, // "식사 준비" — 소파 NPC 에게서 Mr. POTATO CHIP 을 받으면 도착(MAIN C-2)
 }
 // File Explorer 의 "AppData" 탭 = 이 이름의 폴더 노드의 내용(탭 이름도 같은 문자열).
 pub const APPDATA_NAME: &str = "AppData";
@@ -172,6 +317,15 @@ pub struct FileSystem {
     // "다운로드 완료" 알림과 함께 한 번만 생긴다.
     #[serde(default)]
     pub sub_game_ready: bool,
+    // 미니게임 셋(눈/뇌/손가락)의 진행, 메일로 오는 설치 파일 노드, 설치 여부, 보상 사진 노드 — 인덱스는 MiniKind::index().
+    #[serde(default)]
+    pub minis: [MiniProgress; 3],
+    #[serde(default)]
+    pub mini_setup: [Option<FileId>; 3],
+    #[serde(default)]
+    pub mini_installed: [bool; 3],
+    #[serde(default)]
+    pub reward_image: [Option<FileId>; 3],
 }
 
 // Mail 의 "Write Mail" 탭에서 보낸 메일 한 통 — fs.sent_mail 에 쌓인다. 첨부는
@@ -253,6 +407,10 @@ impl FileSystem {
             trash_origin: Vec::new(),
             game_installed: false,
             sub_game_ready: false,
+            minis: [MiniProgress::default(); 3],
+            mini_setup: [None; 3],
+            mini_installed: [false; 3],
+            reward_image: [None; 3],
         };
 
         // 바탕화면엔 고정 아이콘들만 둔다 — 나머지 예제 파일들은 다 치웠다.
@@ -287,8 +445,30 @@ impl FileSystem {
         if self.mail_log.contains(&id) {
             return false;
         }
+        self.prepare_mail_assets(id);
         self.mail_log.push(id);
         true
+    }
+
+    // 메일에 붙어 올 첨부 노드(설치 파일 / 보상 사진)를 (없으면) 만들어 둔다.
+    fn prepare_mail_assets(&mut self, id: MailId) {
+        for kind in MiniKind::ALL {
+            let i = kind.index();
+            if id == kind.task_mail() && self.mini_setup[i].is_none() {
+                self.mini_setup[i] = Some(self.add(kind.setup_name(), FileKind::MiniSetup(kind)));
+            }
+            if id == kind.reward_mail() && self.reward_image[i].is_none() {
+                self.reward_image[i] = Some(self.add(kind.image_name(), FileKind::Img(kind.image_index())));
+            }
+        }
+        if id == MailId::Photo {
+            self.ensure_flower_image();
+        }
+    }
+
+    // 그 미니게임의 보상 사진을 메일에서 내려받았는지 — 메인 게임이 재료를 받는 조건이다.
+    pub fn reward_downloaded(&self, kind: MiniKind) -> bool {
+        self.reward_image[kind.index()].is_some_and(|id| self.ever_downloaded.contains(&id))
     }
 
     pub fn has_mail(&self, id: MailId) -> bool {
@@ -343,6 +523,12 @@ impl FileSystem {
             .map(|id| match id {
                 MailId::Friend => self.mail_attachment(),
                 MailId::Photo => self.flower_image,
+                MailId::EyeTask => self.mini_setup[0],
+                MailId::BrainTask => self.mini_setup[1],
+                MailId::FingerTask => self.mini_setup[2],
+                MailId::EyeReward => self.reward_image[0],
+                MailId::BrainReward => self.reward_image[1],
+                MailId::FingerReward => self.reward_image[2],
                 _ => None,
             })
             .collect()
@@ -789,5 +975,30 @@ mod tests {
         assert!(fs.deliver_mail(MailId::Flower));
         assert_eq!(fs.mail_log, [MailId::Friend, MailId::Letter, MailId::Flower]);
         assert_eq!(fs.mail_attachments().len(), 3);
+    }
+
+    // 미니게임 메일은 도착할 때 설치 파일 / 보상 사진 노드를 달고 오고, 사진을 내려받으면 그 게임의 보상이 "받아진" 것으로 친다.
+    #[test]
+    fn minigame_mails_carry_their_files() {
+        let mut fs = FileSystem::new();
+        fs.deliver_mail(MailId::EyeTask);
+        let setup = fs.mini_setup[0].expect("설치 파일 노드");
+        assert!(matches!(fs.get(setup).kind, FileKind::MiniSetup(MiniKind::Eye)));
+        assert_eq!(fs.get(setup).name, "SHY_EYE Setup.exe");
+        assert_eq!(fs.mail_attachments(), [Some(setup)]);
+        assert!(!fs.reward_downloaded(MiniKind::Eye));
+
+        fs.deliver_mail(MailId::EyeReward);
+        let image = fs.reward_image[0].expect("보상 사진 노드");
+        assert!(matches!(fs.get(image).kind, FileKind::Img(i) if i == MiniKind::Eye.image_index()));
+        assert_eq!(fs.get(image).name, "bloodshot_eye.png");
+        assert!(!fs.reward_downloaded(MiniKind::Eye), "메일이 와도 내려받기 전엔 안 받은 것");
+        fs.download(image);
+        assert!(fs.reward_downloaded(MiniKind::Eye) && !fs.reward_downloaded(MiniKind::Brain));
+
+        // 중복 도착은 노드를 또 만들지 않는다.
+        let nodes = fs.all_of_kind(|_| true).len();
+        assert!(!fs.deliver_mail(MailId::EyeReward));
+        assert_eq!(fs.all_of_kind(|_| true).len(), nodes);
     }
 }

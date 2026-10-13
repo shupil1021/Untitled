@@ -15,3 +15,27 @@ pub fn set_letter_mail_read(read: bool) {
 pub fn letter_mail_read() -> bool {
     LETTER_MAIL_READ.load(Ordering::Relaxed)
 }
+
+static FLOWER_DOWNLOADED: AtomicBool = AtomicBool::new(false);
+
+// 서브 게임이 보낸 꽃 사진(flower.png)을 메일에서 내려받았는지 — 메인 게임을 열면 꽃이 인벤토리에
+// 들어오는 조건이다(SUB A+a-20).
+pub fn set_flower_downloaded(done: bool) {
+    FLOWER_DOWNLOADED.store(done, Ordering::Relaxed);
+}
+
+pub fn flower_downloaded() -> bool {
+    FLOWER_DOWNLOADED.load(Ordering::Relaxed)
+}
+
+static REWARD_DOWNLOADED: [AtomicBool; 3] = [AtomicBool::new(false), AtomicBool::new(false), AtomicBool::new(false)];
+
+// 미니게임 보상 사진(충혈된 눈 / 짓무른 뇌 / 절단된 손가락)을 메일에서 내려받았는지 — 메인 게임이 그 재료를
+// 자동으로 받는 조건이다(MAIN E-3 / R-3 / H-3). 인덱스는 MiniKind::index().
+pub fn set_reward_downloaded(kind: usize, done: bool) {
+    REWARD_DOWNLOADED[kind].store(done, Ordering::Relaxed);
+}
+
+pub fn reward_downloaded(kind: usize) -> bool {
+    REWARD_DOWNLOADED[kind].load(Ordering::Relaxed)
+}

@@ -38,6 +38,11 @@ impl Player {
         Player { feet, yaw, pitch: 0.0, vel_y: 0.0 }
     }
 
+    // 지금 서 있는 자리와 보는 방향(x, y, z, yaw) — 저장해 뒀다가 Player::at 로 되살린다.
+    pub fn pose(&self) -> [f32; 4] {
+        [self.feet[0], self.feet[1], self.feet[2], self.yaw]
+    }
+
     pub fn camera(&self) -> Camera {
         Camera { pos: [self.feet[0], self.feet[1] + EYE_OFFSET, self.feet[2]], yaw: self.yaw, pitch: self.pitch }
     }

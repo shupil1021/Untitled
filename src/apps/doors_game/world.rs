@@ -28,6 +28,10 @@ const HANDLE_HALF: [f32; 3] = [0.05, 0.05, 0.05];
 const HANDLE_COLOR: [f32; 4] = [0.8, 0.72, 0.45, 1.0];
 // 손잡이 — 문의 오른쪽 가장자리 근처, 방 안쪽(+Z) 면에서 살짝 튀어나온 자리.
 pub const HANDLE_POS: [f32; 3] = [DOOR_MIN_X + DOOR_WIDTH - 0.15, DOOR_HALF_H - 0.45, ROOM_MIN_Z + 0.09];
+// 문이 열린 뒤 밖으로 나갈 때 조준하는 자리(문간 가운데).
+pub const EXIT_POS: [f32; 3] = [0.0, DOOR_HALF_H, ROOM_MIN_Z + 0.2];
+// 문이 올라가는 높이(문 위의 상인방 속으로 들어간다).
+pub const DOOR_LIFT: f32 = DOOR_HALF_H * 2.0 - 0.1;
 
 // 방 안의 조사할 수 있는 물건 — 상자 하나로 표현하고(Box3D, 충돌 있음), 조준 판정은
 // 상자 중심을 기준으로 한다. text 는 조사했을 때 나오는 한 줄.
@@ -84,8 +88,9 @@ fn solid(center: [f32; 3], half: [f32; 3], color: [f32; 4], walkable: bool) -> B
     Box3D { center, half, yaw: 0.0, pitch: 0.0, roll: 0.0, color, texture: None, walkable, solid: true }
 }
 
-// 사방이 막힌 방 — 바닥/천장/벽 4면(앞쪽 벽은 문간만 비우고 좌우 조각 + 상인방) + 닫힌 문.
-pub fn build_room() -> Vec<Box3D> {
+// 사방이 막힌 방 — 바닥/천장/벽 4면(앞쪽 벽은 문간만 비우고 좌우 조각 + 상인방) + 문. lift 는 문이
+// 얼마나 위로 올라갔는지(0 = 닫힘, DOOR_LIFT = 다 열림) — 열리면 문 뒤로 하얀 빛이 보인다.
+pub fn build_room(lift: f32) -> Vec<Box3D> {
     let cx = (ROOM_MIN_X + ROOM_MAX_X) / 2.0;
     let cz = (ROOM_MIN_Z + ROOM_MAX_Z) / 2.0;
     let hx = (ROOM_MAX_X - ROOM_MIN_X) / 2.0 + WALL_THICK;
@@ -109,8 +114,16 @@ pub fn build_room() -> Vec<Box3D> {
     let lintel_hy = (ROOM_HEIGHT - door_top) / 2.0;
     boxes.push(solid([0.0, door_top + lintel_hy, ROOM_MIN_Z], [DOOR_WIDTH / 2.0, lintel_hy, WALL_THICK], WALL_COLOR, false));
 
-    boxes.push(solid([DOOR_MIN_X + DOOR_WIDTH / 2.0, DOOR_HALF_H, ROOM_MIN_Z], [DOOR_WIDTH / 2.0, DOOR_HALF_H, DOOR_HALF_T], DOOR_COLOR, false));
-    boxes.push(Box3D { center: HANDLE_POS, half: HANDLE_HALF, yaw: 0.0, pitch: 0.0, roll: 0.0, color: HANDLE_COLOR, texture: None, walkable: false, solid: false });
+    // 문은 열려 있는 동안(조금이라도 올라간 뒤) 막지 않는다 — 문간으로 걸어 들어갈 수 있다.
+    let open = lift > 0.05;
+    let mut door = solid([DOOR_MIN_X + DOOR_WIDTH / 2.0, DOOR_HALF_H + lift, ROOM_MIN_Z], [DOOR_WIDTH / 2.0, DOOR_HALF_H, DOOR_HALF_T], DOOR_COLOR, false);
+    door.solid = !open;
+    boxes.push(door);
+    boxes.push(Box3D { center: [HANDLE_POS[0], HANDLE_POS[1] + lift, HANDLE_POS[2]], half: HANDLE_HALF, yaw: 0.0, pitch: 0.0, roll: 0.0, color: HANDLE_COLOR, texture: None, walkable: false, solid: false });
+    if open {
+        // 문 뒤의 빛 — 문간 안쪽에 선 눈부신 벽. 걸어 들어가다 막히는 자리이기도 하다.
+        boxes.push(solid([0.0, DOOR_HALF_H, ROOM_MIN_Z - 0.5], [DOOR_WIDTH / 2.0, DOOR_HALF_H, 0.1], [1.0, 0.97, 0.85, 1.0], false));
+    }
     for p in &PROPS {
         boxes.push(solid(p.center, p.half, p.color, false));
     }
@@ -120,11 +133,11 @@ pub fn build_room() -> Vec<Box3D> {
 
 // 조준선(화면 중앙)이 향한 대상 중 가장 가까운 것 — available 이 false 인 대상은 후보에서 뺀다
 // (아직 안 나타난 편지, 지금은 말을 못 거는 문 등).
-pub fn aimed_target(cam: &Camera, available: impl Fn(Target) -> bool) -> Option<Target> {
+pub fn aimed_target(cam: &Camera, door_pos: [f32; 3], available: impl Fn(Target) -> bool) -> Option<Target> {
     let candidates = [Target::Door, Target::Letter, Target::Mailbox].into_iter().chain((0..PROPS.len()).map(Target::Prop));
     candidates
         .filter(|&t| available(t))
-        .filter_map(|t| aim_dist(cam, t.pos()).map(|d| (t, d)))
+        .filter_map(|t| aim_dist(cam, if t == Target::Door { door_pos } else { t.pos() }).map(|d| (t, d)))
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(t, _)| t)
 }

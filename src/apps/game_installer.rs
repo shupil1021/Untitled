@@ -13,7 +13,7 @@ use std::rc::Rc;
 
 use miniquad::RenderingBackend;
 
-use crate::foundation::{Language, Settings};
+use crate::foundation::{Language, MiniKind, Settings, GAME_FOLDER_NAME};
 use crate::random::{LoadCurve, Rng};
 use crate::render::gfx::{Assets, Color, Rect, Renderer};
 use crate::strings::{common, game_installer as s, t};
@@ -38,6 +38,8 @@ enum Page {
 }
 
 pub struct GameInstallerApp {
+    // 어느 게임의 설치 마법사인지 — None 이면 메인 게임(test), Some 이면 그 미니게임. 문구 속의 게임 이름에 쓴다.
+    kind: Option<MiniKind>,
     page: Page,
     elapsed: f32,
     progress: f32,
@@ -50,8 +52,9 @@ pub struct GameInstallerApp {
 impl GameInstallerApp {
     // already_installed 면(fs.game_installed 가 이미 true) Welcome 부터 다시 태우지
     // 않고 바로 AlreadyInstalled 페이지로 연다.
-    pub(super) fn new(already_installed: bool, settings: Rc<RefCell<Settings>>) -> GameInstallerApp {
-                GameInstallerApp {
+    pub(super) fn new(kind: Option<MiniKind>, already_installed: bool, settings: Rc<RefCell<Settings>>) -> GameInstallerApp {
+        GameInstallerApp {
+            kind,
             page: if already_installed { Page::AlreadyInstalled } else { Page::Welcome },
             elapsed: 0.0,
             progress: 0.0,
@@ -59,6 +62,22 @@ impl GameInstallerApp {
             sent_complete: false,
             load_curve: LoadCurve::random(&mut Rng::from_time()),
             settings,
+        }
+    }
+
+    // 설치 마법사 문구는 게임 이름이 "test" 로 적혀 있어서, 미니게임이면 그 이름으로 바꿔 보여준다.
+    fn text(&self, lang: Language, line: &crate::strings::S) -> String {
+        let text = t(lang, *line);
+        match self.kind {
+            Some(kind) => text.replace("test", kind.app_name()),
+            None => text.to_string(),
+        }
+    }
+
+    fn step_text(&self, step: &str) -> String {
+        match self.kind {
+            Some(kind) => step.replace("test", kind.app_name()),
+            None => step.to_string(),
         }
     }
 
@@ -131,7 +150,7 @@ impl App for GameInstallerApp {
 
         match self.page {
             Page::AlreadyInstalled => {
-                let y = self.draw_paragraph(r, content.x, content.y, content.w, t(lang, s::ALREADY_INSTALLED_MSG), BLACK);
+                let y = self.draw_paragraph(r, content.x, content.y, content.w, &self.text(lang, &s::ALREADY_INSTALLED_MSG), BLACK);
                 self.draw_paragraph(r, content.x, y + 8.0, content.w, t(lang, s::CLICK_FINISH_TO_CLOSE), GRAY);
 
                 // 이미 설치돼 있으므로 InstallComplete 를 또 보내지 않는다(보내면
@@ -141,7 +160,7 @@ impl App for GameInstallerApp {
                 }
             }
             Page::Welcome => {
-                let y = self.draw_paragraph(r, content.x, content.y, content.w, t(lang, s::WELCOME_MSG), BLACK);
+                let y = self.draw_paragraph(r, content.x, content.y, content.w, &self.text(lang, &s::WELCOME_MSG), BLACK);
                 self.draw_paragraph(r, content.x, y + 8.0, content.w, t(lang, s::CLICK_INSTALL_OR_CANCEL), GRAY);
 
                 match self.draw_nav_row(r, card, win, t(lang, s::INSTALL), true, lang) {
@@ -158,10 +177,10 @@ impl App for GameInstallerApp {
             Page::Installing => {
                 let done = self.progress >= 1.0;
                 let steps = status_steps(lang);
-                let status = if done { t(lang, s::DONE) } else { steps[((self.progress * steps.len() as f32) as usize).min(steps.len() - 1)] };
-                let y = self.draw_paragraph(r, content.x, content.y, content.w, t(lang, s::INSTALLING_MSG), BLACK);
+                let status = if done { t(lang, s::DONE).to_string() } else { self.step_text(steps[((self.progress * steps.len() as f32) as usize).min(steps.len() - 1)]) };
+                let y = self.draw_paragraph(r, content.x, content.y, content.w, &self.text(lang, &s::INSTALLING_MSG), BLACK);
                 let status_y = y + 10.0;
-                r.text_clipped(content.x, status_y, status, 0.8, GRAY, content.w);
+                r.text_clipped(content.x, status_y, &status, 0.8, GRAY, content.w);
 
                 if !done {
                     self.elapsed += win.dt;
@@ -173,7 +192,7 @@ impl App for GameInstallerApp {
                         // 계속 열려있다가(window_manager.rs 가 닫지 않는다) Finish
                         // 버튼을 눌러야 닫힌다.
                         self.sent_complete = true;
-                        result = AppAction::InstallComplete;
+                        result = AppAction::InstallComplete(self.kind);
                     }
                     self.finish_hold += win.dt;
                     if self.finish_hold >= FINISH_HOLD {
@@ -200,9 +219,10 @@ impl App for GameInstallerApp {
                 // 설치 중엔 버튼 없음 — 취소도 못 하게 막는다.
             }
             Page::Finish => {
-                let y = self.draw_paragraph(r, content.x, content.y, content.w, t(lang, s::FINISH_MSG), BLACK);
+                let y = self.draw_paragraph(r, content.x, content.y, content.w, &self.text(lang, &s::FINISH_MSG), BLACK);
                 // 실제로 게임 파일이 써진 위치(gamefiles.rs) — 플레이어가 탐색기로 찾아가 볼 수 있다.
-                let location = format!("{} %APPDATA%\\{}", t(lang, s::INSTALLED_TO), crate::foundation::GAME_FOLDER_NAME);
+                let folder = self.kind.map_or(GAME_FOLDER_NAME, MiniKind::app_name);
+                let location = format!("{} %APPDATA%\\{}", t(lang, s::INSTALLED_TO), folder);
                 let y = self.draw_paragraph(r, content.x, y + 6.0, content.w, &location, GRAY);
                 self.draw_paragraph(r, content.x, y + 8.0, content.w, t(lang, s::CLICK_FINISH_TO_CLOSE), GRAY);
 

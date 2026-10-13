@@ -6,7 +6,10 @@
 //! 그릴 때 View 가 배율을 곱해준다.
 
 pub mod dialogue;
+pub mod ena;
+pub mod item;
 pub mod player;
+pub mod sprite;
 
 use std::cell::RefCell;
 
@@ -141,6 +144,13 @@ fn world_to_view(cam: &Camera, p: [f32; 3]) -> Option<(f32, f32)> {
     Some(((ndc_x * 0.5 + 0.5) * VIEW_W, (1.0 - (ndc_y * 0.5 + 0.5)) * VIEW_H))
 }
 
+// 월드 위치가 지금 화면 안(약간의 여유 포함)에 있는지 — 카메라 뒤거나 옆으로 벗어나 있으면 false.
+// 등 뒤에서 뭔가 나타나게 할 때, 플레이어가 그 순간을 못 보게 하려고 쓴다.
+pub fn is_on_screen(cam: &Camera, p: [f32; 3]) -> bool {
+    const MARGIN: f32 = 80.0;
+    world_to_view(cam, p).is_some_and(|(x, y)| (-MARGIN..=VIEW_W + MARGIN).contains(&x) && (-MARGIN..=VIEW_H + MARGIN).contains(&y))
+}
+
 // 장면이 확 바뀌는 곳(미로 ↔ 방)에서 쓰는 페이드 — 화면이 검게 어두워졌다가(Out) 그 순간 장면을
 // 바꾸고(update 가 true 를 돌려준다) 다시 밝아진다(In). 도는 동안은 게임이 입력/이동을 멈춰야
 // 해서 active() 로 알려준다.
@@ -155,12 +165,13 @@ enum FadePhase {
 
 pub struct Fade {
     phase: FadePhase,
-    t: f32, // 0 = 완전히 밝음 ~ 1 = 완전히 검음
+    t: f32, // 0 = 완전히 밝음 ~ 1 = 완전히 덮음
+    color: [f32; 3],
 }
 
 impl Fade {
     pub fn new() -> Fade {
-        Fade { phase: FadePhase::Idle, t: 0.0 }
+        Fade { phase: FadePhase::Idle, t: 0.0, color: [0.0, 0.0, 0.0] }
     }
 
     pub fn active(&self) -> bool {
@@ -169,7 +180,13 @@ impl Fade {
 
     // 어두워지기 시작한다(이미 도는 중이면 무시).
     pub fn start(&mut self) {
+        self.start_colored([0.0, 0.0, 0.0]);
+    }
+
+    // 지정한 색으로 덮는 페이드(하얗게 흐려지는 장면 등).
+    pub fn start_colored(&mut self, color: [f32; 3]) {
         if self.phase == FadePhase::Idle {
+            self.color = color;
             self.phase = FadePhase::Out;
             self.t = 0.0;
         }
@@ -199,10 +216,10 @@ impl Fade {
         }
     }
 
-    // 게임 화면 위에 검은 막을 덮는다.
+    // 게임 화면 위에 막을 덮는다.
     pub fn draw(&self, r: &mut Renderer, view: &View) {
         if self.t > 0.0 {
-            r.rect(view.rect.x, view.rect.y, view.rect.w, view.rect.h, [0.0, 0.0, 0.0, self.t]);
+            r.rect(view.rect.x, view.rect.y, view.rect.w, view.rect.h, [self.color[0], self.color[1], self.color[2], self.t]);
         }
     }
 }

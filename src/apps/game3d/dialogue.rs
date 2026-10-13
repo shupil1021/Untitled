@@ -21,6 +21,8 @@ const CHAR_DELAY_MAX: f32 = 0.09;
 pub enum Entry {
     Line(String),
     Choice(String),
+    // 선택지인데 [Y]/[N] 옆에 붙는 말을 직접 정한다("[Y] 먹인다   [N] 나중에").
+    Ask(String, &'static str),
 }
 
 pub struct Dialogue {
@@ -42,7 +44,7 @@ impl Dialogue {
 
     fn text(&self) -> &str {
         match self.entries.get(self.index) {
-            Some(Entry::Line(s) | Entry::Choice(s)) => s,
+            Some(Entry::Line(s) | Entry::Choice(s) | Entry::Ask(s, _)) => s,
             None => "",
         }
     }
@@ -53,7 +55,7 @@ impl Dialogue {
 
     // 지금 항목이 다 타이핑된 선택지인지 — 이때만 Y/N 이 먹는다.
     pub fn choice_ready(&self) -> bool {
-        matches!(self.entries.get(self.index), Some(Entry::Choice(_))) && self.fully_typed()
+        matches!(self.entries.get(self.index), Some(Entry::Choice(_) | Entry::Ask(..))) && self.fully_typed()
     }
 
     // 대화가 떠 있는 동안의 입력 처리(선택지면 Y/N, 아니면 아무 키/클릭으로 넘기기) —
@@ -139,7 +141,11 @@ impl Dialogue {
         r.text(x + 16.0 * s, y + 16.0 * s, &shown, TEXT_SCALE * s, [1.0, 1.0, 1.0, 1.0]);
         let bottom_y = y + h - (LINE_H + 10.0) * s;
         if self.choice_ready() {
-            r.text(x + 16.0 * s, bottom_y, "[Y] 수락   [N] 거부", TEXT_SCALE * s, [1.0, 0.9, 0.5, 1.0]);
+            let options = match self.entries.get(self.index) {
+                Some(Entry::Ask(_, options)) => options,
+                _ => "[Y] 수락   [N] 거부",
+            };
+            r.text(x + 16.0 * s, bottom_y, options, TEXT_SCALE * s, [1.0, 0.9, 0.5, 1.0]);
         } else if self.fully_typed() && (time * 2.2).sin() > 0.0 {
             // 다 나온 평범한 줄이면 깜빡이는 화살표로 "아무 키나 눌러 계속" 신호.
             r.text(x + w - 30.0 * s, bottom_y, "v", TEXT_SCALE * s, [0.8, 0.8, 0.85, 1.0]);

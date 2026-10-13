@@ -396,7 +396,7 @@ impl DesktopScene {
         }
         self.refresh_mail_if_open(settings);
         let lang = settings.borrow().language;
-        self.toast = Some(Toast::new_mail(mail_from(id), mail_subject(id, lang)));
+        self.toast = Some(Toast::new_mail(mail_from(id, lang), mail_subject(id, lang)));
         self.toast_timer = TOAST_DURATION;
         self.write_save(settings);
     }
@@ -1341,6 +1341,7 @@ impl Scene for DesktopScene {
                 DeskAction::FlowerAbsenceChecked => self.deliver_mail(MailId::Flower, &f.settings),
                 // 문 게임에서 편지를 우편함에 넣음 — 같은 내용의 편지 메일이 도착한다(시트 오른쪽 표).
                 DeskAction::LetterSent => self.deliver_mail(MailId::Letter, &f.settings),
+                DeskAction::DeliverMail(id) => self.deliver_mail(id, &f.settings),
                 // 창 안 게임의 진행 상황이 바뀌었다 — fs 에 기록하고 즉시 저장해서 창을 닫았다 다시 열어도 이어진다.
                 DeskAction::SaveDoors(p) => {
                     self.fs.doors_progress = p;
@@ -1352,7 +1353,22 @@ impl Scene for DesktopScene {
                 }
                 // 설치 마법사 진행바가 다 찬 순간 한 번 온다 — 설치 완료를 기록하고
                 // 바탕화면에 게임 아이콘을 만든다(마법사 창은 Finish 로 사용자가 닫는다).
-                DeskAction::InstallComplete => {
+                DeskAction::InstallComplete(Some(kind)) => {
+                    // 미니게임 설치 — AppData\<게임 이름>\ 폴더가 생기고 바탕화면에 그 게임 아이콘이 생긴다.
+                    let i = kind.index();
+                    if !self.fs.mini_installed[i] {
+                        self.fs.mini_installed[i] = true;
+                        crate::gamefiles::install_mini(&mut self.fs, kind);
+                        self.refresh_explorer_if_open(&f.settings);
+                        self.add_desktop_icon(kind.exe_name(), FileKind::MiniGame(kind));
+                    }
+                    self.write_save(&f.settings);
+                }
+                DeskAction::SaveMini(kind, p) => {
+                    self.fs.minis[kind.index()] = p;
+                    self.write_save(&f.settings);
+                }
+                DeskAction::InstallComplete(None) => {
                     if !self.fs.game_installed {
                         self.fs.game_installed = true;
                         // 게임 안 File Explorer 의 AppData\test\ 에 게임 파일(소스/이미지/사운드)이
@@ -1586,6 +1602,10 @@ impl Scene for DesktopScene {
         // 문(도어즈)의 편지 메일을 읽었는지 매 프레임 최신 값을 게임에 알려준다 — 문 게임이 일시
         // 정지에서 풀리는 조건이다(signals.rs).
         crate::signals::set_letter_mail_read(self.fs.is_mail_read(MailId::Letter));
+        for kind in crate::foundation::MiniKind::ALL {
+            crate::signals::set_reward_downloaded(kind.index(), self.fs.reward_downloaded(kind));
+        }
+        crate::signals::set_flower_downloaded(self.fs.flower_image.is_some_and(|id| self.fs.ever_downloaded.contains(&id)));
         // 씨앗을 심은 뒤 잠깐 있다가 시간 힌트 메일(시트 SUB A+a-15 의 메일 가이딩)이 온다.
         if self.fs.seed_planted && !self.fs.has_mail(MailId::Hint) {
             self.hint_timer += f.dt;

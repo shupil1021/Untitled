@@ -166,8 +166,83 @@ pub mod mail {
     };
 
     // 네 번째 메일 — 꽃을 보낸 뒤 꽃 사진이 첨부돼 온다.
-    pub const PHOTO_MAIL_SUBJECT: S = S { en: "a flower", ko: "꽃", ja: "花" };
-    pub const PHOTO_MAIL_BODY: S = S { en: "I got the flower.\nThank you.", ko: "꽃을 받았어.\n고마워.", ja: "花を受け取ったよ。\nありがとう。" };
+    pub const PHOTO_MAIL_SUBJECT: S = S { en: "Delivered", ko: "배송 완료", ja: "配送完了" };
+    pub const PHOTO_MAIL_BODY: S = S {
+        en: "I got the flower. Now go back to your game.",
+        ko: "꽃을 받았어. 이제 그쪽 게임으로 돌아가.",
+        ja: "花を受け取ったよ。さあ、そっちのゲームに戻って。",
+    };
+
+    // 미니게임 보내는 사람(시트의 "메일 가이딩" 발신자) — 이름이 언어별로 다르다.
+    pub const FROM_EYE: S = S { en: "Blinky", ko: "깜빡이", ja: "まばたき" };
+    pub const FROM_BRAIN: S = S { en: "Detour", ko: "우회로", ja: "うかいろ" };
+    pub const FROM_FINGER: S = S { en: "Packing Clerk", ko: "포장 담당자", ja: "梱包の担当者" };
+
+    // 2층 정글에 처음 나왔을 때(MAIN B-1).
+    pub const OUTSIDE_MAIL_SUBJECT: S = S { en: "Outside?", ko: "밖이라고?", ja: "外だって?" };
+    pub const OUTSIDE_MAIL_BODY: S = S {
+        en: "There are four doors. Counting the one you came out of, five.",
+        ko: "문은 네 개야. 네가 나온 문까지 세면 다섯 개.",
+        ja: "ドアは四つある。きみが出てきたドアまで数えれば五つだ。",
+    };
+
+    // 소파 NPC 의 재료 의뢰를 수락했을 때(MAIN B-3).
+    pub const SHOPPING_MAIL_SUBJECT: S = S { en: "Shopping list", ko: "장보기 목록", ja: "買い物リスト" };
+    pub const SHOPPING_MAIL_BODY: S = S {
+        en: "One for seeing, one for thinking, one for holding. In whatever order you like.",
+        ko: "보는 것 하나, 생각하는 것 하나, 붙잡는 것 하나. 순서는 네 마음대로.",
+        ja: "見るもの一つ、考えるもの一つ、つかむもの一つ。順番は好きにしていい。",
+    };
+
+    // 눈의 방 — 탄막 게임(SHY_EYE).
+    pub const EYE_TASK_SUBJECT: S = S { en: "Dodge the eyes", ko: "눈을 피해", ja: "目を避けて" };
+    pub const EYE_TASK_BODY: S = S {
+        en: "Just hold out for 30 seconds. When it's over, put the reward in the mailbox.",
+        ko: "30초만 버텨. 끝나면 보상을 우체통에 넣어.",
+        ja: "30秒だけ耐えて。終わったら、報酬をポストに入れて。",
+    };
+    pub const EYE_REWARD_SUBJECT: S = S { en: "You didn't blink", ko: "안 깜빡였네", ja: "まばたきしなかったね" };
+    pub const EYE_REWARD_BODY: S = S {
+        en: "That eye is yours now. Go back to the game you came from.",
+        ko: "그 눈은 이제 네 것이야. 원래 있던 게임으로 돌아가.",
+        ja: "その目はもうきみのものだ。もといたゲームに戻って。",
+    };
+
+    // 뇌의 방 — 레이싱 게임(BRAIN_DRIVE).
+    pub const BRAIN_TASK_SUBJECT: S = S { en: "The road home", ko: "집으로 가는 길", ja: "家へ帰る道" };
+    pub const BRAIN_TASK_BODY: S = S {
+        en: "1,000 meters in 60 seconds. Dodge left and right, and brake if it gets dangerous.",
+        ko: "60초 안에 1,000미터. 좌우로 피하고, 위험하면 브레이크를 눌러.",
+        ja: "60秒で1,000メートル。左右によけて、危なかったらブレーキを踏んで。",
+    };
+    pub const BRAIN_REWARD_SUBJECT: S = S { en: "Did you arrive?", ko: "도착했어?", ja: "着いた?" };
+    pub const BRAIN_REWARD_BODY: S = S {
+        en: "The road is over. Take what remains with you.",
+        ko: "길은 끝났어. 남은 것은 네가 가져가.",
+        ja: "道は終わった。残ったものは、きみが持っていって。",
+    };
+
+    // 손가락의 방 — 포장 리듬 게임(PACK).
+    pub const FINGER_TASK_SUBJECT: S = S { en: "A hand for the customer", ko: "손님 대신 손", ja: "お客さんの代わりに手" };
+    pub const FINGER_TASK_BODY: S = S {
+        en: "Press when the box touches the line. Eight out of twelve is enough.",
+        ko: "상자가 선에 닿으면 눌러. 열두 번 중 여덟 번이면 충분해.",
+        ja: "箱が線に触れたら押して。十二回のうち八回で十分だよ。",
+    };
+    pub const FINGER_REWARD_SUBJECT: S = S { en: "Today's pay", ko: "오늘의 급여", ja: "今日の給料" };
+    pub const FINGER_REWARD_BODY: S = S {
+        en: "This hand has nothing left to do. Please take it on your side.",
+        ko: "이 손은 이제 할 일이 없어. 그쪽에서 받아 줘.",
+        ja: "この手はもうやることがない。そっちで受け取って。",
+    };
+
+    // Mr. POTATO CHIP 을 받았을 때(MAIN C-2).
+    pub const MEAL_MAIL_SUBJECT: S = S { en: "Mealtime", ko: "식사 준비", ja: "食事の支度" };
+    pub const MEAL_MAIL_BODY: S = S {
+        en: "The stairs are waiting. This time, bring something to eat.",
+        ko: "계단이 기다리고 있어. 이번에는 먹을 것을 가져가.",
+        ja: "階段が待っている。今度は食べ物を持っていって。",
+    };
 
     pub const FOLDER_INBOX: S = S { en: "Inbox", ko: "받은편지함", ja: "受信トレイ" };
     pub const FOLDER_SENT: S = S { en: "Sent Items", ko: "보낸편지함", ja: "送信済みアイテム" };
@@ -296,4 +371,66 @@ pub mod credits {
     use super::S;
     pub const TITLE: S = S { en: "Credits", ko: "크레딧", ja: "クレジット" };
     pub const DEVELOPERS: S = S { en: "Developers", ko: "개발자", ja: "開発者" };
+}
+
+// apps/minigame — 눈/뇌/손가락의 방에서 받는 2D 미니게임(SHY_EYE / BRAIN_DRIVE / PACK).
+pub mod minigame {
+    use super::S;
+
+    pub const START: S = S { en: "START", ko: "START", ja: "START" };
+    pub const RETRY: S = S { en: "RETRY", ko: "RETRY", ja: "RETRY" };
+    pub const CLEAR: S = S { en: "CLEAR!", ko: "CLEAR!", ja: "CLEAR!" };
+    pub const FAILED: S = S { en: "FAILED", ko: "FAILED", ja: "FAILED" };
+    pub const LIVES: S = S { en: "LIVES", ko: "생명", ja: "ライフ" };
+    pub const TIME: S = S { en: "TIME", ko: "시간", ja: "時間" };
+    pub const DISTANCE: S = S { en: "DIST", ko: "거리", ja: "距離" };
+    pub const CRASHES: S = S { en: "CRASH", ko: "충돌", ja: "衝突" };
+    pub const PRACTICE: S = S { en: "PRACTICE", ko: "연습", ja: "練習" };
+    pub const BOXES: S = S { en: "BOX", ko: "상자", ja: "箱" };
+    pub const PACK_BUTTON: S = S { en: "PACK!", ko: "포장!", ja: "梱包!" };
+    pub const READY: S = S { en: "Practice done. Press START (or Space).", ko: "연습 끝. START(또는 Space)를 눌러 시작.", ja: "練習終了。START(またはSpace)で開始。" };
+
+    pub const EYE_INTRO: [S; 3] = [
+        S { en: "WASD / arrow keys: move", ko: "WASD / 방향키로 이동", ja: "WASD / 矢印キーで移動" },
+        S { en: "3 lives. Survive 30 seconds.", ko: "생명 3개. 30초 동안 살아남아라.", ja: "ライフ3。30秒間生き残れ。" },
+        S { en: "No attacks. Just dodge.", ko: "공격은 없다. 피하기만 하면 된다.", ja: "攻撃はない。よけるだけ。" },
+    ];
+    pub const DRIVE_INTRO: [S; 3] = [
+        S { en: "A / D or arrows: change lane", ko: "A·D 또는 방향키: 차선 변경", ja: "A·D または矢印キー: 車線変更" },
+        S { en: "S or Down: brake", ko: "S 또는 아래 키: 브레이크", ja: "S または下キー: ブレーキ" },
+        S { en: "1,000 m in 60 s. 3 crashes and it's over.", ko: "60초 안에 1,000m. 충돌 3번이면 실패.", ja: "60秒で1,000m。3回衝突したら失敗。" },
+    ];
+    pub const PACK_INTRO: [S; 3] = [
+        S { en: "Space or the button when the box touches the line", ko: "상자가 선에 닿을 때 Space 또는 버튼", ja: "箱が線に触れたらSpaceまたはボタン" },
+        S { en: "3 practice boxes, then 12 for real.", ko: "연습 3번, 그다음 본 작업 12개.", ja: "練習3回、そのあと本番12個。" },
+        S { en: "8 or more passes.", ko: "8개 이상 맞추면 합격.", ja: "8個以上成功で合格。" },
+    ];
+
+    pub const EYE_HINT: S = S {
+        en: "Don't run far. Slip into the nearest gap. You're briefly invincible right after a hit.",
+        ko: "멀리 뛰지 말고 가까운 틈으로 움직여. 맞은 직후에는 잠깐 무적이야.",
+        ja: "遠くへ走らないで。近くの隙間へ動いて。当たった直後は少しの間無敵だよ。",
+    };
+    pub const DRIVE_HINT: S = S {
+        en: "If it's blocked ahead, take the next lane. Braking for long just makes you late.",
+        ko: "앞이 막히면 옆 차선으로 가. 브레이크를 오래 누르면 도착이 늦어져.",
+        ja: "前がふさがっていたら隣の車線へ。ブレーキを長く踏むと到着が遅れるよ。",
+    };
+    pub const PACK_HINT: S = S {
+        en: "Press once when the circle overlaps the line. You can mute the sound and just watch the line.",
+        ko: "원과 판정선이 겹칠 때 한 번 눌러. 소리를 끄고 선만 봐도 돼.",
+        ja: "円と判定線が重なったときに一度押して。音を消して線だけ見てもいいよ。",
+    };
+
+    pub const REWARD_OPEN: S = S { en: "Open the reward box.", ko: "보상 상자를 열어 보자.", ja: "報酬の箱を開けてみよう。" };
+    pub const REWARD_MAIL: S = S { en: "Put it in the mailbox.", ko: "우체통에 넣자.", ja: "ポストに入れよう。" };
+    pub const REWARD_SENT: S = S {
+        en: "Sent. Close this window and go back to the game.",
+        ko: "보냈다. 이 창을 닫고 원래 게임으로 돌아가자.",
+        ja: "送った。このウィンドウを閉じて元のゲームに戻ろう。",
+    };
+    pub const ITEM_EYE: S = S { en: "Bloodshot eye", ko: "충혈된 눈", ja: "充血した目" };
+    pub const ITEM_BRAIN: S = S { en: "Worn-out brain", ko: "짓무른 뇌", ja: "ただれた脳" };
+    pub const ITEM_FINGER: S = S { en: "Severed finger", ko: "절단된 손가락", ja: "切断された指" };
+    pub const GOT_ITEM: S = S { en: "You got:", ko: "얻었다:", ja: "手に入れた:" };
 }

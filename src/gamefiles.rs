@@ -7,7 +7,7 @@
 //! 이야기 단서를 숨겨둔 연출용 소품이다(ARG). 이미지/사운드는 이진 에셋을 따로 두지 않고
 //! 코드로 만들어낸다(이미지는 시작할 때 Assets 가, 사운드는 열 때 플레이어가 만든다).
 
-use crate::foundation::{FileId, FileKind, FileSystem, GAME_FOLDER_NAME};
+use crate::foundation::{FileId, FileKind, FileSystem, MiniKind, GAME_FOLDER_NAME};
 use crate::random::Rng;
 
 // 파일 하나의 내용 종류. Image/Sound 의 숫자는 IMAGE_NAMES/SOUND_NAMES 의 순서와 같다.
@@ -209,8 +209,119 @@ pub fn plant(seed: Seed, pot: &mut Pot) {\r\n\
 
 // IMAGE_NAMES 순서대로 — Assets::load 가 이 순서로 photos 에 올리므로 FileKind::Img(i) 의
 // i 가 그대로 이 목록의 인덱스다.
-pub fn generated_images() -> [image::RgbaImage; 4] {
-    [door_image(), flower_pot_image(), static_image(), flower_image()]
+pub fn generated_images() -> [image::RgbaImage; 7] {
+    [door_image(), flower_pot_image(), static_image(), flower_image(), eye_image(), brain_image(), finger_image()]
+}
+
+// 미니게임 보상 사진 셋(충혈된 눈 / 짓무른 뇌 / 절단된 손가락)이 생성 이미지 목록에서 시작하는 인덱스 —
+// MiniKind::image_index() 가 여기에 MiniKind::index() 를 더한다.
+pub const REWARD_IMAGE_BASE: usize = 4;
+
+// 충혈된 눈 — 붉게 물든 흰자에 핏줄, 갈색 홍채와 까만 동공.
+fn eye_image() -> image::RgbaImage {
+    let (w, h) = (64u32, 48u32);
+    image::RgbaImage::from_fn(w, h, |x, y| {
+        let (dx, dy) = (x as f32 - 32.0, y as f32 - 24.0);
+        let inside = (dx / 28.0).powi(2) + (dy / 17.0).powi(2) < 1.0;
+        if !inside {
+            return image::Rgba([12, 12, 14, 255]);
+        }
+        let r = (dx * dx + dy * dy).sqrt();
+        if r < 4.5 {
+            return image::Rgba([8, 0, 0, 255]);
+        }
+        if r < 11.0 {
+            let ring = if r > 9.0 { [60, 26, 20] } else { [112, 56, 36] };
+            return image::Rgba([ring[0], ring[1], ring[2], 255]);
+        }
+        // 흰자 — 가장자리로 갈수록 더 붉고, 안쪽에서 퍼지는 핏줄.
+        let edge = ((dx / 28.0).powi(2) + (dy / 17.0).powi(2)).clamp(0.0, 1.0);
+        let vein = ((dy.atan2(dx) * 9.0 + r * 0.45).sin()).abs() < 0.1 && r > 12.0;
+        if vein {
+            image::Rgba([186, 28, 30, 255])
+        } else {
+            let red = 232.0 - 40.0 * edge;
+            image::Rgba([red as u8, (212.0 - 92.0 * edge) as u8, (206.0 - 100.0 * edge) as u8, 255])
+        }
+    })
+}
+
+// 짓무른 뇌 — 주름 잡힌 분홍 덩어리에 거뭇하게 곪은 얼룩.
+fn brain_image() -> image::RgbaImage {
+    let mut rng = Rng::new(0xB4A1);
+    let spots: Vec<(f32, f32, f32)> = (0..7).map(|_| (14.0 + rng.unit() * 28.0, 14.0 + rng.unit() * 24.0, 2.5 + rng.unit() * 3.5)).collect();
+    image::RgbaImage::from_fn(56, 56, |x, y| {
+        let (fx, fy) = (x as f32, y as f32);
+        let (dx, dy) = (fx - 28.0, fy - 26.0);
+        let blob = (dx / 23.0).powi(2) + (dy / 19.0).powi(2) < 1.0;
+        let stem = (25..31).contains(&x) && (42..53).contains(&y);
+        if !blob && !stem {
+            return image::Rgba([12, 12, 14, 255]);
+        }
+        if stem && !blob {
+            return image::Rgba([170, 120, 125, 255]);
+        }
+        if spots.iter().any(|&(sx, sy, sr)| ((fx - sx).powi(2) + (fy - sy).powi(2)).sqrt() < sr) {
+            return image::Rgba([102, 104, 62, 255]); // 짓무른 곳
+        }
+        let fold = ((fx * 0.55 + (fy * 0.45).sin() * 2.4).sin()) > 0.82 || (dx.abs() < 1.2 && dy < 6.0);
+        if fold {
+            image::Rgba([150, 88, 104, 255])
+        } else {
+            let shade = 1.0 - (dx * dx / 700.0 + dy * dy / 520.0) * 0.25;
+            image::Rgba([(214.0 * shade) as u8, (154.0 * shade) as u8, (166.0 * shade) as u8, 255])
+        }
+    })
+}
+
+// 절단된 손가락 — 손톱이 있는 살색 원통, 잘린 쪽은 붉은 단면과 하얀 뼈.
+fn finger_image() -> image::RgbaImage {
+    image::RgbaImage::from_fn(32, 64, |x, y| {
+        let body = (11..21).contains(&x) && (6..55).contains(&y);
+        let tip = (11..21).contains(&x) && (4..8).contains(&y) && !((11..13).contains(&x) && y < 6) && !((19..21).contains(&x) && y < 6);
+        if !(body || tip) {
+            return image::Rgba([12, 12, 14, 255]);
+        }
+        if y >= 49 {
+            // 잘린 단면 — 가운데 뼈, 둘레는 붉은 살.
+            return if (14..18).contains(&x) && (50..54).contains(&y) { image::Rgba([232, 226, 210, 255]) } else { image::Rgba([150, 22, 24, 255]) };
+        }
+        if (11..21).contains(&x) && (8..17).contains(&y) {
+            return image::Rgba([246, 214, 200, 255]); // 손톱
+        }
+        // 가운데가 밝고 가장자리가 어두운 원통 음영 + 마디 주름.
+        let t = (x as f32 - 15.5).abs() / 5.0;
+        let knuckle = (31..33).contains(&y);
+        let k = 1.0 - 0.28 * t - if knuckle { 0.12 } else { 0.0 };
+        image::Rgba([(236.0 * k) as u8, (190.0 * k) as u8, (160.0 * k) as u8, 255])
+    })
+}
+
+// 설치한 미니게임의 폴더 — AppData\<게임 이름>\ 에 설정 파일과 안내문이 들어간다(연출용).
+pub fn install_mini(fs: &mut FileSystem, kind: MiniKind) {
+    let appdata = fs.ensure_appdata();
+    if child_named(fs, appdata, kind.app_name()).is_some() {
+        return;
+    }
+    let root = new_folder(fs, appdata, kind.app_name());
+    let (readme, cfg): (&str, &str) = match kind {
+        MiniKind::Eye => (
+            "SHY_EYE\n\n- WASD / arrow keys: move\n- 3 lives, survive 30 seconds\n- No attacks. Just don't be seen.\n",
+            "[shy_eye]\nlives=3\nduration=30\ninvuln_after_hit=1.0\nbackground_eye=closed_when_cleared\n",
+        ),
+        MiniKind::Brain => (
+            "BRAIN_DRIVE\n\n- A / D / arrows: change lane\n- S / down: brake\n- 1000m in 60 seconds, 3 crashes and you stop\n",
+            "[brain_drive]\nlanes=3\ngoal_m=1000\nlimit_s=60\nspeed=20\nbrake_speed=10\nsign_destination=home\n",
+        ),
+        MiniKind::Finger => (
+            "PACK\n\n- Space / button: pack the box when it touches the line\n- 12 boxes, 8 or more to pass\n- Holding the button counts once.\n",
+            "[pack]\nboxes=12\npass=8\nwindow_s=0.25\npractice_rounds=3\n",
+        ),
+    };
+    for (name, text) in [("README.txt", readme), ("config.ini", cfg)] {
+        let id = fs.add(name, FileKind::Txt(text.to_string()));
+        fs.add_to_folder(root, id);
+    }
 }
 
 // 네 번째 이미지(FileKind::Img(FLOWER_IMAGE)) — 게임 폴더 파일이 아니라, 서브 게임에서 보낸
@@ -413,5 +524,28 @@ mod tests {
             assert_eq!(bytes.len(), 44 + data_len);
             assert!(wav_duration(&bytes) > 1.0);
         }
+    }
+
+    // 미니게임 보상 사진(충혈된 눈 / 짓무른 뇌 / 절단된 손가락)은 생성 이미지 목록 안의 올바른 자리에 있다.
+    #[test]
+    fn reward_images_are_in_the_generated_table() {
+        let images = generated_images();
+        for kind in MiniKind::ALL {
+            assert!(kind.image_index() < images.len(), "{kind:?}");
+            assert!(images[kind.image_index()].pixels().any(|p| p.0 != [12, 12, 14, 255]), "{kind:?}: 배경만 있는 빈 그림이다");
+        }
+    }
+
+    // 미니게임을 설치하면 AppData 아래 그 게임 폴더가 생기고 두 번 설치해도 늘어나지 않는다.
+    #[test]
+    fn installing_a_minigame_creates_its_folder_once() {
+        let mut fs = FileSystem::new();
+        install_mini(&mut fs, MiniKind::Brain);
+        let appdata = fs.find_by_name("AppData").unwrap();
+        let root = child_named(&fs, appdata, "BRAIN_DRIVE").expect("게임 폴더");
+        assert!(child_named(&fs, root, "README.txt").is_some() && child_named(&fs, root, "config.ini").is_some());
+        let nodes = fs.all_of_kind(|_| true).len();
+        install_mini(&mut fs, MiniKind::Brain);
+        assert_eq!(fs.all_of_kind(|_| true).len(), nodes);
     }
 }

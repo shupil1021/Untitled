@@ -3,7 +3,7 @@
 use miniquad::RenderingBackend;
 
 use crate::apps::{App, AppAction, DragGhost, MoveDest, Opened, WinInput};
-use crate::foundation::{DoorsProgress, FileId, MazeProgress};
+use crate::foundation::{DoorsProgress, FileId, MailId, MazeProgress, MiniKind, MiniProgress};
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::scenes::Input;
 use crate::ui::*;
@@ -62,13 +62,15 @@ pub enum DeskAction {
     MarkMailRead(usize),
     Restore(Vec<FileId>),
     SendNewMail { to: String, subject: String, body: String, attachments: Vec<(FileId, String)> },
-    InstallComplete,
+    InstallComplete(Option<MiniKind>),
     FlowerAbsenceChecked,
     LetterSent,
     SaveDoors(DoorsProgress),
     SaveMaze(MazeProgress),
     SeedPlanted,
     FlowerSent,
+    DeliverMail(MailId),
+    SaveMini(MiniKind, MiniProgress),
 }
 
 // 창 관리자에 넘기는 입력 상태.
@@ -498,13 +500,15 @@ impl WindowManager {
                     actions.push(DeskAction::SendNewMail { to, subject, body, attachments })
                 }
                 AppAction::Restore(ids) => actions.push(DeskAction::Restore(ids)),
-                AppAction::InstallComplete => actions.push(DeskAction::InstallComplete),
+                AppAction::InstallComplete(k) => actions.push(DeskAction::InstallComplete(k)),
                 AppAction::FlowerAbsenceChecked => actions.push(DeskAction::FlowerAbsenceChecked),
                 AppAction::LetterSent => actions.push(DeskAction::LetterSent),
                 AppAction::SaveDoors(p) => actions.push(DeskAction::SaveDoors(p)),
                 AppAction::SaveMaze(p) => actions.push(DeskAction::SaveMaze(p)),
                 AppAction::SeedPlanted => actions.push(DeskAction::SeedPlanted),
                 AppAction::FlowerSent => actions.push(DeskAction::FlowerSent),
+                AppAction::DeliverMail(id) => actions.push(DeskAction::DeliverMail(id)),
+                AppAction::SaveMini(k, p) => actions.push(DeskAction::SaveMini(k, p)),
             }
         }
 
