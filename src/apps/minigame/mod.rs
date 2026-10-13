@@ -116,6 +116,10 @@ impl MiniGameApp {
     }
 
     fn controls(&self, win: &WinInput, pack_button: Rect) -> Controls {
+        // 다른 창이 앞에 있을 땐 키 입력이 이 게임에 들어오지 않는다(뒤에서 누른 키가 판정되던 문제).
+        if !win.focused {
+            return Controls::default();
+        }
         let i = win.input;
         let (left, right) = (i.is_down(KeyCode::A) || i.is_down(KeyCode::Left), i.is_down(KeyCode::D) || i.is_down(KeyCode::Right));
         let (up, down) = (i.is_down(KeyCode::W) || i.is_down(KeyCode::Up), i.is_down(KeyCode::S) || i.is_down(KeyCode::Down));

@@ -1,6 +1,7 @@
 //! PACK — 손가락의 방에서 받는 포장 리듬 게임(시트 SUB B+c-1 ~ 5). 상자가 컨베이어를 타고 판정선에
 //! 닿을 때 Space/버튼을 한 번 누른다. 채점 없는 연습 3번 → START → 본 작업 12개(판정선 ±0.25초 안에
 //! 누르면 성공 1회) → 8개 이상이면 합격. 버튼을 길게 눌러도 1회로만 센다(입력은 눌린 순간만 본다).
+//! 판정 구간 밖에서 성급하게/늦게 누르면(구간의 0.6초 안) 그 상자는 실패다 — 마구 연타로는 못 깬다.
 
 use super::{Controls, Outcome};
 
@@ -8,6 +9,7 @@ pub const PRACTICE_N: usize = 3;
 pub const WORK_N: usize = 12;
 pub const PASS_AT: usize = 8;
 pub const WINDOW: f32 = 0.25;
+const MISFIRE: f32 = 0.6; // 판정 구간 밖이어도 이 안에서 누르면 가장 가까운 상자가 실패
 pub const TRAVEL: f32 = 2.0; // 상자가 나타나서 판정선에 닿기까지(초)
 const GAP: f32 = 1.1; // 상자 간격(초)
 const FIRST_AT: f32 = 1.6;
@@ -57,6 +59,13 @@ impl PackRound {
                     let t = self.t;
                     if let Some(b) = self.crates.iter_mut().find(|b| b.result.is_none() && (t - b.arrive).abs() <= WINDOW) {
                         b.result = Some(true);
+                    } else if let Some(b) = self
+                        .crates
+                        .iter_mut()
+                        .filter(|b| b.result.is_none() && (t - b.arrive).abs() <= MISFIRE)
+                        .min_by(|a, b| (t - a.arrive).abs().total_cmp(&(t - b.arrive).abs()))
+                    {
+                        b.result = Some(false); // 성급하게 눌러 놓친 상자
                     }
                 }
                 let t = self.t;
@@ -143,6 +152,31 @@ mod tests {
     fn timing_window_is_a_quarter_second_each_side() {
         let (r, _) = play(&[Some(0.2), Some(-0.2), Some(0.4), Some(-0.4)]);
         assert_eq!(r.hits(), 2, "±0.25초 밖에서 누르면 실패");
+    }
+
+    // 마구 연타하면 구간 밖에서 누른 것이 상자를 망쳐 합격 못 한다.
+    #[test]
+    fn mashing_the_button_does_not_pass() {
+        let mut r = PackRound::new();
+        while r.phase == Phase::Practice {
+            r.step(0.01, &Controls::default());
+        }
+        r.step(0.01, &press());
+        let mut acc = 0.0;
+        let mut out = Outcome::Running;
+        for _ in 0..100_000 {
+            acc += 0.005;
+            let act = acc >= 0.1;
+            if act {
+                acc = 0.0;
+            }
+            out = r.step(0.005, &Controls { act, ..Controls::default() });
+            if r.phase == Phase::Done {
+                out = r.step(0.005, &Controls::default());
+                break;
+            }
+        }
+        assert!(matches!(out, Outcome::Lost), "hits={}", r.hits());
     }
 
     #[test]

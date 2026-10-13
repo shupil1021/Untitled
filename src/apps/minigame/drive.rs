@@ -12,6 +12,7 @@ pub const MAX_CRASHES: u32 = 3;
 const SPEED: f32 = 20.0; // m/s
 const BRAKE_SPEED: f32 = 10.0;
 const STUN_SECS: f32 = 2.0;
+const LANE_COOLDOWN: f32 = 0.3; // 차선을 바꾼 뒤 다음 변경까지(한 번에 두 칸을 휙 못 건넌다)
 const HIT_AHEAD: f32 = 1.2; // 같은 차선에서 앞쪽으로 이 거리 안이면 충돌
 const HIT_BEHIND: f32 = 0.4; // 이미 거의 지나친 장애물은 (차선을 바꿔 들어와도) 거의 안 부딪힌다
 const VIEW_AHEAD: f32 = 45.0; // 이만큼 앞까지 미리 깔아 둔다
@@ -31,12 +32,13 @@ pub struct DriveRound {
     stun: f32,
     pub obstacles: Vec<Obstacle>,
     next_row: f32,
+    cooldown: f32,
     rng: Rng,
 }
 
 impl DriveRound {
     pub fn new(rng: Rng) -> DriveRound {
-        DriveRound { t: 0.0, dist: 0.0, lane: 1, lane_pos: 1.0, crashes: 0, stun: 0.0, obstacles: Vec::new(), next_row: 40.0, rng }
+        DriveRound { t: 0.0, dist: 0.0, lane: 1, lane_pos: 1.0, crashes: 0, stun: 0.0, obstacles: Vec::new(), next_row: 40.0, cooldown: 0.0, rng }
     }
 
     pub fn time(&self) -> f32 {
@@ -56,21 +58,25 @@ impl DriveRound {
         while self.next_row < self.dist + VIEW_AHEAD && self.next_row < GOAL_M + 10.0 {
             let free = (self.rng.next_u32() % 3) as usize;
             for lane in 0..3 {
-                if lane != free && self.rng.unit() < 0.6 {
+                if lane != free && self.rng.unit() < 0.7 {
                     self.obstacles.push(Obstacle { lane, s: self.next_row });
                 }
             }
-            self.next_row += self.rng.range_f32(14.0, 24.0);
+            self.next_row += self.rng.range_f32(8.0, 14.0);
         }
     }
 
     pub fn step(&mut self, dt: f32, c: &Controls) -> Outcome {
         self.t += dt;
-        if c.lane_left && self.lane > 0 {
-            self.lane -= 1;
-        }
-        if c.lane_right && self.lane < 2 {
-            self.lane += 1;
+        self.cooldown = (self.cooldown - dt).max(0.0);
+        if self.cooldown <= 0.0 {
+            if c.lane_left && self.lane > 0 {
+                self.lane -= 1;
+                self.cooldown = LANE_COOLDOWN;
+            } else if c.lane_right && self.lane < 2 {
+                self.lane += 1;
+                self.cooldown = LANE_COOLDOWN;
+            }
         }
         // 화면용 차선 위치는 목표를 향해 빠르게 따라간다.
         let target = self.lane as f32;
@@ -180,5 +186,46 @@ mod tests {
         slow.step(1.0, &Controls { brake: true, ..Controls::default() });
         fast.step(1.0, &Controls::default());
         assert!((slow.dist - 10.0).abs() < 1e-3 && (fast.dist - 20.0).abs() < 1e-3);
+    }
+
+    // 장애물이 가까워진(look 미터 안) 뒤에야 피하는 봇이 몇 판 중 몇 판 이기는지.
+    fn win_rate(look: f32, brake_when_blocked: bool) -> usize {
+        (1..=40u64)
+            .filter(|&seed| {
+                let mut r = DriveRound::new(Rng::new(seed));
+                let mut out = Outcome::Running;
+                for _ in 0..(LIMIT_SECS / 0.016) as usize + 5 {
+                    let next = r.obstacles.iter().filter(|o| o.s > r.dist).map(|o| o.s).fold(f32::MAX, f32::min);
+                    let blocked = |lane: usize| r.obstacles.iter().any(|o| o.lane == lane && (o.s - next).abs() < 0.1);
+                    let near = |lane: usize| r.obstacles.iter().any(|o| o.lane == lane && (-1.0..2.0).contains(&(o.s - r.dist)));
+                    let mut c = Controls::default();
+                    if next - r.dist < look && blocked(r.lane) {
+                        let free = (0..3).find(|&l| !blocked(l)).unwrap();
+                        if free < r.lane && !near(r.lane - 1) {
+                            c.lane_left = true;
+                        } else if free > r.lane && !near(r.lane + 1) {
+                            c.lane_right = true;
+                        }
+                        c.brake = brake_when_blocked;
+                    }
+                    out = r.step(0.016, &c);
+                    if !matches!(out, Outcome::Running) {
+                        break;
+                    }
+                }
+                matches!(out, Outcome::Won)
+            })
+            .count()
+    }
+
+    // 미리 보고 피하면 이기고, 늦게 반응하면 지지만, 늦더라도 브레이크로 시간을 벌면 다시 이길 수 있다.
+    #[test]
+    fn difficulty_rewards_planning_and_braking() {
+        let careful = win_rate(24.0, false);
+        let late = win_rate(7.0, false);
+        let late_braking = win_rate(8.0, true);
+        assert!(careful >= 32, "미리 보고 피하면 대부분 이긴다: {careful}/40");
+        assert!(late <= 12, "늦게 반응하면 자주 진다: {late}/40");
+        assert!(late_braking >= 32, "브레이크로 시간을 벌면 이길 수 있다: {late_braking}/40");
     }
 }
