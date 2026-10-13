@@ -211,9 +211,9 @@ pub mod mail {
     // 뇌의 방 — 레이싱 게임(BRAIN_DRIVE).
     pub const BRAIN_TASK_SUBJECT: S = S { en: "The road home", ko: "집으로 가는 길", ja: "家へ帰る道" };
     pub const BRAIN_TASK_BODY: S = S {
-        en: "1,000 meters in 60 seconds. Dodge left and right, and brake if it gets dangerous.",
-        ko: "60초 안에 1,000미터. 좌우로 피하고, 위험하면 브레이크를 눌러.",
-        ja: "60秒で1,000メートル。左右によけて、危なかったらブレーキを踏んで。",
+        en: "Be the first one home. Drift through the corners.",
+        ko: "가장 먼저 집에 도착해. 코너에서는 드리프트를 써.",
+        ja: "一番に家に着いて。コーナーではドリフトを使って。",
     };
     pub const BRAIN_REWARD_SUBJECT: S = S { en: "Did you arrive?", ko: "도착했어?", ja: "着いた?" };
     pub const BRAIN_REWARD_BODY: S = S {
@@ -225,9 +225,9 @@ pub mod mail {
     // 손가락의 방 — 포장 리듬 게임(PACK).
     pub const FINGER_TASK_SUBJECT: S = S { en: "A hand for the customer", ko: "손님 대신 손", ja: "お客さんの代わりに手" };
     pub const FINGER_TASK_BODY: S = S {
-        en: "Press when the box touches the line. Eight out of twelve is enough.",
-        ko: "상자가 선에 닿으면 눌러. 열두 번 중 여덟 번이면 충분해.",
-        ja: "箱が線に触れたら押して。十二回のうち八回で十分だよ。",
+        en: "Press when the box sits right on the bar. Eight out of twelve is enough.",
+        ko: "상자가 선에 정확히 걸치면 눌러. 열두 번 중 여덟 번이면 충분해.",
+        ja: "箱が線にぴったり重なったら押して。十二回のうち八回で十分だよ。",
     };
     pub const FINGER_REWARD_SUBJECT: S = S { en: "Today's pay", ko: "오늘의 급여", ja: "今日の給料" };
     pub const FINGER_REWARD_BODY: S = S {
@@ -396,12 +396,12 @@ pub mod minigame {
         S { en: "No attacks. Just dodge.", ko: "공격은 없다. 피하기만 하면 된다.", ja: "攻撃はない。よけるだけ。" },
     ];
     pub const DRIVE_INTRO: [S; 3] = [
-        S { en: "A / D or arrows: change lane", ko: "A·D 또는 방향키: 차선 변경", ja: "A·D または矢印キー: 車線変更" },
-        S { en: "S or Down: brake", ko: "S 또는 아래 키: 브레이크", ja: "S または下キー: ブレーキ" },
-        S { en: "1,000 m in 60 s. 3 crashes and it's over.", ko: "60초 안에 1,000m. 충돌 3번이면 실패.", ja: "60秒で1,000m。3回衝突したら失敗。" },
+        S { en: "W: gas   S: brake   A / D: steer", ko: "W: 가속   S: 브레이크   A·D: 핸들", ja: "W: アクセル   S: ブレーキ   A·D: ハンドル" },
+        S { en: "Hold Shift in a corner, release for a boost", ko: "코너에서 Shift를 누르고 있다 놓으면 부스터", ja: "コーナーでShiftを押し続け、離すとブースト" },
+        S { en: "3 laps. Finish 1st.", ko: "3바퀴를 돌아 1등으로 들어와라.", ja: "3周して1位でゴールしろ。" },
     ];
     pub const PACK_INTRO: [S; 3] = [
-        S { en: "Space or the button when the box touches the line", ko: "상자가 선에 닿을 때 Space 또는 버튼", ja: "箱が線に触れたらSpaceまたはボタン" },
+        S { en: "Space or the button while the box overlaps the bar", ko: "상자가 바에 정확히 걸쳤을 때 Space 또는 버튼", ja: "箱がバーにぴったり重なったらSpaceまたはボタン" },
         S { en: "3 practice boxes, then 12 for real.", ko: "연습 3번, 그다음 본 작업 12개.", ja: "練習3回、そのあと本番12個。" },
         S { en: "8 or more passes.", ko: "8개 이상 맞추면 합격.", ja: "8個以上成功で合格。" },
     ];
@@ -412,14 +412,15 @@ pub mod minigame {
         ja: "遠くへ走らないで。近くの隙間へ動いて。当たった直後は少しの間無敵だよ。",
     };
     pub const DRIVE_HINT: S = S {
-        en: "If it's blocked ahead, take the next lane. Braking for long just makes you late.",
-        ko: "앞이 막히면 옆 차선으로 가. 브레이크를 오래 누르면 도착이 늦어져.",
-        ja: "前がふさがっていたら隣の車線へ。ブレーキを長く踏むと到着が遅れるよ。",
+        en: "Slow down before the corner and drift through it. Leaving the road onto the grass costs you a lot of speed.",
+        ko: "코너 앞에서 속도를 줄이고 드리프트로 돌아. 길 밖 잔디로 나가면 속도를 크게 잃어.",
+        ja: "コーナーの手前で減速して、ドリフトで曲がって。道の外の芝に出ると速度を大きく失うよ。",
     };
+    pub const PLACE: S = S { en: "PLACE", ko: "순위", ja: "順位" };
     pub const PACK_HINT: S = S {
-        en: "Press once when the circle overlaps the line. You can mute the sound and just watch the line.",
-        ko: "원과 판정선이 겹칠 때 한 번 눌러. 소리를 끄고 선만 봐도 돼.",
-        ja: "円と判定線が重なったときに一度押して。音を消して線だけ見てもいいよ。",
+        en: "Press once, only while the box sits right on the bar. Pressing early or late ruins that box.",
+        ko: "상자가 바에 정확히 걸쳐진 순간에만 한 번 눌러. 일찍이든 늦게든 어긋나게 누르면 그 상자는 실패야.",
+        ja: "箱がバーにぴったり重なった瞬間にだけ一度押して。早すぎても遅すぎてもその箱は失敗だよ。",
     };
 
     pub const REWARD_OPEN: S = S { en: "Open the reward box.", ko: "보상 상자를 열어 보자.", ja: "報酬の箱を開けてみよう。" };

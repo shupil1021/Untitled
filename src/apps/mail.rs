@@ -680,7 +680,9 @@ impl MailApp {
             r.set_clip(Some(list_area));
             let mut clicked_row = None;
             let mut ry = list_area.y - self.list_scroll_disp;
-            for (i, msg) in self.messages.iter().enumerate() {
+            // 최신 메일이 맨 위 — 도착 순서(messages)를 거꾸로 훑는다. i 는 원래 번호라 읽음 기록/선택은 그대로 맞는다.
+            for i in (0..self.messages.len()).rev() {
+                let msg = &self.messages[i];
                 if ry + row_h >= list_area.y && ry <= list_area.y + list_area.h {
                     let row = Rect::new(pane.x + ROW_PAD, ry, row_w, row_h - ROW_GAP);
                     let hover = row.intersect(&list_area).contains(win.mouse.0, win.mouse.1);

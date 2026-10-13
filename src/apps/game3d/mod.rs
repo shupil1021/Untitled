@@ -101,6 +101,14 @@ impl View {
         r.rect(self.px(VIEW_W / 2.0 - 1.5), self.py(VIEW_H / 2.0 - 1.5), 3.0 * s, 3.0 * s, [1.0, 1.0, 1.0, 0.7]);
     }
 
+    // draw_scene 과 같지만 가운데 조준선을 안 그린다(레이싱처럼 조준이 없는 화면).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_scene_plain(&self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, area: Rect, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D]) {
+        let tex = render_scene(ctx, slot, clear, cam, boxes);
+        r.rect(area.x, area.y, area.w, area.h, [0.0, 0.0, 0.0, 1.0]);
+        r.sprite_uv(tex, self.rect.x, self.rect.y, self.rect.w, self.rect.h, 0.0, 1.0, 1.0, 0.0, [1.0, 1.0, 1.0, 1.0]);
+    }
+
     // 월드 위치 옆에 "[E] ..." 같은 상호작용 안내를 띄운다(카메라 뒤면 안 그림).
     pub fn draw_prompt(&self, r: &mut Renderer, cam: &Camera, pos: [f32; 3], label: &str) {
         let Some((sx, sy)) = world_to_view(cam, pos) else { return };

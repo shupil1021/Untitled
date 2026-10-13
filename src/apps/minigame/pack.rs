@@ -1,6 +1,6 @@
-//! PACK — 손가락의 방에서 받는 포장 리듬 게임(시트 SUB B+c-1 ~ 5). 상자가 컨베이어를 타고 판정선에
-//! 닿을 때 Space/버튼을 한 번 누른다. 채점 없는 연습 3번 → START → 본 작업 12개(판정선 ±0.25초 안에
-//! 누르면 성공 1회) → 8개 이상이면 합격. 버튼을 길게 눌러도 1회로만 센다(입력은 눌린 순간만 본다).
+//! PACK — 손가락의 방에서 받는 포장 리듬 게임(시트 SUB B+c-1 ~ 5). 상자가 컨베이어를 타고 판정선(바)에
+//! 정확히 걸쳐진 동안 Space/버튼을 한 번 누른다. 채점 없는 연습 3번 → START → 본 작업 12개(상자가 바와
+//! 겹쳐 있는 짧은 순간에 누르면 성공 1회) → 8개 이상이면 합격. 버튼을 길게 눌러도 1회로만 센다(입력은 눌린 순간만 본다).
 //! 판정 구간 밖에서 성급하게/늦게 누르면(구간의 0.6초 안) 그 상자는 실패다 — 마구 연타로는 못 깬다.
 
 use super::{Controls, Outcome};
@@ -8,7 +8,13 @@ use super::{Controls, Outcome};
 pub const PRACTICE_N: usize = 3;
 pub const WORK_N: usize = 12;
 pub const PASS_AT: usize = 8;
-pub const WINDOW: f32 = 0.25;
+// 화면 배치 — 상자와 바의 크기가 곧 판정이다: 상자의 어느 부분이 바에 닿아 있는 동안만 성공이다.
+pub const LINE_X: f32 = 320.0; // 바의 x
+pub const SPAWN_X: f32 = -40.0; // 상자가 나타나는 x
+pub const BOX_HALF: f32 = 18.0; // 상자 반너비
+pub const LINE_HALF: f32 = 1.5; // 바 반두께
+pub const SPEED: f32 = (LINE_X - SPAWN_X) / TRAVEL; // 상자가 컨베이어를 가는 속도(px/s)
+pub const WINDOW: f32 = (BOX_HALF + LINE_HALF) / SPEED; // 바와 겹쳐 있는 시간의 절반(초) — 약 0.11초
 const MISFIRE: f32 = 0.6; // 판정 구간 밖이어도 이 안에서 누르면 가장 가까운 상자가 실패
 pub const TRAVEL: f32 = 2.0; // 상자가 나타나서 판정선에 닿기까지(초)
 const GAP: f32 = 1.1; // 상자 간격(초)
@@ -149,9 +155,10 @@ mod tests {
     }
 
     #[test]
-    fn timing_window_is_a_quarter_second_each_side() {
-        let (r, _) = play(&[Some(0.2), Some(-0.2), Some(0.4), Some(-0.4)]);
-        assert_eq!(r.hits(), 2, "±0.25초 밖에서 누르면 실패");
+    fn only_the_moment_the_box_overlaps_the_bar_counts() {
+        let (r, _) = play(&[Some(0.08), Some(-0.08), Some(0.2), Some(-0.2)]);
+        assert_eq!(r.hits(), 2, "바에 걸쳐 있을 때(±0.1초)만 성공, 그 밖은 실패");
+        assert!(WINDOW > 0.09 && WINDOW < 0.13, "{WINDOW}");
     }
 
     // 마구 연타하면 구간 밖에서 누른 것이 상자를 망쳐 합격 못 한다.
