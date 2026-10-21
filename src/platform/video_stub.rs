@@ -32,6 +32,10 @@ impl Video {
 pub struct Audio;
 
 impl Audio {
+    pub fn start_looping(_path: String, _volume: f32) -> Option<Audio> {
+        None
+    }
+
     pub fn start(_path: String, _volume: f32, _weathering: f32) -> Option<Audio> {
         None
     }

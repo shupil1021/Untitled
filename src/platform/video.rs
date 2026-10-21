@@ -388,8 +388,17 @@ pub struct Audio {
 }
 
 impl Audio {
+    // 끝나면 처음부터 다시 재생하는(무한 반복) 배경음악용.
+    pub fn start_looping(path: String, volume: f32) -> Option<Audio> {
+        Self::start_inner(path, volume, 0.0, true)
+    }
+
     // 오디오 트랙이 없거나 장치를 열 수 없으면 조용히 None (영상은 무음으로 재생됨).
     pub fn start(path: String, volume: f32, weathering: f32) -> Option<Audio> {
+        Self::start_inner(path, volume, weathering, false)
+    }
+
+    fn start_inner(path: String, volume: f32, weathering: f32, looping: bool) -> Option<Audio> {
         let playing = Arc::new(AtomicBool::new(true));
         let stop = Arc::new(AtomicBool::new(false));
         let volume = Arc::new(AtomicU32::new(volume.clamp(0.0, 1.0).to_bits()));
@@ -400,7 +409,7 @@ impl Audio {
         let volume2 = volume.clone();
         let weathering2 = weathering.clone();
         let handle = std::thread::spawn(move || {
-            if let Err(e) = unsafe { audio_thread(&path, &playing2, &stop2, &volume2, &weathering2, rx) } {
+            if let Err(e) = unsafe { audio_thread(&path, &playing2, &stop2, &volume2, &weathering2, looping, rx) } {
                 eprintln!("[audio] stopped: {e:?}");
             }
         });
@@ -582,6 +591,7 @@ unsafe fn audio_thread(
     stop: &AtomicBool,
     volume: &AtomicU32,
     weathering: &AtomicU32,
+    looping: bool,
     rx: Receiver<AudioMsg>,
 ) -> windows::core::Result<()> {
     unsafe {
@@ -627,6 +637,7 @@ unsafe fn audio_thread(
         let mut started = false;
         let mut pcm_queue: std::collections::VecDeque<u8> = std::collections::VecDeque::new();
         let mut ended = false;
+        let mut got_data = false; // 마지막 되감기 뒤로 샘플을 하나라도 읽었는지(빈 파일이면 무한 되감기 방지)
 
         while !stop.load(Ordering::Relaxed) {
             let cur_volume = f32::from_bits(volume.load(Ordering::Relaxed));
@@ -664,14 +675,17 @@ unsafe fn audio_thread(
                         ended = true;
                         break;
                     }
-                    if flags2 & MF_SOURCE_READERF_ENDOFSTREAM.0 as u32 != 0 {
+                    if flags2 & MF_SOURCE_READERF_ENDOFSTREAM.0 as u32 != 0 || sample.is_none() {
+                        if looping && got_data {
+                            let _ = reader.SetCurrentPosition(&GUID::zeroed(), &PROPVARIANT::from(0i64));
+                            got_data = false;
+                            continue;
+                        }
                         ended = true;
                         break;
                     }
-                    let Some(sample) = sample else {
-                        ended = true;
-                        break;
-                    };
+                    let Some(sample) = sample else { continue };
+                    got_data = true;
                     if let Ok(buffer) = sample.ConvertToContiguousBuffer() {
                         let mut ptr: *mut u8 = std::ptr::null_mut();
                         let mut len = 0u32;

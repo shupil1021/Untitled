@@ -1,6 +1,6 @@
 [package]
 name = "crackhead"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 # director/director_panel(연출·영상 제작용 별개 실행 파일)이 추가되면서 `cargo
 # run`이 "어느 걸 실행할지 모르겠다"며 --bin 을 요구하기 시작했다 — 실제 게임

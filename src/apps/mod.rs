@@ -22,7 +22,7 @@ mod video_player;
 mod widgets;
 
 pub use credits::CreditsApp;
-pub use doors_game::DoorsGameApp;
+pub use doors_game::{preview_start_room, DoorsGameApp};
 pub use game_installer::GameInstallerApp;
 pub use explorer::{ExplorerApp, ExplorerLocation};
 pub use image_viewer::ImageViewerApp;
@@ -364,7 +364,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
         // 조절/최대화도 그냥 허용한다. 기본 크기는 클라이언트 영역이 480x360(4:3)이
         // 되게 테두리(3*2)/타이틀바(20)만큼 더했다.
         FileKind::Game => Opened {
-            app: Box::new(DoorsGameApp::new(fs.doors_progress.clone())),
+            app: Box::new(DoorsGameApp::new(fs.doors_progress.clone()).with_settings(settings.clone())),
             title: name,
             size: (486.0, 386.0),
             maximized: false,

@@ -146,7 +146,7 @@ impl MeshBuilder {
     }
 
     pub(super) fn finish(self) -> MeshData {
-        MeshData { vertices: self.vertices, triangles: self.triangles }
+        MeshData { vertices: self.vertices, triangles: self.triangles, tri_colors: Vec::new() }
     }
 }
 

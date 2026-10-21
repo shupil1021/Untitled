@@ -43,22 +43,29 @@ pub struct Prop {
     pub half: [f32; 3],
     pub color: [f32; 4],
     pub text: &'static str,
+    // true 면 상자로 그리지 않는다 — 모델(furniture.rs)이 그 자리에 대신 놓인다(충돌만 보이지 않는 상자로 한다).
+    pub mesh: bool,
 }
 
 // 벽 쪽에 붙여서 스폰↔문 사이 통로는 비워둔다.
 pub const PROPS: [Prop; 4] = [
-    Prop { name: "Desk", center: [-2.3, 0.4, -1.5], half: [0.5, 0.4, 0.3], color: [0.38, 0.28, 0.18, 1.0], text: "낡은 책상이다. 서랍은 텅 비어 있다." },
-    Prop { name: "Crate", center: [2.3, 0.3, -2.5], half: [0.3, 0.3, 0.3], color: [0.45, 0.35, 0.2, 1.0], text: "먼지 쌓인 나무 상자다. 뚜껑이 못으로 박혀 있다." },
-    Prop { name: "Shelf", center: [2.6, 0.9, 0.5], half: [0.25, 0.9, 0.6], color: [0.3, 0.25, 0.2, 1.0], text: "빈 선반이다. 먼지 자국만 남아 있다." },
-    Prop { name: "Trash", center: [-2.4, 0.15, 1.6], half: [0.4, 0.15, 0.4], color: [0.3, 0.32, 0.22, 1.0], text: "구겨진 종이와 쓰레기가 쌓여 있다." },
+    Prop { name: "Desk", center: [-2.5, 0.4, -1.5], half: [0.33, 0.4, 0.7], color: [0.38, 0.28, 0.18, 1.0], text: "낡은 책상이다. 서랍은 텅 비어 있다.", mesh: true },
+    Prop { name: "Crate", center: [2.3, 0.3, -2.5], half: [0.3, 0.3, 0.3], color: [0.45, 0.35, 0.2, 1.0], text: "먼지 쌓인 나무 상자다. 뚜껑이 못으로 박혀 있다.", mesh: false },
+    Prop { name: "Shelf", center: [2.62, 0.925, 0.5], half: [0.23, 0.925, 0.62], color: [0.3, 0.25, 0.2, 1.0], text: "빈 선반이다. 먼지 자국만 남아 있다.", mesh: true },
+    Prop { name: "Trash", center: [-2.4, 0.15, 1.6], half: [0.4, 0.15, 0.4], color: [0.3, 0.32, 0.22, 1.0], text: "구겨진 종이와 쓰레기가 쌓여 있다.", mesh: false },
 ];
 
 // 방 서쪽 벽 쪽의 우편함 — 편지를 넣어 보내는 곳(시트 오른쪽 표의 "우편함").
 pub const MAILBOX_CENTER: [f32; 3] = [-2.6, 0.6, 0.4];
-const MAILBOX_HALF: [f32; 3] = [0.25, 0.6, 0.25];
+const MAILBOX_HALF: [f32; 3] = [0.25, 0.6, 0.2];
 const MAILBOX_COLOR: [f32; 4] = [0.3, 0.35, 0.5, 1.0];
+// 가구 모델을 놓는 자리(모델의 바닥 중심) — furniture.rs. 책상 서랍은 책상 윗면 바로 아래에 튀어나와 있다.
+pub const DESK_ORIGIN: [f32; 3] = [-2.24, 0.0, -1.5];
+pub const DRESSER_ORIGIN: [f32; 3] = [2.62, 0.0, 0.5];
+pub const MAILBOX_ORIGIN: [f32; 3] = [MAILBOX_CENTER[0], 0.0, MAILBOX_CENTER[2]];
+const DESK_DRAWER: ([f32; 3], [f32; 3]) = ([-1.92, 0.725, -1.5], [0.23, 0.05, 0.49]);
 // 부탁을 수락하면 책상 위에 나타나는 편지(작고 납작한 흰 상자).
-pub const LETTER_CENTER: [f32; 3] = [-2.3, 0.81, -1.5];
+pub const LETTER_CENTER: [f32; 3] = [-2.5, 0.81, -1.5];
 const LETTER_HALF: [f32; 3] = [0.12, 0.01, 0.09];
 const LETTER_COLOR: [f32; 4] = [0.92, 0.9, 0.78, 1.0];
 
@@ -122,11 +129,18 @@ pub fn build_room(lift: f32) -> Vec<Box3D> {
         // 문 뒤의 빛 — 문간 안쪽에 선 눈부신 벽. 걸어 들어가다 막히는 자리이기도 하다.
         boxes.push(solid([0.0, DOOR_HALF_H, ROOM_MIN_Z - 0.5], [DOOR_WIDTH / 2.0, DOOR_HALF_H, 0.1], [1.0, 0.97, 0.85, 1.0], false));
     }
-    for p in &PROPS {
+    for p in PROPS.iter().filter(|p| !p.mesh) {
         boxes.push(solid(p.center, p.half, p.color, false));
     }
-    boxes.push(solid(MAILBOX_CENTER, MAILBOX_HALF, MAILBOX_COLOR, false));
     boxes
+}
+
+// 모델(메시)로 그리는 가구의 충돌 — 눈에 안 보이는 상자들. 장면의 충돌 목록에만 넣고 그리지는 않는다.
+pub fn invisible_colliders() -> Vec<Box3D> {
+    let mut v: Vec<Box3D> = PROPS.iter().filter(|p| p.mesh).map(|p| solid(p.center, p.half, p.color, false)).collect();
+    v.push(solid(DESK_DRAWER.0, DESK_DRAWER.1, FLOOR_COLOR, false));
+    v.push(solid(MAILBOX_CENTER, MAILBOX_HALF, MAILBOX_COLOR, false));
+    v
 }
 
 // 조준선(화면 중앙)이 향한 대상 중 가장 가까운 것 — available 이 false 인 대상은 후보에서 뺀다

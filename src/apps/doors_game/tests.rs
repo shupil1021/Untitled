@@ -287,7 +287,7 @@ fn every_spawn_stands_on_the_floor_and_clear_of_walls() {
         b
     };
     let mut cases: Vec<(&str, [f32; 3], Vec<Box3D>)> = vec![
-        ("시작방", SPAWN, build_room(0.0)),
+        ("시작방", SPAWN, { let mut b = build_room(0.0); b.extend(super::world::invisible_colliders()); b }),
         ("정글(시작방 문 앞)", floor2::SPAWN, jungle.clone()),
         ("계단 입구", rooms::SPAWN, rooms::stair_hall(false, 0.0).boxes),
     ];

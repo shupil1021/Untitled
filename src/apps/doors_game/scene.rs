@@ -9,11 +9,12 @@ use crate::apps::game3d::ena::ena_time;
 use crate::apps::game3d::item::Item;
 use crate::apps::game3d::player::aim_dist;
 use crate::foundation::{MainPlace, MiniKind, MissionStep};
-use crate::render::mesh3d::Box3D;
+use crate::render::mesh3d::{Box3D, MeshObject};
 
 use super::floor2;
 use super::rooms::{self, Spot};
-use super::world::{aimed_target, build_room, letter_box, Target, EXIT_POS, HANDLE_POS};
+use super::furniture::room_meshes;
+use super::world::{aimed_target, build_room, invisible_colliders, letter_box, Target, EXIT_POS, HANDLE_POS};
 use super::{Aim, DoorsGameApp, ROOM_CLEAR};
 
 pub(super) struct Scene {
@@ -21,6 +22,8 @@ pub(super) struct Scene {
     pub(super) clear: [f32; 4],
     pub(super) collide: Vec<Box3D>,
     pub(super) shown: Vec<Box3D>,
+    // 상자가 아닌 모델(가구 등). 충돌은 collide 의 상자들이 맡는다.
+    pub(super) meshes: Vec<MeshObject>,
     pub(super) room_items: Vec<Item<Spot>>,
     pub(super) jungle_items: Vec<Item<floor2::Target>>,
 }
@@ -50,7 +53,9 @@ impl DoorsGameApp {
                 if p.quest_accepted && !p.has_letter {
                     boxes.push(letter_box());
                 }
-                Scene { key, clear: ROOM_CLEAR, collide: boxes.clone(), shown: boxes, room_items: Vec::new(), jungle_items: Vec::new() }
+                let mut collide = boxes.clone();
+                collide.extend(invisible_colliders());
+                Scene { key, clear: ROOM_CLEAR, collide, shown: boxes, meshes: room_meshes(), room_items: Vec::new(), jungle_items: Vec::new() }
             }
             MainPlace::Jungle => {
                 let jungle_items = floor2::items(p.exchanged && !p.chip_taken);
@@ -58,20 +63,20 @@ impl DoorsGameApp {
                 shown.extend(jungle_items.iter().filter(|it| it.draw).map(|it| it.to_box()));
                 let mut collide = shown.clone();
                 collide.extend(self.barriers.iter().cloned());
-                Scene { key, clear: floor2::CLEAR_COLOR, collide, shown, room_items: Vec::new(), jungle_items }
+                Scene { key, clear: floor2::CLEAR_COLOR, collide, shown, meshes: Vec::new(), room_items: Vec::new(), jungle_items }
             }
             MainPlace::MissionRoom(kind) => {
                 let step = p.missions[kind.index()];
                 let room = rooms::mission_room(kind, step == MissionStep::Done, step >= MissionStep::Received, self.clock);
                 let mut collide = room.boxes.clone();
                 collide.extend(room.barriers);
-                Scene { key, clear: room.clear, collide, shown: room.boxes, room_items: room.items, jungle_items: Vec::new() }
+                Scene { key, clear: room.clear, collide, shown: room.boxes, meshes: Vec::new(), room_items: room.items, jungle_items: Vec::new() }
             }
             MainPlace::StairHall => {
                 let room = rooms::stair_hall(p.chip_fed, self.unfold);
                 let mut collide = room.boxes.clone();
                 collide.extend(room.barriers);
-                Scene { key, clear: room.clear, collide, shown: room.boxes, room_items: room.items, jungle_items: Vec::new() }
+                Scene { key, clear: room.clear, collide, shown: room.boxes, meshes: Vec::new(), room_items: room.items, jungle_items: Vec::new() }
             }
         }
     }

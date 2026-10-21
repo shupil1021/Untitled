@@ -110,6 +110,14 @@ impl View {
         r.sprite_uv(tex, self.rect.x, self.rect.y, self.rect.w, self.rect.h, 0.0, 1.0, 1.0, 0.0, [1.0, 1.0, 1.0, 1.0]);
     }
 
+    // draw_scene_meshes 와 같지만 가운데 조준선도 그린다(조준해서 조사하는 화면용).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_scene_meshes_aimed(&self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, area: Rect, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D], meshes: &[MeshObject]) {
+        self.draw_scene_meshes(ctx, r, area, slot, clear, cam, boxes, meshes);
+        let s = self.s;
+        r.rect(self.px(VIEW_W / 2.0 - 1.5), self.py(VIEW_H / 2.0 - 1.5), 3.0 * s, 3.0 * s, [1.0, 1.0, 1.0, 0.7]);
+    }
+
     // 월드 위치 옆에 "[E] ..." 같은 상호작용 안내를 띄운다(카메라 뒤면 안 그림).
     pub fn draw_prompt(&self, r: &mut Renderer, cam: &Camera, pos: [f32; 3], label: &str) {
         let Some((sx, sy)) = world_to_view(cam, pos) else { return };

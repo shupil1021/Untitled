@@ -21,7 +21,9 @@
 //! 풀린다. W/S/A/D 이동, E 상호작용(창이 포커스일 때만). 포커스가 아닌 동안은 게임 시간이 멈춘다
 //! (CRT 에서 한 번에 한 게임만 진행한다 — 시트의 CRT SYS-1).
 
+mod bgm;
 mod floor2;
+mod furniture;
 mod interact;
 mod rooms;
 mod scene;
@@ -29,11 +31,17 @@ mod texts;
 mod travel;
 mod world;
 
+// 개발용 미리보기(examples/room_preview.rs) — 시작 방의 상자들과 가구 모델.
+pub fn preview_start_room() -> (Vec<crate::render::mesh3d::Box3D>, Vec<crate::render::mesh3d::MeshObject>) {
+    (world::build_room(0.0), furniture::room_meshes())
+}
+
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use miniquad::{KeyCode, RenderingBackend};
 
-use crate::foundation::{DoorsProgress, MailId, MainPlace, MiniKind, MissionStep};
+use crate::foundation::{DoorsProgress, MailId, MainPlace, MiniKind, MissionStep, Settings};
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::render::mesh3d::Box3D;
 
@@ -102,9 +110,17 @@ pub struct DoorsGameApp {
     jungle: Vec<Box3D>,
     barriers: Vec<Box3D>,
     scene: Option<Rc<Scene>>, // 지금 장소의 장면(바뀔 때만 다시 만든다 — scene.rs)
+    bgm: bgm::Bgm,            // 시작 방 배경음악(무한 반복)
+    settings: Option<Rc<RefCell<Settings>>>, // 소리 크기 설정(OS 에서 열 때만 있다)
 }
 
 impl DoorsGameApp {
+    // 소리 크기 설정을 연결한다(배경음악 볼륨).
+    pub(super) fn with_settings(mut self, settings: Rc<RefCell<Settings>>) -> DoorsGameApp {
+        self.settings = Some(settings);
+        self
+    }
+
     pub(super) fn new(progress: DoorsProgress) -> DoorsGameApp {
         let place = progress.place;
         // 처음 열었을 때만 어디에 서 있는지 한마디로 알려준다(이어서 하는 거면 생략).
@@ -124,6 +140,8 @@ impl DoorsGameApp {
         };
         let (jungle, barriers) = if place == MainPlace::Jungle { (Self::jungle_scene(&progress), floor2::barriers()) } else { (Vec::new(), Vec::new()) };
         DoorsGameApp {
+            bgm: bgm::Bgm::default(),
+            settings: None,
             player,
             slot: RenderSlot::acquire(),
             look: MouseLook::new(),
@@ -277,6 +295,7 @@ impl App for DoorsGameApp {
             self.scene = Some(Rc::new(self.build_scene(key)));
         }
         let scene = Rc::clone(self.scene.as_ref().expect("방금 만들었다"));
+        self.bgm.update(self.progress.place == MainPlace::StartRoom, self.settings.as_ref());
 
         // 대화창이 떠 있는 동안은 이동·시점·조준을 멈춘다.
         let frozen = self.dialogue.active() || self.fade.active() || self.door_anim.is_some() || self.unfold_anim.is_some();
@@ -287,7 +306,11 @@ impl App for DoorsGameApp {
         }
 
         let cam = self.player.camera();
-        view.draw_scene(ctx, r, area, &self.slot, scene.clear, &cam, &scene.shown);
+        if scene.meshes.is_empty() {
+            view.draw_scene(ctx, r, area, &self.slot, scene.clear, &cam, &scene.shown);
+        } else {
+            view.draw_scene_meshes_aimed(ctx, r, area, &self.slot, scene.clear, &cam, &scene.shown, &scene.meshes);
+        }
 
         if let Some(aim) = self.aimed
             && !frozen

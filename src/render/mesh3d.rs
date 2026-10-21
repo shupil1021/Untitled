@@ -401,6 +401,8 @@ pub struct MeshVertex {
 pub struct MeshData {
     pub vertices: Vec<MeshVertex>,
     pub triangles: Vec<[u32; 3]>,
+    // 삼각형마다의 재질 색(OBJ 의 usemtl + MTL 의 Kd). 비어 있으면 재질 없음 — MeshObject.color 한 색만 쓴다.
+    pub tri_colors: Vec<[f32; 4]>,
 }
 
 impl MeshData {
@@ -410,6 +412,28 @@ impl MeshData {
     }
 }
 
+// MTL 텍스트에서 재질 이름 → 색(Kd)을 읽는다. Blender 의 Kd 는 선형 값이라 sRGB 로 바꿔서 쓴다
+// (이 엔진의 색은 화면에 그대로 나가는 값이다).
+fn parse_mtl_colors(mtl: &str) -> std::collections::HashMap<String, [f32; 4]> {
+    let to_srgb = |c: f32| if c <= 0.003_130_8 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 };
+    let mut out = std::collections::HashMap::new();
+    let mut cur: Option<String> = None;
+    for line in mtl.lines() {
+        let mut it = line.split_whitespace();
+        match it.next() {
+            Some("newmtl") => cur = it.next().map(str::to_string),
+            Some("Kd") => {
+                let v: Vec<f32> = it.filter_map(|s| s.parse().ok()).collect();
+                if let (Some(name), [r, g, b, ..]) = (cur.clone(), v.as_slice()) {
+                    out.insert(name, [to_srgb(*r), to_srgb(*g), to_srgb(*b), 1.0]);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 // 아주 단순한 OBJ 파서 — `v`(위치)/`vt`(UV)/`f`(면, v/vt/vn 또는 v/vt 또는 v 단독
 // 다 받는다)만 읽고 나머지 지시어(vn/mtllib/usemtl/o/g/s/# 주석 등)는 무시한다.
 // 삼각형이 아닌 면(사각형 이상)은 팬(fan) 방식으로 삼각형화한다. OBJ 는
@@ -417,6 +441,15 @@ impl MeshData {
 // 이음매에서 다른 UV를 써야 할 수 있다), 그 조합을 키로 중복 없이 새 정점을
 // 만들어 인덱스 메시로 합친다.
 pub fn parse_obj(text: &str) -> Result<MeshData, String> {
+    parse_obj_mtl(text, "")
+}
+
+// parse_obj + 재질 색 — `usemtl 이름` 이후의 면은 mtl 텍스트에서 그 이름의 Kd 색을 삼각형마다 갖는다
+// (mtl 에 없는 이름은 흰색). mtl 이 비어 있으면 재질 색 없이 읽는다.
+pub fn parse_obj_mtl(text: &str, mtl: &str) -> Result<MeshData, String> {
+    let colors = parse_mtl_colors(mtl);
+    let mut cur_color = [1.0f32; 4];
+    let mut tri_colors: Vec<[f32; 4]> = Vec::new();
     let mut positions: Vec<Vec3> = Vec::new();
     let mut uvs: Vec<[f32; 2]> = Vec::new();
     let mut vertices: Vec<MeshVertex> = Vec::new();
@@ -488,16 +521,20 @@ pub fn parse_obj(text: &str) -> Result<MeshData, String> {
                 // 기준. 블렌더 기본 내보내기는 삼각형/사각형이 대부분이라 충분하다).
                 for i in 1..face_verts.len() - 1 {
                     triangles.push([face_verts[0], face_verts[i], face_verts[i + 1]]);
+                    if !colors.is_empty() {
+                        tri_colors.push(cur_color);
+                    }
                 }
             }
-            _ => {} // vn/mtllib/usemtl/o/g/s 등은 무시
+            "usemtl" => cur_color = it.next().and_then(|n| colors.get(n)).copied().unwrap_or([1.0; 4]),
+            _ => {} // vn/mtllib/o/g/s 등은 무시
         }
     }
 
     if vertices.is_empty() || triangles.is_empty() {
         return Err("정점/면이 하나도 없음(빈 OBJ?)".to_string());
     }
-    Ok(MeshData { vertices, triangles })
+    Ok(MeshData { vertices, triangles, tri_colors })
 }
 
 // 고정 광원 방향(위+약간 앞) — Box3D 각 면의 고정 셰이딩 계수와 같은 취지로,
@@ -558,12 +595,14 @@ impl MeshObject {
         self.mesh
             .triangles
             .iter()
-            .map(|tri| {
+            .enumerate()
+            .map(|(n, tri)| {
                 let mv = |i: usize| &self.mesh.vertices[tri[i] as usize];
                 let (v0, v1, v2) = (mv(0), mv(1), mv(2));
                 let (p0, p1, p2) = (mat_transform_point(&model, v0.pos), mat_transform_point(&model, v1.pos), mat_transform_point(&model, v2.pos));
                 let shade = mesh_face_shade(p0, p1, p2);
-                let color = [tint[0] * shade, tint[1] * shade, tint[2] * shade, tint[3]];
+                let base = self.mesh.tri_colors.get(n).map_or(tint, |c| [tint[0] * c[0], tint[1] * c[1], tint[2] * c[2], tint[3] * c[3]]);
+                let color = [base[0] * shade, base[1] * shade, base[2] * shade, base[3]];
                 (Vertex { pos: p0, uv: v0.uv, color }, Vertex { pos: p1, uv: v1.uv, color }, Vertex { pos: p2, uv: v2.uv, color })
             })
             .collect()
