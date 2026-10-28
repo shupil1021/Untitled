@@ -95,6 +95,7 @@ pub enum AppAction {
     SaveMini(MiniKind, MiniProgress),
     // 게임 안에서 한 일 때문에 이 메일이 도착해야 한다는 요청(이미 도착했으면 아무 일도 없다).
     DeliverMail(MailId),
+    ResendMini(MiniKind), // 미션 NPC/기계의 "다시 받기" — 그 미니게임의 안내 메일과 첨부를 다시 받을 수 있게 한다
 }
 
 // File Explorer 사이드바 드래그로 파일을 옮길 수 있는 대상 — Desktop/Downloads 는

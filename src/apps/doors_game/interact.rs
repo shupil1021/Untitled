@@ -6,9 +6,10 @@ use crate::foundation::{MailId, MainPlace, MiniKind, MissionStep};
 use super::floor2::{self, Gate};
 use crate::apps::game3d::dialogue::Entry;
 use super::rooms::Spot;
+use super::sfx::Cue;
 use super::texts::{door_name, gate_of, item_name, mission_text};
 use super::world::{Target, PROPS};
-use super::{Ask, DoorsGameApp, EXCHANGE_OPTIONS, FEED_OPTIONS};
+use super::{Ask, DoorsGameApp, EXCHANGE_OPTIONS, FEED_OPTIONS, RESEND_OPTIONS};
 
 impl DoorsGameApp {
     // 편지를 우편함에 넣은 뒤 OS 에서 그 편지 메일을 읽었고(mail_read) 이 창으로 돌아왔으면(focused)
@@ -40,7 +41,8 @@ impl DoorsGameApp {
         false
     }
 
-    // 미니게임 보상 사진을 내려받고 이 창으로 돌아오면 재료가 자동으로 들어온다(MAIN E-3 / R-3 / H-3).
+    // 미니게임 보상 사진(충혈된 눈 / 금고 절반)을 내려받고 이 창으로 돌아오면 자동으로 들어온다(MAIN E-3 / R-3).
+    // 리듬은 사진이 없다 — 호수에 넣은 손잡이를 화장실 변기 속 손에게서 받는다(use_toilet).
     // 어디에 있든(방이든 정글이든) 받는다 — 중간에 나갔다 와도 수령 대기가 복구된다(CRT SYS-2).
     pub(super) fn receive_ingredient(&mut self, downloaded: [bool; 3], focused: bool) -> bool {
         if !focused || self.dialogue.active() || self.fade.active() || self.pending_move.is_some() {
@@ -181,7 +183,7 @@ impl DoorsGameApp {
                 self.ask = Some(Ask::Errand);
                 self.dialogue.start(vec![
                     Self::line("Mr. POTATO CHIP? 있지. 공짜는 아니야."),
-                    Self::line("충혈된 눈, 짓무른 뇌, 절단된 손가락. 하나씩 가져와."),
+                    Self::line("충혈된 눈 하나, 소환 조각 둘. 소환 조각은 레이싱 쪽과 리듬 쪽, 하나씩이야."),
                     Entry::Choice("의뢰를 받아들일래?".to_string()),
                 ]);
             }
@@ -189,14 +191,14 @@ impl DoorsGameApp {
             self.ask = Some(Ask::Exchange);
             self.dialogue.start(vec![
                 Self::line("전부 가져왔어."),
-                Self::line("눈, 뇌, 손가락... 하나씩 다 있다."),
+                Self::line("눈, 레이싱 조각, 리듬 조각... 하나씩 다 있다."),
                 Entry::Ask("Mr. POTATO CHIP으로 바꿀까?".to_string(), EXCHANGE_OPTIONS),
             ]);
         } else {
             // 부족한 재료와 그 문의 표식을 알려준다. 가진 재료는 그대로 둔다.
             let mut lines = vec![Self::line("아직 모자라.")];
             for kind in MiniKind::ALL {
-                if self.progress.missions[kind.index()] < MissionStep::Received {
+                if !self.progress.missions[kind.index()].has_material(kind) {
                     lines.push(Self::line(&format!("{}이 필요해. {}으로 가 봐.", item_name(kind), door_name(kind))));
                 }
             }
@@ -214,15 +216,48 @@ impl DoorsGameApp {
     }
 
     pub(super) fn interact_mission(&mut self, kind: MiniKind, spot: Spot) {
+        if spot == Spot::Exit {
+            self.entry_gate = Some(gate_of(kind));
+            self.pending_move = Some(MainPlace::Jungle);
+            return;
+        }
+        match kind {
+            MiniKind::Eye => self.interact_eye_room(spot),
+            MiniKind::Brain => self.interact_vault_room(spot),
+            MiniKind::Finger => self.interact_bathroom(spot),
+        }
+    }
+
+    // 게임 받기 기계(눈의 방 / 금고의 방) — 의뢰를 들은 뒤 누르면 OS 로 설치 파일이 첨부된 메일이 간다(E-2 / R-2).
+    fn use_machine(&mut self, kind: MiniKind) {
         let text = mission_text(kind);
         let i = kind.index();
-        let step = self.progress.missions[i];
-        match spot {
-            Spot::Exit => {
-                self.entry_gate = Some(gate_of(kind));
-                self.pending_move = Some(MainPlace::Jungle);
+        match self.progress.missions[i] {
+            MissionStep::Start => self.dialogue.start(Self::lines(text.machine_locked)),
+            // 지금 서 있는 자리도 같이 저장된다.
+            MissionStep::Talked => {
+                self.progress.missions[i] = MissionStep::Sent;
+                self.pending_mail = Some(kind.task_mail());
+                self.progress.pose = Some(self.player.pose());
+                self.dialogue.start(Self::lines(text.machine_send));
             }
-            Spot::Npc => match step {
+            // 이미 받았다 — 파일을 잃어버렸다면 다시 받을 수 있다.
+            step => {
+                self.ask = Some(Ask::Resend(kind));
+                let mut lines = Self::lines(if step == MissionStep::Sent { text.machine_waiting } else { text.machine_done });
+                lines.push(Entry::Ask("게임 파일을 다시 받을까?".to_string(), RESEND_OPTIONS));
+                self.dialogue.start(lines);
+            }
+        }
+    }
+
+    // 눈의 방 — 렌즈 NPC 와 이야기 → 기계에서 게임 받기 → (미니게임) → 눈 수령 → NPC 의 마지막 이야기.
+    fn interact_eye_room(&mut self, spot: Spot) {
+        let kind = MiniKind::Eye;
+        let text = mission_text(kind);
+        let i = kind.index();
+        match spot {
+            Spot::Npc => match self.progress.missions[i] {
                 MissionStep::Start => {
                     self.progress.missions[i] = MissionStep::Talked;
                     self.dialogue.start(Self::lines(text.talk_first));
@@ -232,21 +267,171 @@ impl DoorsGameApp {
                     self.progress.missions[i] = MissionStep::Done;
                     self.dialogue.start(Self::lines(text.talk_received));
                 }
+                _ => self.dialogue.start(Self::lines(text.talk_done)),
+            },
+            Spot::Machine => self.use_machine(kind),
+            _ => {}
+        }
+    }
+
+    // 금고의 방 — 표지판 NPC 와 이야기 → 기계에서 게임 받기 → (레이싱) → 메일의 금고 절반 수령 → 방의 금고 반쪽에
+    // 맞춰 완성 → 금고를 열어 소환 조각(레이싱) 획득(R-0 ~ R-5).
+    fn interact_vault_room(&mut self, spot: Spot) {
+        let kind = MiniKind::Brain;
+        let text = mission_text(kind);
+        let i = kind.index();
+        match spot {
+            Spot::Npc => match self.progress.missions[i] {
+                MissionStep::Start => {
+                    self.progress.missions[i] = MissionStep::Talked;
+                    self.dialogue.start(Self::lines(text.talk_first));
+                }
+                MissionStep::Talked | MissionStep::Sent => self.dialogue.start(Self::lines(text.talk_waiting)),
+                MissionStep::Received => self.dialogue.start(vec![Self::line("받은 금고 절반을 방의 금고에 맞춰 봐.")]),
+                MissionStep::Built => self.dialogue.start(vec![Self::line("이제 열 수 있어. 다이얼을 돌려 봐.")]),
+                MissionStep::Revealed | MissionStep::Fragment => {
+                    self.progress.missions[i] = MissionStep::Done;
+                    self.dialogue.start(Self::lines(text.talk_received));
+                }
                 MissionStep::Done => self.dialogue.start(Self::lines(text.talk_done)),
             },
-            Spot::Machine => match step {
-                MissionStep::Start => self.dialogue.start(Self::lines(text.machine_locked)),
-                // 게임 받기 — OS 로 설치 파일이 첨부된 메일이 간다(MAIN E-2). 지금 서 있는 자리도 같이 저장된다.
-                MissionStep::Talked => {
-                    self.progress.missions[i] = MissionStep::Sent;
-                    self.pending_mail = Some(kind.task_mail());
-                    self.progress.pose = Some(self.player.pose());
-                    self.dialogue.start(Self::lines(text.machine_send));
+            Spot::Machine => self.use_machine(kind),
+            Spot::Safe => match self.progress.missions[i] {
+                MissionStep::Start | MissionStep::Talked | MissionStep::Sent => self.dialogue.start(vec![
+                    Self::line("금고가 한쪽 절반만 서 있다."),
+                    Self::line("잘려 나간 단면 너머로 속이 텅 비어 보인다."),
+                    Self::line("나머지 절반이 필요하다."),
+                ]),
+                // 받은 절반을 맞춰 금고를 완성한다(R-4) — 절반은 소비된다.
+                MissionStep::Received => {
+                    self.progress.missions[i] = MissionStep::Built;
+                    self.dialogue.start(vec![
+                        Self::line("받은 금고 절반을 잘려 나간 면에 맞췄다."),
+                        Self::line("쿵, 하고 두 절반이 하나로 붙었다."),
+                        Self::line("금고가 온전해졌다."),
+                    ]);
                 }
-                MissionStep::Sent => self.dialogue.start(Self::lines(text.machine_waiting)),
-                MissionStep::Received | MissionStep::Done => self.dialogue.start(Self::lines(text.machine_done)),
+                // 열어서 안을 조사하면 소환 조각을 얻는다(R-5) — 한 번뿐이다.
+                MissionStep::Built => {
+                    self.progress.missions[i] = MissionStep::Fragment;
+                    self.dialogue.start(vec![
+                        Self::line("다이얼을 돌리자 육중한 금고 문이 열렸다."),
+                        Self::line("안쪽에 작은 조각이 하나 들어 있다."),
+                        Self::line("'소환 조각'(레이싱)을 얻었다."),
+                    ]);
+                }
+                _ => self.dialogue.start(vec![Self::line("금고는 텅 비어 있다.")]),
             },
             _ => {}
+        }
+    }
+
+    // 화장실 — 기사의 의뢰(수락하면 방귀와 나팔 연출 뒤 PACK 이 메일로 온다) → (리듬 + 호수) → 변기 속 손에게서 손잡이
+    // 수령 → 조립 → 물 내리기 → 소환 조각(리듬) → 기사에게 보고(H-0 ~ H-9).
+    fn interact_bathroom(&mut self, spot: Spot) {
+        let kind = MiniKind::Finger;
+        let text = mission_text(kind);
+        let i = kind.index();
+        let step = self.progress.missions[i];
+        match spot {
+            Spot::Npc => match step {
+                MissionStep::Start | MissionStep::Talked => {
+                    self.ask = Some(Ask::Knight);
+                    let mut lines = Self::lines(text.talk_first);
+                    lines.push(Entry::Choice("기사의 의뢰를 받아들일래?".to_string()));
+                    self.dialogue.start(lines);
+                }
+                MissionStep::Sent => {
+                    self.ask = Some(Ask::Resend(kind));
+                    let mut lines = Self::lines(text.talk_waiting);
+                    lines.push(Entry::Ask("기사가 보낸 게임 파일을 다시 받을까?".to_string(), RESEND_OPTIONS));
+                    self.dialogue.start(lines);
+                }
+                MissionStep::Received => self.dialogue.start(vec![Self::line("내 칼이 돌아왔군! 그 칼을 변기에 꽂아 주시오.")]),
+                MissionStep::Built | MissionStep::Revealed => self.dialogue.start(vec![Self::line("물을 내려 보시오. 칼의 힘이 깨어날 것이오.")]),
+                MissionStep::Fragment => {
+                    self.progress.missions[i] = MissionStep::Done;
+                    self.dialogue.start(Self::lines(text.talk_received));
+                }
+                MissionStep::Done => self.dialogue.start(Self::lines(text.talk_done)),
+            },
+            Spot::Toilet => self.use_toilet(step),
+            Spot::Fixture(n) => {
+                let lines: &[&str] = match n {
+                    0 => &["낡은 욕조다.", "물이 오래 고여 있던 자국이 남아 있다."],
+                    1 => &["세면대의 수도꼭지에서 물이 한 방울씩 떨어진다."],
+                    _ => &["거울 속의 내가 잠깐 한 박자 늦게 움직인 것 같다."],
+                };
+                self.dialogue.start(Self::lines(lines));
+            }
+            _ => {}
+        }
+    }
+
+    // 기사의 의뢰를 수락했다(H-2) — 방귀 소리와 퀘스트 시작 자막, 중세 효과음이 한 번 나오고 PACK 설치 메일이 간다.
+    pub(super) fn accept_knight(&mut self) {
+        self.progress.missions[MiniKind::Finger.index()] = MissionStep::Sent;
+        self.pending_mail = Some(MiniKind::Finger.task_mail());
+        self.progress.pose = Some(self.player.pose());
+        self.sfx_cue = Some(Cue::QuestStart);
+        self.dialogue.start(vec![
+            Self::line("기사가 의뢰를 받아들이자 어디선가 뿌웅, 하는 소리가 울렸다."),
+            Self::line("[ 퀘스트 시작: 기사의 잃어버린 칼 ]"),
+            Self::line("(중세풍 나팔 소리가 울려 퍼졌다.)"),
+            Self::line("어디선가 알림음이 울린다..."),
+        ]);
+    }
+
+    // 변기 — 진행에 따라 하는 일이 달라진다(H-3 ~ H-7).
+    fn use_toilet(&mut self, step: MissionStep) {
+        let i = MiniKind::Finger.index();
+        let lake = crate::signals::lake_delivered();
+        match step {
+            MissionStep::Start | MissionStep::Talked => {
+                self.dialogue.start(vec![Self::line("변기의 물 내리는 손잡이 자리가 비어 있다."), Self::line("먼저 기사와 이야기해 보자.")]);
+            }
+            MissionStep::Sent if !lake => {
+                self.dialogue.start(vec![Self::line("변기에는 손잡이가 달려 있어야 할 자리가 비어 있다."), Self::line("구멍 속은 어둡고 축축하다.")]);
+            }
+            // 호수에 손잡이를 넣었다 — 변기 속에서 손이 나와 그 손잡이를 내민다(H-3).
+            MissionStep::Sent if !self.progress.hand_out => {
+                self.progress.hand_out = true;
+                self.dialogue.start(vec![
+                    Self::line("변기 속에서 물소리가 났다."),
+                    Self::line("하얀 손이 불쑥 올라와 무언가를 내밀고 있다."),
+                    Self::line("호수에 넣었던 변기 손잡이다."),
+                ]);
+            }
+            // 손이 내민 손잡이를 받는다(H-4).
+            MissionStep::Sent => {
+                self.progress.hand_out = false;
+                self.progress.missions[i] = MissionStep::Received;
+                self.dialogue.start(Self::lines(mission_text(MiniKind::Finger).received));
+            }
+            // 빈 자리에 끼운다(H-5) — 손잡이는 소비된다.
+            MissionStep::Received => {
+                self.progress.missions[i] = MissionStep::Built;
+                self.dialogue.start(vec![Self::line("비어 있던 자리에 변기 손잡이를 끼웠다."), Self::line("딸깍. 변기가 온전해졌다.")]);
+            }
+            // 물을 내린다(H-6) — 소환 조각이 떠오른다.
+            MissionStep::Built => {
+                self.progress.missions[i] = MissionStep::Revealed;
+                self.sfx_cue = Some(Cue::Flush);
+                self.dialogue.start(vec![
+                    Self::line("손잡이를 눌렀다."),
+                    Self::line("쏴아아— 물이 소용돌이치며 내려간다."),
+                    Self::line("변기 안에서 무언가가 떠올랐다."),
+                ]);
+            }
+            // 떠오른 조각을 집는다(H-7) — 물을 또 내려도 더 나오지 않는다.
+            MissionStep::Revealed => {
+                self.progress.missions[i] = MissionStep::Fragment;
+                self.dialogue.start(vec![Self::line("물 위에 떠 있는 조각을 집어 들었다."), Self::line("'소환 조각'(리듬)을 얻었다.")]);
+            }
+            MissionStep::Fragment | MissionStep::Done => {
+                self.sfx_cue = Some(Cue::Flush);
+                self.dialogue.start(vec![Self::line("물을 내려 보았다."), Self::line("더는 아무것도 나오지 않는다.")]);
+            }
         }
     }
 

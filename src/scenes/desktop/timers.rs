@@ -28,6 +28,7 @@ impl DesktopScene {
         for kind in crate::foundation::MiniKind::ALL {
             crate::signals::set_reward_downloaded(kind.index(), self.fs.reward_downloaded(kind));
         }
+        crate::signals::set_lake_delivered(self.fs.minis[crate::foundation::MiniKind::Finger.index()].reward_sent);
         crate::signals::set_flower_downloaded(self.fs.flower_image.is_some_and(|id| self.fs.ever_downloaded.contains(&id)));
         // 씨앗을 심은 뒤 잠깐 있다가 시간 힌트 메일(시트 SUB A+a-15 의 메일 가이딩)이 온다.
         if self.fs.seed_planted && !self.fs.has_mail(MailId::Hint) {

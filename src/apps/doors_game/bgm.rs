@@ -16,7 +16,7 @@ pub(super) struct Bgm {
     volume: f32,
 }
 
-fn volume_of(settings: &Settings) -> f32 {
+pub(super) fn volume_of(settings: &Settings) -> f32 {
     if settings.mute_all { 0.0 } else { (settings.mp4_sound * settings.master).clamp(0.0, 1.0) }
 }
 

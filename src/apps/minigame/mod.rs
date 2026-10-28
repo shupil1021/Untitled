@@ -5,8 +5,9 @@
 //! 다시지만, 클리어한 뒤의 보상 상태(cleared/reward_taken/reward_sent)는 저장돼서 다시 안 해도 이어진다.
 //! 창이 포커스가 아닐 땐 시간이 멈춘다(한 번에 한 게임만 진행한다).
 
-pub mod drive;
+mod ending;
 mod eye;
+mod lane;
 mod pack;
 mod view;
 
@@ -17,15 +18,14 @@ use std::rc::Rc;
 
 use miniquad::{KeyCode, RenderingBackend};
 
-use crate::foundation::{Language, MiniKind, MiniProgress, Settings};
+use crate::foundation::{Language, MailId, MiniKind, MiniProgress, Settings};
 use crate::random::Rng;
 use crate::render::gfx::{Assets, Color, Rect, Renderer};
 use crate::strings::{minigame as s, t};
 use crate::ui::button;
 
-use super::game3d::{RenderSlot, View};
 use super::{App, AppAction, WinInput};
-use drive::DriveRound;
+use lane::LaneRound;
 use eye::EyeRound;
 use pack::{PackRound, Phase};
 
@@ -36,7 +36,7 @@ const W: f32 = 480.0;
 const H: f32 = 360.0;
 const HUD_H: f32 = 24.0;
 
-// 한 프레임의 입력 — 게임 로직(eye/drive/pack)이 키보드와 직접 얽히지 않게 한다.
+// 한 프레임의 입력 — 게임 로직(eye/lane/pack)이 키보드와 직접 얽히지 않게 한다.
 #[derive(Clone, Copy, Default)]
 pub struct Controls {
     pub dx: f32,
@@ -58,7 +58,7 @@ pub fn new_app(kind: MiniKind, progress: MiniProgress, settings: Rc<RefCell<Sett
 
 enum Round {
     Eye(EyeRound),
-    Drive(DriveRound),
+    Lane(LaneRound),
     Pack(PackRound),
 }
 
@@ -67,7 +67,7 @@ impl Round {
         let rng = Rng::from_time();
         match kind {
             MiniKind::Eye => Round::Eye(EyeRound::new(rng)),
-            MiniKind::Brain => Round::Drive(DriveRound::new(rng)),
+            MiniKind::Brain => Round::Lane(LaneRound::new(rng)),
             MiniKind::Finger => Round::Pack(PackRound::new()),
         }
     }
@@ -75,7 +75,7 @@ impl Round {
     fn step(&mut self, dt: f32, c: &Controls) -> Outcome {
         match self {
             Round::Eye(r) => r.step(dt, c),
-            Round::Drive(r) => r.step(dt, c),
+            Round::Lane(r) => r.step(dt, c),
             Round::Pack(r) => r.step(dt, c),
         }
     }
@@ -102,8 +102,9 @@ pub struct MiniGameApp {
     stage_t: f32,
     hint_shown: bool, // 첫 실패 뒤 한 번만 도움말을 보여준다
     show_hint: bool,
-    pending_mail: bool,
-    slot: Option<RenderSlot>, // 3D 레이싱(BRAIN_DRIVE)만 쓰는 이 창 전용 3D 렌더 타깃
+    pending_mail: Option<MailId>, // 이 프레임에 OS 로 보낼 메일(첫 실패 힌트 / 보상)
+    boss_hp: i32,     // 리듬 엔딩의 주체 남은 체력(저장하지 않는다 — 처치하면 way_open 으로 저장)
+    boss_hit_t: f32,
 }
 
 impl MiniGameApp {
@@ -115,7 +116,7 @@ impl MiniGameApp {
         } else {
             Stage::Intro
         };
-        MiniGameApp { kind, settings, saved: progress, progress, stage, round: Round::new(kind), clock: 0.0, stage_t: 0.0, hint_shown: false, show_hint: false, pending_mail: false, slot: (kind == MiniKind::Brain).then(RenderSlot::acquire) }
+        MiniGameApp { kind, settings, saved: progress, progress, stage, round: Round::new(kind), clock: 0.0, stage_t: 0.0, hint_shown: false, show_hint: false, pending_mail: None, boss_hp: ending::BOSS_HP, boss_hit_t: 0.0 }
     }
 
     fn controls(&self, win: &WinInput, pack_button: Rect) -> Controls {
@@ -166,7 +167,7 @@ impl App for MiniGameApp {
         self
     }
 
-    fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, _assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
+    fn update(&mut self, _ctx: &mut dyn RenderingBackend, r: &mut Renderer, _assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
         let lang = self.settings.borrow().language;
         let dt = if win.focused { win.dt.min(0.05) } else { 0.0 };
         self.clock += dt;
@@ -206,13 +207,17 @@ impl App for MiniGameApp {
                             self.stage = Stage::Failed;
                             self.stage_t = 0.0;
                             self.show_hint = !self.hint_shown;
+                            // 처음 실패했을 때 한 번, 같은 힌트가 CRT 로 메일로도 온다(이미 왔으면 OS 가 무시한다).
+                            if !self.hint_shown {
+                                self.pending_mail = Some(self.kind.hint_mail());
+                            }
                             self.hint_shown = true;
                         }
                     }
                 }
                 match &self.round {
                     Round::Eye(round) => self.draw_eye_round(r, o, round, lang, if self.stage == Stage::Cleared { (self.stage_t / 1.2).min(1.0) } else { 0.0 }),
-                    Round::Drive(round) => self.draw_drive_round(ctx, r, area, round, lang),
+                    Round::Lane(round) => self.draw_lane_round(r, o, round, lang),
                     Round::Pack(round) => self.draw_pack_round(r, o, round, lang, win),
                 }
                 // PACK 은 연습이 끝나면 START 를 눌러야 본 작업이 시작한다.
@@ -227,9 +232,6 @@ impl App for MiniGameApp {
                 if self.stage == Stage::Failed {
                     fill(r, o, 0.0, 90.0, W, 170.0, [0.0, 0.0, 0.0, 0.8]);
                     centered(r, o, 100.0, t(lang, s::FAILED), 1.6, [1.0, 0.4, 0.4, 1.0]);
-                    if let Round::Drive(round) = &self.round {
-                        centered(r, o, 128.0, &format!("{} {}/{}", t(lang, s::PLACE), round.place(), drive::RACERS), 0.9, [1.0, 1.0, 1.0, 1.0]);
-                    }
                     if self.show_hint {
                         let hint = t(lang, self.hint());
                         for (i, line) in crate::ui::wrap_lines(r, hint, 0.8, W - 60.0).iter().enumerate() {
@@ -251,56 +253,12 @@ impl App for MiniGameApp {
                     }
                 }
             }
-            Stage::Reward | Stage::Sent => {
-                self.draw_reward_backdrop(r, o);
-                let chest = Rect::new(o.0 + 80.0, o.1 + 220.0, 90.0, 64.0);
-                let mailbox = Rect::new(o.0 + 330.0, o.1 + 180.0, 60.0, 104.0);
-                // 상자 — 꺼내기 전엔 닫혀 있고, 꺼낸 뒤엔 뚜껑이 열린 빈 상자.
-                let open = self.progress.reward_taken;
-                r.rect(chest.x, chest.y + 18.0, chest.w, chest.h - 18.0, [0.55, 0.36, 0.18, 1.0]);
-                r.rect(chest.x, chest.y + if open { 0.0 } else { 8.0 }, chest.w, 14.0, [0.7, 0.48, 0.24, 1.0]);
-                r.rect(chest.x + chest.w / 2.0 - 5.0, chest.y + 24.0, 10.0, 10.0, [0.9, 0.8, 0.3, 1.0]);
-                // 우체통
-                r.rect(mailbox.x, mailbox.y, mailbox.w, mailbox.h, [0.25, 0.3, 0.6, 1.0]);
-                r.rect(mailbox.x + 8.0, mailbox.y + 14.0, mailbox.w - 16.0, 8.0, [0.05, 0.05, 0.1, 1.0]);
-                let hover_c = chest.contains(win.mouse.0, win.mouse.1);
-                let hover_m = mailbox.contains(win.mouse.0, win.mouse.1);
-                let can_take = self.stage == Stage::Reward && !self.progress.reward_taken;
-                let can_send = self.stage == Stage::Reward && self.progress.reward_taken && !self.progress.reward_sent;
-                if (can_take && hover_c) || (can_send && hover_m) {
-                    let target = if hover_c { chest } else { mailbox };
-                    crate::ui::border(r, target.x - 2.0, target.y - 2.0, target.w + 4.0, target.h + 4.0, [1.0, 1.0, 0.5, 1.0]);
-                }
-                if win.focused && win.mouse_clicked {
-                    if can_take && hover_c {
-                        self.progress.reward_taken = true;
-                    } else if can_send && hover_m {
-                        self.progress.reward_sent = true;
-                        self.pending_mail = true;
-                        self.stage = Stage::Sent;
-                    }
-                }
-                // 가진 것 — 상자에서 꺼낸 뒤 우체통에 넣기 전까지.
-                if self.progress.reward_taken && !self.progress.reward_sent {
-                    fill(r, o, 14.0, H - 54.0, 44.0, 44.0, [0.0, 0.0, 0.0, 0.7]);
-                    self.draw_item_icon(r, o.0 + 17.0, o.1 + H - 51.0, 38.0);
-                    r.text(o.0 + 66.0, o.1 + H - 46.0, &format!("{} {}", t(lang, s::GOT_ITEM), t(lang, self.item_name())), 0.8, [1.0, 1.0, 0.8, 1.0]);
-                }
-                let msg = if self.stage == Stage::Sent {
-                    t(lang, s::REWARD_SENT)
-                } else if !self.progress.reward_taken {
-                    t(lang, s::REWARD_OPEN)
-                } else {
-                    t(lang, s::REWARD_MAIL)
-                };
-                centered(r, o, 20.0, msg, 0.9, [1.0, 1.0, 1.0, 1.0]);
-            }
+            Stage::Reward | Stage::Sent => self.update_reward(r, o, win, lang),
         }
 
-        // 보낸 직후 한 번: 보상 메일을 CRT 로. 그 다음 프레임에 진행 저장.
-        if self.pending_mail {
-            self.pending_mail = false;
-            return AppAction::DeliverMail(self.kind.reward_mail());
+        // 메일 보내기: 첫 실패 힌트 / 보낸 직후의 보상 메일을 CRT 로. 그 다음 프레임에 진행 저장.
+        if let Some(mail) = self.pending_mail.take() {
+            return AppAction::DeliverMail(mail);
         }
         if self.progress != self.saved {
             self.saved = self.progress;
@@ -323,14 +281,15 @@ mod tests {
     fn reopening_resumes_at_the_reward() {
         assert!(app(MiniKind::Eye, MiniProgress::default()).stage == Stage::Intro);
         assert!(app(MiniKind::Brain, MiniProgress { cleared: true, ..MiniProgress::default() }).stage == Stage::Reward);
-        let sent = MiniProgress { cleared: true, reward_taken: true, reward_sent: true };
+        let sent = MiniProgress { cleared: true, reward_taken: true, reward_sent: true, way_open: true };
         assert!(app(MiniKind::Finger, sent).stage == Stage::Sent);
     }
 
     #[test]
     fn each_game_has_its_own_mails_and_files() {
         for kind in MiniKind::ALL {
-            assert_ne!(kind.task_mail(), kind.reward_mail());
+            assert_ne!(Some(kind.task_mail()), kind.reward_mail());
+            assert_ne!(kind.task_mail(), kind.hint_mail());
             assert!(kind.setup_name().starts_with(kind.app_name()) && kind.exe_name().starts_with(kind.app_name()));
         }
     }

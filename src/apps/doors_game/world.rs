@@ -16,20 +16,18 @@ const ROOM_MIN_X: f32 = -3.0;
 const ROOM_MAX_X: f32 = 3.0;
 const ROOM_MIN_Z: f32 = -3.5; // 문이 있는 벽
 const ROOM_MAX_Z: f32 = 2.5;
-const ROOM_HEIGHT: f32 = 2.6;
+const ROOM_HEIGHT: f32 = 2.85; // 방 모델(assets/models/room.obj)의 높이
 const WALL_THICK: f32 = 0.15;
 pub const SPAWN: [f32; 3] = [0.0, 0.0, 1.2];
 
 // 문 — 앞쪽 벽의 [DOOR_MIN_X, DOOR_MIN_X+DOOR_WIDTH] 틈을 정확히 채운다.
-const DOOR_WIDTH: f32 = 1.5;
+const DOOR_WIDTH: f32 = 1.57;
 const DOOR_MIN_X: f32 = -DOOR_WIDTH / 2.0;
-const DOOR_HALF_H: f32 = 1.15;
-const DOOR_HALF_T: f32 = 0.06;
+const DOOR_HALF_H: f32 = 1.165;
+const DOOR_HALF_T: f32 = 0.0625;
 const DOOR_COLOR: [f32; 4] = [0.35, 0.24, 0.16, 1.0];
-const HANDLE_HALF: [f32; 3] = [0.05, 0.05, 0.05];
-const HANDLE_COLOR: [f32; 4] = [0.8, 0.72, 0.45, 1.0];
-// 손잡이 — 문의 오른쪽 가장자리 근처, 방 안쪽(+Z) 면에서 살짝 튀어나온 자리.
-pub const HANDLE_POS: [f32; 3] = [DOOR_MIN_X + DOOR_WIDTH - 0.15, DOOR_HALF_H - 0.45, ROOM_MIN_Z + 0.09];
+// 손잡이 — 문 모델(door.obj)의 문고리 자리: 문의 오른쪽 가장자리 근처, 방 안쪽(+Z) 면에서 튀어나온 곳.
+pub const HANDLE_POS: [f32; 3] = [0.707, 1.19, -3.26];
 // 문이 열린 뒤 밖으로 나갈 때 조준하는 자리(문간 가운데).
 pub const EXIT_POS: [f32; 3] = [0.0, DOOR_HALF_H, ROOM_MIN_Z + 0.2];
 // 문이 올라가는 높이(문 위의 상인방 속으로 들어간다).
@@ -93,9 +91,10 @@ impl Target {
     }
 }
 
+// 사방이 막힌 방의 충돌 — 눈에 안 보이는 상자들(그리는 건 방 모델, furniture.rs).
 // 사방이 막힌 방 — 바닥/천장/벽 4면(앞쪽 벽은 문간만 비우고 좌우 조각 + 상인방) + 문. lift 는 문이
 // 얼마나 위로 올라갔는지(0 = 닫힘, DOOR_LIFT = 다 열림) — 열리면 문 뒤로 하얀 빛이 보인다.
-pub fn build_room(lift: f32) -> Vec<Box3D> {
+pub fn room_hidden_shell(lift: f32) -> Vec<Box3D> {
     let cx = (ROOM_MIN_X + ROOM_MAX_X) / 2.0;
     let cz = (ROOM_MIN_Z + ROOM_MAX_Z) / 2.0;
     let hx = (ROOM_MAX_X - ROOM_MIN_X) / 2.0 + WALL_THICK;
@@ -124,7 +123,13 @@ pub fn build_room(lift: f32) -> Vec<Box3D> {
     let mut door = solid([DOOR_MIN_X + DOOR_WIDTH / 2.0, DOOR_HALF_H + lift, ROOM_MIN_Z], [DOOR_WIDTH / 2.0, DOOR_HALF_H, DOOR_HALF_T], DOOR_COLOR, false);
     door.solid = !open;
     boxes.push(door);
-    boxes.push(Box3D { center: [HANDLE_POS[0], HANDLE_POS[1] + lift, HANDLE_POS[2]], half: HANDLE_HALF, yaw: 0.0, pitch: 0.0, roll: 0.0, color: HANDLE_COLOR, texture: None, walkable: false, solid: false });
+    boxes
+}
+
+// 방 안에 눈에 보이게 그리는 상자들 — 문이 열렸을 때 문 뒤의 빛과, 상자로 남은 소품(Crate/Trash).
+pub fn room_visible(lift: f32) -> Vec<Box3D> {
+    let open = lift > 0.05;
+    let mut boxes = Vec::new();
     if open {
         // 문 뒤의 빛 — 문간 안쪽에 선 눈부신 벽. 걸어 들어가다 막히는 자리이기도 하다.
         boxes.push(solid([0.0, DOOR_HALF_H, ROOM_MIN_Z - 0.5], [DOOR_WIDTH / 2.0, DOOR_HALF_H, 0.1], [1.0, 0.97, 0.85, 1.0], false));
@@ -132,6 +137,13 @@ pub fn build_room(lift: f32) -> Vec<Box3D> {
     for p in PROPS.iter().filter(|p| !p.mesh) {
         boxes.push(solid(p.center, p.half, p.color, false));
     }
+    boxes
+}
+
+// 방 전체(충돌 확인/테스트용) — 숨은 껍데기와 보이는 상자를 합친다.
+pub fn build_room(lift: f32) -> Vec<Box3D> {
+    let mut boxes = room_hidden_shell(lift);
+    boxes.extend(room_visible(lift));
     boxes
 }
 

@@ -196,6 +196,93 @@ fn a_mission_runs_from_request_to_ingredient() {
     assert_eq!(app.ingredients(), 1);
 }
 
+// 금고의 방 한 바퀴: 의뢰 → 기계(메일) → 금고 반쪽뿐 → 사진(금고 절반) 내려받음 → 맞춰 완성 → 열어서 소환 조각.
+#[test]
+fn the_vault_room_runs_from_half_to_fragment() {
+    let progress = DoorsProgress { errand_accepted: true, place: MainPlace::MissionRoom(MiniKind::Brain), tutorial_done: true, ..DoorsProgress::default() };
+    let mut app = DoorsGameApp::new(progress);
+    let step = |app: &DoorsGameApp| app.progress.missions[MiniKind::Brain.index()];
+    quiet(&mut app);
+    app.interact_spot(Spot::Npc);
+    quiet(&mut app);
+    app.interact_spot(Spot::Machine);
+    assert_eq!(step(&app), MissionStep::Sent);
+    assert_eq!(app.pending_mail, Some(MailId::BrainTask));
+
+    quiet(&mut app);
+    app.interact_spot(Spot::Safe);
+    assert_eq!(step(&app), MissionStep::Sent, "절반이 없으면 금고는 맞출 수 없다");
+    quiet(&mut app);
+    assert!(app.receive_ingredient([false, true, false], true));
+    assert_eq!(step(&app), MissionStep::Received);
+    assert_eq!(app.ingredients(), 0, "금고 절반은 교환 재료가 아니다");
+
+    quiet(&mut app);
+    app.interact_spot(Spot::Safe);
+    assert_eq!(step(&app), MissionStep::Built);
+    quiet(&mut app);
+    app.interact_spot(Spot::Safe);
+    assert_eq!(step(&app), MissionStep::Fragment);
+    assert_eq!(app.ingredients(), 1, "소환 조각(레이싱)만 교환 재료다");
+    quiet(&mut app);
+    app.interact_spot(Spot::Safe);
+    assert_eq!(step(&app), MissionStep::Fragment, "금고의 내용물은 다시 얻을 수 없다");
+    quiet(&mut app);
+    app.interact_spot(Spot::Npc);
+    assert_eq!(step(&app), MissionStep::Done);
+}
+
+// 화장실 한 바퀴: 기사의 의뢰 수락(효과음 + 메일) → 호수 전달 → 변기 속 손 → 손잡이 → 조립 → 물 내리기 → 조각 → 보고.
+#[test]
+fn the_bathroom_runs_from_the_knights_request_to_the_fragment() {
+    let progress = DoorsProgress { errand_accepted: true, place: MainPlace::MissionRoom(MiniKind::Finger), tutorial_done: true, ..DoorsProgress::default() };
+    let mut app = DoorsGameApp::new(progress);
+    let step = |app: &DoorsGameApp| app.progress.missions[MiniKind::Finger.index()];
+    quiet(&mut app);
+    app.interact_spot(Spot::Npc);
+    assert_eq!(app.ask, Some(Ask::Knight));
+    app.answer(false);
+    assert_eq!(step(&app), MissionStep::Start, "거절하면 의뢰는 시작되지 않는다");
+    quiet(&mut app);
+    app.interact_spot(Spot::Npc);
+    app.answer(true);
+    assert_eq!(step(&app), MissionStep::Sent);
+    assert_eq!(app.pending_mail, Some(MailId::FingerTask));
+    assert_eq!(app.sfx_cue, Some(sfx::Cue::QuestStart));
+
+    // 호수에 손잡이를 넣기 전엔 변기가 비어 있다(신호는 OS 가 쓴다).
+    crate::signals::set_lake_delivered(false);
+    quiet(&mut app);
+    app.interact_spot(Spot::Toilet);
+    assert!(!app.progress.hand_out);
+    crate::signals::set_lake_delivered(true);
+    quiet(&mut app);
+    app.interact_spot(Spot::Toilet);
+    assert!(app.progress.hand_out && step(&app) == MissionStep::Sent, "손이 나오는 것과 손잡이를 받는 것은 따로다");
+    quiet(&mut app);
+    app.interact_spot(Spot::Toilet);
+    assert_eq!(step(&app), MissionStep::Received);
+    assert!(!app.progress.hand_out && app.ingredients() == 0);
+    quiet(&mut app);
+    app.interact_spot(Spot::Toilet);
+    assert_eq!(step(&app), MissionStep::Built);
+    quiet(&mut app);
+    app.interact_spot(Spot::Toilet);
+    assert_eq!(step(&app), MissionStep::Revealed);
+    assert_eq!(app.sfx_cue, Some(sfx::Cue::Flush));
+    quiet(&mut app);
+    app.interact_spot(Spot::Toilet);
+    assert_eq!(step(&app), MissionStep::Fragment);
+    assert_eq!(app.ingredients(), 1);
+    quiet(&mut app);
+    app.interact_spot(Spot::Toilet);
+    assert_eq!(step(&app), MissionStep::Fragment, "물을 또 내려도 조각은 더 나오지 않는다");
+    quiet(&mut app);
+    app.interact_spot(Spot::Npc);
+    assert_eq!(step(&app), MissionStep::Done);
+    crate::signals::set_lake_delivered(false);
+}
+
 // 재료 셋 → 소파에게 교환 → 봉투(Mr. POTATO CHIP) → 계단에게 먹임 → 계단이 펼쳐지고 2층이 끝난다.
 #[test]
 fn three_ingredients_become_a_chip_that_feeds_the_stairs() {
@@ -205,7 +292,7 @@ fn three_ingredients_become_a_chip_that_feeds_the_stairs() {
         tutorial_done: true,
         place: MainPlace::Jungle,
         jungle_visited: true,
-        missions: [MissionStep::Received, MissionStep::Done, MissionStep::Received],
+        missions: [MissionStep::Received, MissionStep::Fragment, MissionStep::Fragment],
         ..DoorsProgress::default()
     };
     let mut app = DoorsGameApp::new(progress);
@@ -215,7 +302,7 @@ fn three_ingredients_become_a_chip_that_feeds_the_stairs() {
     app.progress.missions[2] = MissionStep::Talked;
     app.interact_jungle(floor2::Target::Sofa);
     assert!(app.ask.is_none() && app.ingredients() == 2);
-    app.progress.missions[2] = MissionStep::Received;
+    app.progress.missions[2] = MissionStep::Fragment;
 
     quiet(&mut app);
     app.interact_jungle(floor2::Target::Sofa);
@@ -295,7 +382,7 @@ fn every_spawn_stands_on_the_floor_and_clear_of_walls() {
         cases.push(("정글(문 앞)", floor2::gate_front(gate), jungle.clone()));
     }
     for kind in MiniKind::ALL {
-        let room = rooms::mission_room(kind, false, false, 0.0);
+        let room = rooms::mission_room(kind, MissionStep::Start, false, 0.0);
         let mut b = room.boxes;
         b.extend(room.barriers);
         cases.push(("미션 방", rooms::SPAWN, b));

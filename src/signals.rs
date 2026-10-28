@@ -39,3 +39,14 @@ pub fn set_reward_downloaded(kind: usize, done: bool) {
 pub fn reward_downloaded(kind: usize) -> bool {
     REWARD_DOWNLOADED[kind].load(Ordering::Relaxed)
 }
+
+static LAKE_DELIVERED: AtomicBool = AtomicBool::new(false);
+
+// 리듬 미니게임에서 변기 손잡이를 호수에 넣었는지 — 메인 게임 화장실에서 변기 속 손이 나타나는 조건이다(MAIN H-3).
+pub fn set_lake_delivered(done: bool) {
+    LAKE_DELIVERED.store(done, Ordering::Relaxed);
+}
+
+pub fn lake_delivered() -> bool {
+    LAKE_DELIVERED.load(Ordering::Relaxed)
+}

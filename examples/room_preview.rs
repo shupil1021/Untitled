@@ -23,8 +23,11 @@ impl EventHandler for Stage {
         let (boxes, meshes) = preview_start_room();
         let mut mesh = Mesh3D::new(self.ctx.as_mut(), 640, 480);
         // (이름, 위치, yaw, pitch) — yaw 0 이 -Z 방향, +yaw 는 왼쪽으로 돈다.
-        let shots: [(&str, [f32; 3], f32, f32); 7] = [
+        let shots: [(&str, [f32; 3], f32, f32); 10] = [
             ("spawn", [0.0, 1.6, 1.2], 0.0, 0.0),
+            ("door_close", [0.0, 1.4, -1.5], 0.0, 0.0),
+            ("outside_back", [0.0, 1.4, -7.0], std::f32::consts::PI, 0.0),
+            ("top", [0.0, 12.0, -0.5], 0.0, -1.5),
             ("west_wall", [-0.2, 1.4, -0.5], 1.57, -0.1),
             ("east_wall", [0.0, 1.4, 0.5], -1.57, -0.1),
             ("desk_close", [-1.0, 1.4, -1.5], 1.57, -0.35),

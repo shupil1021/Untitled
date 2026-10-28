@@ -14,9 +14,9 @@ pub const SECOND_MAIL_FROM: &str = "\u{FFFD}\u{FFFD}\u{FFFD}@mail.com";
 pub fn mail_from(id: MailId, lang: Language) -> &'static str {
     match id {
         MailId::Friend => FIRST_MAIL_FROM,
-        MailId::EyeTask | MailId::EyeReward => t(lang, s::FROM_EYE),
-        MailId::BrainTask | MailId::BrainReward => t(lang, s::FROM_BRAIN),
-        MailId::FingerTask | MailId::FingerReward => t(lang, s::FROM_FINGER),
+        MailId::EyeTask | MailId::EyeReward | MailId::EyeHint => t(lang, s::FROM_EYE),
+        MailId::BrainTask | MailId::BrainReward | MailId::BrainHint => t(lang, s::FROM_BRAIN),
+        MailId::FingerTask | MailId::FingerReward | MailId::FingerHint => t(lang, s::FROM_FINGER),
         _ => SECOND_MAIL_FROM,
     }
 }
@@ -39,6 +39,9 @@ pub fn mail_subject(id: MailId, lang: Language) -> &'static str {
             MailId::BrainReward => s::BRAIN_REWARD_SUBJECT,
             MailId::FingerTask => s::FINGER_TASK_SUBJECT,
             MailId::FingerReward => s::FINGER_REWARD_SUBJECT,
+            MailId::EyeHint => s::EYE_HINT_MAIL_SUBJECT,
+            MailId::BrainHint => s::BRAIN_HINT_MAIL_SUBJECT,
+            MailId::FingerHint => s::FINGER_HINT_MAIL_SUBJECT,
             MailId::Meal => s::MEAL_MAIL_SUBJECT,
         },
     )
@@ -61,6 +64,9 @@ pub(super) fn mail_body(id: MailId, lang: Language) -> &'static str {
             MailId::BrainReward => s::BRAIN_REWARD_BODY,
             MailId::FingerTask => s::FINGER_TASK_BODY,
             MailId::FingerReward => s::FINGER_REWARD_BODY,
+            MailId::EyeHint => crate::strings::minigame::EYE_HINT,
+            MailId::BrainHint => crate::strings::minigame::DRIVE_HINT,
+            MailId::FingerHint => crate::strings::minigame::PACK_HINT,
             MailId::Meal => s::MEAL_MAIL_BODY,
         },
     )
@@ -73,6 +79,7 @@ pub(super) fn seed_messages(log: &[MailId], lang: Language, attachments: Vec<Opt
     log.iter()
         .zip(attachments)
         .map(|(&id, attachment)| MailMsg {
+            id,
             from: mail_from(id, lang),
             to: "you@mail.com",
             cc: "",
@@ -81,4 +88,29 @@ pub(super) fn seed_messages(log: &[MailId], lang: Language, attachments: Vec<Opt
             attachment,
         })
         .collect()
+}
+
+impl MailMsg {
+    // 언어가 바뀌었을 때 글(보낸 사람/제목/본문)만 새 언어로 다시 고른다.
+    pub(super) fn relocalize(&mut self, lang: Language) {
+        self.from = mail_from(self.id, lang);
+        self.subject = mail_subject(self.id, lang);
+        self.body = mail_body(self.id, lang);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn messages_follow_a_language_change() {
+        let mut msgs = seed_messages(&[MailId::Friend], Language::En, vec![None]);
+        assert_eq!(msgs[0].subject, t(Language::En, s::GAME_MAIL_SUBJECT));
+        msgs[0].relocalize(Language::Ko);
+        assert_eq!(msgs[0].subject, t(Language::Ko, s::GAME_MAIL_SUBJECT));
+        assert_eq!(msgs[0].body, t(Language::Ko, s::GAME_MAIL_BODY));
+        msgs[0].relocalize(Language::Ja);
+        assert_eq!(msgs[0].subject, t(Language::Ja, s::GAME_MAIL_SUBJECT));
+    }
 }

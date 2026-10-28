@@ -17,7 +17,3 @@ pub fn deco(center: [f32; 3], half: [f32; 3], color: [f32; 4]) -> Box3D {
     Box3D { solid: false, ..solid(center, half, color, false) }
 }
 
-// yaw 만큼 돌린 장식 박스 — 레이싱 카트/길 조각처럼 방향이 있는 것들.
-pub fn rotated(center: [f32; 3], half: [f32; 3], yaw: f32, color: [f32; 4]) -> Box3D {
-    Box3D { yaw, ..deco(center, half, color) }
-}

@@ -76,3 +76,57 @@ fn creak_wav() -> Vec<u8> {
         .collect();
     wav_bytes(&samples, SOUND_RATE)
 }
+
+// 퀘스트 시작 효과음(MAIN H-2) — 방귀 소리(떨리며 낮아지는 톱니파 + 노이즈) 다음에 중세풍 나팔 팡파르.
+pub fn quest_start_wav() -> Vec<u8> {
+    let mut rng = Rng::new(0xFA27);
+    let rate = SOUND_RATE as f32;
+    let tau = std::f32::consts::TAU;
+    let mut samples: Vec<i16> = Vec::new();
+    // 방귀 0.9초
+    let secs = 0.9;
+    let mut phase = 0.0f32;
+    for i in 0..(rate * secs) as usize {
+        let t = i as f32 / rate;
+        let k = t / secs;
+        let freq = 95.0 + 38.0 * (tau * 7.0 * t).sin().abs() - 45.0 * k;
+        phase = (phase + freq / rate).fract();
+        let saw = phase * 2.0 - 1.0;
+        let flutter = 0.55 + 0.45 * (tau * 34.0 * t).sin();
+        let env = (k * 25.0).min(1.0) * (1.0 - k).powf(0.4);
+        samples.push(((saw * 0.55 * flutter + (rng.unit() * 2.0 - 1.0) * 0.18) * env * i16::MAX as f32 * 0.6) as i16);
+    }
+    samples.extend(std::iter::repeat_n(0i16, (rate * 0.3) as usize));
+    // 나팔 팡파르 — 같은 음 셋 + 높은 음 하나(사각파 + 3배음).
+    for (freq, secs) in [(392.0f32, 0.2f32), (392.0, 0.2), (392.0, 0.2), (523.25, 0.7)] {
+        for i in 0..(rate * secs) as usize {
+            let t = i as f32 / rate;
+            let wave = (tau * freq * t).sin().signum() * 0.5 + (tau * freq * 3.0 * t).sin() * 0.2;
+            let env = (t * 60.0).min(1.0) * (1.0 - t / secs).max(0.0).powf(0.5);
+            samples.push((wave * env * i16::MAX as f32 * 0.35) as i16);
+        }
+    }
+    wav_bytes(&samples, SOUND_RATE)
+}
+
+// 변기 물 내리는 소리(MAIN H-6) — 높은 소리에서 낮은 소리로 내려가는 노이즈에 꼬르륵거리는 저음.
+pub fn flush_wav() -> Vec<u8> {
+    let mut rng = Rng::new(0xF105);
+    let rate = SOUND_RATE as f32;
+    let tau = std::f32::consts::TAU;
+    let secs = 2.2;
+    let mut low = 0.0f32;
+    let samples: Vec<i16> = (0..(rate * secs) as usize)
+        .map(|i| {
+            let t = i as f32 / rate;
+            let k = t / secs;
+            // 노이즈를 로우패스 — 시간이 갈수록 컷오프가 내려간다.
+            let a = 0.55 - 0.45 * k;
+            low += (rng.unit() * 2.0 - 1.0 - low) * a;
+            let gurgle = 0.25 * (tau * (60.0 + 25.0 * (tau * 3.0 * t).sin()) * t).sin() * k;
+            let env = (t * 8.0).min(1.0) * (1.0 - k).powf(0.6);
+            ((low * 0.7 + gurgle) * env * i16::MAX as f32 * 0.6) as i16
+        })
+        .collect();
+    wav_bytes(&samples, SOUND_RATE)
+}

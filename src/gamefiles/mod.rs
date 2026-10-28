@@ -14,7 +14,7 @@ mod sounds;
 mod texts;
 
 pub use images::{generated_images, FLOWER_IMAGE, FLOWER_IMAGE_NAME, REWARD_IMAGE_BASE};
-pub use sounds::{sound_wav, wav_duration, SOUND_RATE};
+pub use sounds::{sound_wav, wav_duration, SOUND_RATE, flush_wav, quest_start_wav};
 use texts::{GAME_INI, INSTALL_LOG, NFO, README, SRC_DOORS, SRC_MAIN, SRC_MAZE};
 
 // 파일 하나의 내용 종류. Image/Sound 의 숫자는 IMAGE_NAMES/SOUND_NAMES 의 순서와 같다.

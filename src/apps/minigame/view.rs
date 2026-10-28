@@ -134,50 +134,96 @@ impl MiniGameApp {
         r.text(o.0 + W - 8.0 - r.text_width(&time, 0.75), o.1 + 3.0, &time, 0.75, [0.9, 0.9, 0.9, 1.0]);
     }
 
-    // 3D 카트 레이스 — 추적 카메라로 장면을 그리고 그 위에 HUD(랩/순위/속도/부스터/미니맵/카운트다운)를 얹는다.
-    pub(super) fn draw_drive_round(&self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, area: Rect, round: &DriveRound, lang: Language) {
-        let Some(slot) = &self.slot else { return };
-        let view = View::fit(area);
-        let boxes = round.boxes();
-        view.draw_scene_meshes(ctx, r, area, slot, [0.78, 0.78, 0.8, 1.0], &round.camera(), &boxes, &round.meshes());
-        let s = view.s;
-        let white = [1.0, 1.0, 1.0, 1.0];
-        let me = &round.karts[0];
-        // 위: 바퀴 수와 순위
-        r.rect(view.px(0.0), view.py(0.0), 640.0 * s, 34.0 * s, [0.0, 0.0, 0.0, 0.45]);
-        r.text(view.px(12.0), view.py(6.0), &format!("LAP {}/{}", me.lap_number(), drive::LAPS), 1.2 * s, white);
-        let place = round.place();
-        let place_color = if place == 1 { [1.0, 0.9, 0.3, 1.0] } else { white };
-        let place_text = format!("{} {}/{}", t(lang, s::PLACE), place, drive::RACERS);
-        r.text(view.px(628.0) - r.text_width(&place_text, 1.2 * s), view.py(6.0), &place_text, 1.2 * s, place_color);
-        // 아래: 속도
-        let kmh = (me.speed.max(0.0) * 4.0) as i32;
-        r.text(view.px(14.0), view.py(440.0), &format!("{kmh} km/h"), 1.4 * s, white);
-        // 미니맵 — 코스 점들과 카트 점들.
-        let (ox, oy, size) = (560.0, 44.0, 76.0);
-        r.rect(view.px(ox - 4.0), view.py(oy - 4.0), (size + 8.0) * s, (size + 8.0) * s, [0.0, 0.0, 0.0, 0.5]);
-        let scale = size / 260.0;
-        let to_map = |p: [f32; 2]| (view.px(ox + (p[0] + 90.0) * scale), view.py(oy + (p[1] + 40.0) * scale));
-        for (ri, route) in round.track.routes.iter().enumerate() {
-            let color = if ri == 0 { [0.85, 0.85, 0.9, 1.0] } else { [0.5, 0.75, 1.0, 1.0] };
-            for p in route.pts.iter().step_by(2) {
-                let (x, y) = to_map(*p);
-                r.rect(x, y, 2.0 * s, 2.0 * s, color);
+    // 3차선 아케이드 레이싱 — 뒤에서 본 도로(원근을 줄무늬로 흉내), 앞의 차와 상자, 내 차, 위쪽 HUD.
+    pub(super) fn draw_lane_round(&self, r: &mut Renderer, o: (f32, f32), round: &LaneRound, lang: Language) {
+        const HORIZON: f32 = 120.0;
+        const BOTTOM: f32 = 316.0;
+        const LANE_W: f32 = 96.0; // 맨 아래(내 차 위치)에서 한 차선의 너비
+        let cx = W / 2.0;
+        let span = BOTTOM - HORIZON;
+        // 하늘과 멀리 보이는 도시
+        fill(r, o, 0.0, 0.0, W, HORIZON, [0.08, 0.12, 0.16, 1.0]);
+        for i in 0..14 {
+            let h = 18.0 + ((i * 37) % 5) as f32 * 9.0;
+            fill(r, o, i as f32 * 36.0 - 6.0, HORIZON - h, 30.0, h, [0.14, 0.2, 0.26, 1.0]);
+        }
+        // 도로 — 가로 띠마다 먼 곳일수록 좁고, 달린 거리에 따라 색과 점선이 흘러간다.
+        let mut y = HORIZON;
+        while y < BOTTOM + 44.0 {
+            let scale = ((y - HORIZON) / span).max(0.02);
+            let dz = 8.0 * (1.0 / scale - 1.0); // 이 줄이 내 앞 몇 m 인지
+            let band = (((round.dist + dz) / 9.0).floor() as i32) & 1;
+            let grass = if band == 0 { [0.12, 0.22, 0.14, 1.0] } else { [0.1, 0.19, 0.12, 1.0] };
+            fill(r, o, 0.0, y, W, 3.0, grass);
+            let half = LANE_W * 1.5 * scale;
+            let road = if band == 0 { [0.26, 0.26, 0.29, 1.0] } else { [0.23, 0.23, 0.26, 1.0] };
+            fill(r, o, cx - half, y, half * 2.0, 3.0, road);
+            fill(r, o, cx - half - 3.0 * scale, y, 3.0 * scale + 1.0, 3.0, [0.8, 0.8, 0.85, 1.0]);
+            fill(r, o, cx + half, y, 3.0 * scale + 1.0, 3.0, [0.8, 0.8, 0.85, 1.0]);
+            if (((round.dist + dz) / 6.0).floor() as i32) & 1 == 0 {
+                for k in [-0.5f32, 0.5] {
+                    fill(r, o, cx + k * LANE_W * 2.0 * scale / 2.0 * 2.0 - scale, y, (2.0 * scale).max(1.0), 3.0, [0.9, 0.9, 0.6, 1.0]);
+                }
+            }
+            y += 3.0;
+        }
+        // 장애물 — 먼 것부터 그린다.
+        let mut seen: Vec<&lane::Obstacle> = round.obstacles.iter().filter(|ob| ob.alive && ob.at > round.dist - 3.0 && ob.at - round.dist < 120.0).collect();
+        seen.sort_by(|a, b| b.at.total_cmp(&a.at));
+        for ob in seen {
+            let dz = (ob.at - round.dist).max(0.0);
+            let scale = 1.0 / (1.0 + dz / 8.0);
+            let x = cx + (ob.lane as f32 - 1.0) * LANE_W * scale;
+            let ybase = HORIZON + span * scale;
+            match ob.kind {
+                lane::ObstacleKind::Car => {
+                    let (w, h) = (66.0 * scale, 38.0 * scale);
+                    fill(r, o, x - w / 2.0, ybase - h, w, h, [0.2, 0.45, 0.85, 1.0]);
+                    fill(r, o, x - w * 0.36, ybase - h * 1.0, w * 0.72, h * 0.4, [0.55, 0.75, 0.95, 1.0]);
+                    fill(r, o, x - w * 0.42, ybase - h * 0.2, w * 0.2, h * 0.2, [0.95, 0.2, 0.2, 1.0]);
+                    fill(r, o, x + w * 0.22, ybase - h * 0.2, w * 0.2, h * 0.2, [0.95, 0.2, 0.2, 1.0]);
+                }
+                lane::ObstacleKind::Crate => {
+                    let (w, h) = (52.0 * scale, 46.0 * scale);
+                    fill(r, o, x - w / 2.0, ybase - h, w, h, [0.68, 0.5, 0.3, 1.0]);
+                    fill(r, o, x - w / 2.0, ybase - h * 0.55, w, (4.0 * scale).max(1.0), [0.5, 0.35, 0.18, 1.0]);
+                    fill(r, o, x - (3.0 * scale).max(1.0), ybase - h, (6.0 * scale).max(1.0), h, [0.5, 0.35, 0.18, 1.0]);
+                }
             }
         }
-        const DOT: [[f32; 4]; drive::RACERS] = [[0.9, 0.12, 0.15, 1.0], [0.2, 0.45, 0.95, 1.0], [0.95, 0.8, 0.15, 1.0], [0.25, 0.8, 0.35, 1.0]];
-        for (i, k) in round.karts.iter().enumerate().rev() {
-            let (x, y) = to_map(k.pos);
-            let d = if i == 0 { 5.0 } else { 3.5 };
-            r.rect(x - d * s / 2.0, y - d * s / 2.0, d * s, d * s, DOT[i]);
+        // 내 차 — 충돌해서 멈춰 있는 동안은 깜빡인다.
+        let px = cx + (round.lane_pos - 1.0) * LANE_W;
+        if round.stop_left <= 0.0 || (self.clock * 12.0) as i32 % 2 == 0 {
+            fill(r, o, px - 33.0, BOTTOM - 38.0 + 22.0, 66.0, 38.0, [0.85, 0.15, 0.18, 1.0]);
+            fill(r, o, px - 24.0, BOTTOM - 38.0 + 22.0, 48.0, 14.0, [0.95, 0.8, 0.8, 1.0]);
+            fill(r, o, px - 30.0, BOTTOM - 8.0 + 22.0, 14.0, 8.0, [0.08, 0.08, 0.1, 1.0]);
+            fill(r, o, px + 16.0, BOTTOM - 8.0 + 22.0, 14.0, 8.0, [0.08, 0.08, 0.1, 1.0]);
+            if round.braking && round.stop_left <= 0.0 {
+                fill(r, o, px - 30.0, BOTTOM - 20.0 + 22.0, 10.0, 5.0, [1.0, 0.3, 0.3, 1.0]);
+                fill(r, o, px + 20.0, BOTTOM - 20.0 + 22.0, 10.0, 5.0, [1.0, 0.3, 0.3, 1.0]);
+            }
         }
+        // HUD
+        fill(r, o, 0.0, 0.0, W, HUD_H, [0.0, 0.0, 0.0, 0.85]);
+        let status = format!(
+            "{} {:.0}/{:.0}m   {} {:.0}   {} {}/{}",
+            t(lang, s::DISTANCE),
+            round.dist.min(lane::GOAL_M),
+            lane::GOAL_M,
+            t(lang, s::TIME),
+            round.time_left(),
+            t(lang, s::CRASHES),
+            round.crashes,
+            lane::MAX_CRASHES
+        );
+        r.text(o.0 + 8.0, o.1 + 3.0, &status, 0.75, [0.9, 0.9, 0.9, 1.0]);
         // 카운트다운 / GO!
         let cd = round.countdown();
         if cd > 0.0 {
             let n = format!("{}", cd.ceil() as i32);
-            r.text(view.px(320.0) - r.text_width(&n, 4.0 * s) / 2.0, view.py(150.0), &n, 4.0 * s, [1.0, 0.95, 0.3, 1.0]);
+            r.text(o.0 + W / 2.0 - r.text_width(&n, 4.0) / 2.0, o.1 + 120.0, &n, 4.0, [1.0, 0.95, 0.3, 1.0]);
         } else if cd > -0.9 {
-            r.text(view.px(320.0) - r.text_width("GO!", 4.0 * s) / 2.0, view.py(150.0), "GO!", 4.0 * s, [0.4, 1.0, 0.4, 1.0]);
+            r.text(o.0 + W / 2.0 - r.text_width("GO!", 4.0) / 2.0, o.1 + 120.0, "GO!", 4.0, [0.4, 1.0, 0.4, 1.0]);
         }
     }
 
@@ -197,6 +243,8 @@ impl MiniGameApp {
             fill(r, o, x, BELT_Y + 40.0, 12.0, 4.0, [0.4, 0.4, 0.42, 1.0]);
             x += 24.0;
         }
+        // 판정 구간 — 판정선 앞뒤 ±0.25초(소리를 꺼도 이 밝은 띠를 보고 맞출 수 있다)
+        fill(r, o, LINE_X - pack::WINDOW * speed, BELT_Y - 60.0, pack::WINDOW * speed * 2.0, 140.0, [1.0, 0.95, 0.5, 0.12]);
         // 판정선
         let line_c = if round.flash > 0.0 { [1.0, 0.9, 0.3, 1.0] } else { [0.9, 0.9, 0.95, 1.0] };
         fill(r, o, LINE_X - pack::LINE_HALF, BELT_Y - 60.0, pack::LINE_HALF * 2.0, 140.0, line_c);
@@ -269,12 +317,16 @@ impl MiniGameApp {
         match self.kind {
             MiniKind::Eye => draw_eye(r, o, (size / 2.0, size / 2.0, size / 2.0, size / 3.2), 0.0, (0.0, 0.0)),
             MiniKind::Brain => {
-                ellipse(r, o, size / 2.0, size / 2.0, size / 2.0, size / 2.6, [0.85, 0.6, 0.65, 1.0]);
-                ellipse(r, o, size * 0.62, size * 0.45, size * 0.1, size * 0.1, [0.4, 0.42, 0.25, 1.0]);
+                // 금고 절반 — 쇠색 몸통, 다이얼, 잘려서 어두운 단면.
+                r.rect(x + size * 0.1, y + size * 0.12, size * 0.8, size * 0.76, [0.5, 0.52, 0.58, 1.0]);
+                r.rect(x + size * 0.76, y + size * 0.12, size * 0.14, size * 0.76, [0.12, 0.13, 0.16, 1.0]);
+                ellipse(r, o, size * 0.4, size * 0.5, size * 0.2, size * 0.2, [0.7, 0.72, 0.78, 1.0]);
+                ellipse(r, o, size * 0.4, size * 0.5, size * 0.06, size * 0.06, [0.85, 0.72, 0.3, 1.0]);
             }
             MiniKind::Finger => {
-                r.rect(x + size * 0.38, y + size * 0.1, size * 0.24, size * 0.8, [0.93, 0.74, 0.62, 1.0]);
-                r.rect(x + size * 0.38, y + size * 0.78, size * 0.24, size * 0.12, [0.6, 0.08, 0.1, 1.0]);
+                // 변기 손잡이 — 은색 막대 + 둥근 끝.
+                r.rect(x + size * 0.2, y + size * 0.52, size * 0.62, size * 0.12, [0.82, 0.84, 0.9, 1.0]);
+                ellipse(r, o, size * 0.82, size * 0.58, size * 0.14, size * 0.14, [0.92, 0.92, 0.97, 1.0]);
             }
         }
     }

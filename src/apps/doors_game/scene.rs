@@ -8,13 +8,13 @@ use std::hash::{Hash, Hasher};
 use crate::apps::game3d::ena::ena_time;
 use crate::apps::game3d::item::Item;
 use crate::apps::game3d::player::aim_dist;
-use crate::foundation::{MainPlace, MiniKind, MissionStep};
+use crate::foundation::{MainPlace, MiniKind};
 use crate::render::mesh3d::{Box3D, MeshObject};
 
 use super::floor2;
 use super::rooms::{self, Spot};
 use super::furniture::room_meshes;
-use super::world::{aimed_target, build_room, invisible_colliders, letter_box, Target, EXIT_POS, HANDLE_POS};
+use super::world::{aimed_target, build_room, invisible_colliders, letter_box, room_visible, Target, EXIT_POS, HANDLE_POS};
 use super::{Aim, DoorsGameApp, ROOM_CLEAR};
 
 pub(super) struct Scene {
@@ -36,7 +36,7 @@ impl DoorsGameApp {
         p.place.hash(&mut h);
         self.door_lift.to_bits().hash(&mut h);
         self.unfold.to_bits().hash(&mut h);
-        (p.quest_accepted, p.has_letter, p.tutorial_done, p.exchanged, p.chip_taken, p.chip_fed).hash(&mut h);
+        (p.quest_accepted, p.has_letter, p.tutorial_done, p.exchanged, p.chip_taken, p.chip_fed, p.hand_out).hash(&mut h);
         p.missions.hash(&mut h);
         // 뇌의 방 창밖 풍경은 ENA 식으로 초당 8번만 바뀌니 그때만 다시 만든다.
         if p.place == MainPlace::MissionRoom(MiniKind::Brain) {
@@ -49,13 +49,14 @@ impl DoorsGameApp {
         let p = &self.progress;
         match p.place {
             MainPlace::StartRoom => {
-                let mut boxes = build_room(self.door_lift);
-                if p.quest_accepted && !p.has_letter {
-                    boxes.push(letter_box());
-                }
-                let mut collide = boxes.clone();
+                let mut collide = build_room(self.door_lift);
                 collide.extend(invisible_colliders());
-                Scene { key, clear: ROOM_CLEAR, collide, shown: boxes, meshes: room_meshes(), room_items: Vec::new(), jungle_items: Vec::new() }
+                let mut shown = room_visible(self.door_lift);
+                if p.quest_accepted && !p.has_letter {
+                    collide.push(letter_box());
+                    shown.push(letter_box());
+                }
+                Scene { key, clear: ROOM_CLEAR, collide, shown, meshes: room_meshes(self.door_lift), room_items: Vec::new(), jungle_items: Vec::new() }
             }
             MainPlace::Jungle => {
                 let jungle_items = floor2::items(p.exchanged && !p.chip_taken);
@@ -67,7 +68,7 @@ impl DoorsGameApp {
             }
             MainPlace::MissionRoom(kind) => {
                 let step = p.missions[kind.index()];
-                let room = rooms::mission_room(kind, step == MissionStep::Done, step >= MissionStep::Received, self.clock);
+                let room = rooms::mission_room(kind, step, p.hand_out, self.clock);
                 let mut collide = room.boxes.clone();
                 collide.extend(room.barriers);
                 Scene { key, clear: room.clear, collide, shown: room.boxes, meshes: Vec::new(), room_items: room.items, jungle_items: Vec::new() }

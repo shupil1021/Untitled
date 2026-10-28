@@ -211,6 +211,19 @@ impl DesktopScene {
             // 문 게임에서 편지를 우편함에 넣음 — 같은 내용의 편지 메일이 도착한다(시트 오른쪽 표).
             DeskAction::LetterSent => self.deliver_mail(MailId::Letter, settings),
             DeskAction::DeliverMail(id) => self.deliver_mail(id, settings),
+            // 미니게임 메일/첨부 다시 받기 — 사라진 첨부가 있으면 새로 만들고, 열려 있는 메일/탐색기를 갱신한다.
+            DeskAction::ResendMini(kind) => {
+                let changed = self.fs.resend_mini_mails(kind);
+                self.refresh_mail_if_open(settings);
+                self.refresh_explorer_if_open(settings);
+                if changed {
+                    let lang = settings.borrow().language;
+                    let id = kind.task_mail();
+                    self.toast = Some(Toast::new_mail(mail_from(id, lang), mail_subject(id, lang)));
+                    self.toast_timer = TOAST_DURATION;
+                }
+                self.write_save(settings);
+            }
             // 창 안 게임의 진행 상황이 바뀌었다 — fs 에 기록하고 즉시 저장해서 창을 닫았다 다시 열어도 이어진다.
             DeskAction::SaveDoors(p) => {
                 self.fs.doors_progress = p;

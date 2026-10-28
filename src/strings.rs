@@ -174,7 +174,7 @@ pub mod mail {
     // 미니게임 보내는 사람(시트의 "메일 가이딩" 발신자) — 이름이 언어별로 다르다.
     pub const FROM_EYE: S = S { en: "Blinky", ko: "깜빡이", ja: "まばたき" };
     pub const FROM_BRAIN: S = S { en: "Detour", ko: "우회로", ja: "うかいろ" };
-    pub const FROM_FINGER: S = S { en: "Packing Clerk", ko: "포장 담당자", ja: "梱包の担当者" };
+    pub const FROM_FINGER: S = S { en: "Knight", ko: "기사", ja: "騎士" };
 
     // 2층 정글에 처음 나왔을 때(MAIN B-1).
     pub const OUTSIDE_MAIL_SUBJECT: S = S { en: "Outside?", ko: "밖이라고?", ja: "外だって?" };
@@ -206,26 +206,26 @@ pub mod mail {
         ja: "その目はもうきみのものだ。もといたゲームに戻って。",
     };
 
-    // 뇌의 방 — 레이싱 게임(BRAIN_DRIVE).
+    // 금고의 방 — 레이싱 게임(BRAIN_DRIVE). 완주하면 거대한 금고 절반을 프린터 우편함으로 보낸다.
     pub const BRAIN_TASK_SUBJECT: S = S { en: "The road home", ko: "집으로 가는 길", ja: "家へ帰る道" };
     pub const BRAIN_TASK_BODY: S = S {
-        en: "Be the first one home.",
-        ko: "가장 먼저 집에 도착해.",
-        ja: "一番に家に着いて。",
+        en: "Be the first one home. If you win, the other half of the vault is waiting at the end of the road.",
+        ko: "가장 먼저 집에 도착해. 이기면 길 끝에서 금고의 나머지 절반이 기다리고 있어.",
+        ja: "一番に家に着いて。勝てば、道の果てで金庫のもう半分が待っている。",
     };
-    pub const BRAIN_REWARD_SUBJECT: S = S { en: "Did you arrive?", ko: "도착했어?", ja: "着いた?" };
+    pub const BRAIN_REWARD_SUBJECT: S = S { en: "Half, delivered", ko: "반쪽 배송", ja: "半分の配送" };
     pub const BRAIN_REWARD_BODY: S = S {
-        en: "The road is over. Take what remains with you.",
-        ko: "길은 끝났어. 남은 것은 네가 가져가.",
-        ja: "道は終わった。残ったものは、きみが持っていって。",
+        en: "I sent the other half. Fit it to the vault on your side.",
+        ko: "나머지 절반을 보냈어. 네 쪽 금고와 맞춰 봐.",
+        ja: "残りの半分を送ったよ。そっちの金庫と合わせてみて。",
     };
 
-    // 손가락의 방 — 포장 리듬 게임(PACK).
-    pub const FINGER_TASK_SUBJECT: S = S { en: "A hand for the customer", ko: "손님 대신 손", ja: "お客さんの代わりに手" };
+    // 화장실 — 포장 리듬 게임(PACK). 기사가 잃어버린 칼(=변기 손잡이)을 찾아 달라고 한다.
+    pub const FINGER_TASK_SUBJECT: S = S { en: "The lost sword", ko: "잃어버린 칼", ja: "なくした剣" };
     pub const FINGER_TASK_BODY: S = S {
-        en: "Press when the box sits right on the bar. Eight out of twelve is enough.",
-        ko: "상자가 선에 정확히 걸치면 눌러. 열두 번 중 여덟 번이면 충분해.",
-        ja: "箱が線にぴったり重なったら押して。十二回のうち八回で十分だよ。",
+        en: "At the end of this game lies my sword. Find it for me.",
+        ko: "이 게임의 끝에 나의 칼이 있소. 찾아주시오.",
+        ja: "このゲームの果てに、わが剣がある。見つけてくれ。",
     };
     pub const FINGER_REWARD_SUBJECT: S = S { en: "Today's pay", ko: "오늘의 급여", ja: "今日の給料" };
     pub const FINGER_REWARD_BODY: S = S {
@@ -233,6 +233,11 @@ pub mod mail {
         ko: "이 손은 이제 할 일이 없어. 그쪽에서 받아 줘.",
         ja: "この手はもうやることがない。そっちで受け取って。",
     };
+
+    // 처음 실패한 뒤 한 번 오는 힌트 메일 — 본문은 미니게임 창의 힌트와 같다.
+    pub const EYE_HINT_MAIL_SUBJECT: S = S { en: "A tip", ko: "한 가지 조언", ja: "ひとつ助言" };
+    pub const BRAIN_HINT_MAIL_SUBJECT: S = S { en: "A tip for the road", ko: "길 위의 조언", ja: "道の助言" };
+    pub const FINGER_HINT_MAIL_SUBJECT: S = S { en: "A word of advice", ko: "조언 한마디", ja: "ひとこと助言" };
 
     // Mr. POTATO CHIP 을 받았을 때(MAIN C-2).
     pub const MEAL_MAIL_SUBJECT: S = S { en: "Mealtime", ko: "식사 준비", ja: "食事の支度" };
@@ -400,12 +405,12 @@ pub mod minigame {
         S { en: "No attacks. Just dodge.", ko: "공격은 없다. 피하기만 하면 된다.", ja: "攻撃はない。よけるだけ。" },
     ];
     pub const DRIVE_INTRO: [S; 3] = [
-        S { en: "W: gas   S: brake   A / D: steer", ko: "W: 가속   S: 브레이크   A·D: 핸들", ja: "W: アクセル   S: ブレーキ   A·D: ハンドル" },
-        S { en: "Guard rails slow you down. Choose your fork.", ko: "가드레일에 부딪히면 느려진다. 갈림길을 골라 가라.", ja: "ガードレールにぶつかると遅くなる。分かれ道を選べ。" },
-        S { en: "3 laps. Finish 1st.", ko: "3바퀴를 돌아 1등으로 들어와라.", ja: "3周して1位でゴールしろ。" },
+        S { en: "A / D (or arrows): change lane   S / Down: brake", ko: "A·D(또는 ←→): 차선 변경   S·↓: 브레이크", ja: "A·D(または←→): 車線変更   S·↓: ブレーキ" },
+        S { en: "Auto-run. Reach 1,000 m within 60 seconds.", ko: "자동으로 달린다. 60초 안에 1,000m 에 닿아라.", ja: "自動で走る。60秒以内に1,000mへ。" },
+        S { en: "A crash stops you for 2s. 3 crashes: fail.", ko: "부딪히면 2초 멈춘다. 3번 부딪히면 실패.", ja: "ぶつかると2秒止まる。3回ぶつかると失敗。" },
     ];
     pub const PACK_INTRO: [S; 3] = [
-        S { en: "Space or the button while the box overlaps the bar", ko: "상자가 바에 정확히 걸쳤을 때 Space 또는 버튼", ja: "箱がバーにぴったり重なったらSpaceまたはボタン" },
+        S { en: "Space or the button as the box crosses the line", ko: "상자가 판정선을 지날 때 Space 또는 버튼", ja: "箱が判定線を通る時にSpaceまたはボタン" },
         S { en: "3 practice boxes, then 12 for real.", ko: "연습 3번, 그다음 본 작업 12개.", ja: "練習3回、そのあと本番12個。" },
         S { en: "8 or more passes.", ko: "8개 이상 맞추면 합격.", ja: "8個以上成功で合格。" },
     ];
@@ -416,15 +421,14 @@ pub mod minigame {
         ja: "遠くへ走らないで。近くの隙間へ動いて。当たった直後は少しの間無敵だよ。",
     };
     pub const DRIVE_HINT: S = S {
-        en: "Slow down before the corner. Hitting the guard rail costs you a lot of speed.",
-        ko: "코너 앞에서 속도를 줄여. 가드레일에 부딪히면 속도를 크게 잃어.",
-        ja: "コーナーの手前で減速して。ガードレールにぶつかると速度を大きく失うよ。",
+        en: "If the road ahead is blocked, move to the next lane. Holding the brake too long makes you arrive late.",
+        ko: "앞이 막히면 옆 차선으로 가. 브레이크를 오래 누르면 도착이 늦어져.",
+        ja: "前がふさがっていたら隣の車線へ。ブレーキを長く踏むと到着が遅れるよ。",
     };
-    pub const PLACE: S = S { en: "PLACE", ko: "순위", ja: "順位" };
     pub const PACK_HINT: S = S {
-        en: "Press once, only while the box sits right on the bar. Pressing early or late ruins that box.",
-        ko: "상자가 바에 정확히 걸쳐진 순간에만 한 번 눌러. 일찍이든 늦게든 어긋나게 누르면 그 상자는 실패야.",
-        ja: "箱がバーにぴったり重なった瞬間にだけ一度押して。早すぎても遅すぎてもその箱は失敗だよ。",
+        en: "Press once when the circle and the line overlap. You can even turn the sound off and just watch the line.",
+        ko: "원과 판정선이 겹칠 때 한 번 눌러. 소리를 끄고 선만 봐도 돼.",
+        ja: "円と判定線が重なる時に一度押して。音を消して線だけ見てもいいよ。",
     };
 
     pub const REWARD_OPEN: S = S { en: "Open the reward box.", ko: "보상 상자를 열어 보자.", ja: "報酬の箱を開けてみよう。" };
@@ -435,7 +439,39 @@ pub mod minigame {
         ja: "送った。このウィンドウを閉じて元のゲームに戻ろう。",
     };
     pub const ITEM_EYE: S = S { en: "Bloodshot eye", ko: "충혈된 눈", ja: "充血した目" };
-    pub const ITEM_BRAIN: S = S { en: "Worn-out brain", ko: "짓무른 뇌", ja: "ただれた脳" };
-    pub const ITEM_FINGER: S = S { en: "Severed finger", ko: "절단된 손가락", ja: "切断された指" };
+    pub const ITEM_BRAIN: S = S { en: "Half of a vault", ko: "금고 절반", ja: "金庫の半分" };
+    pub const ITEM_FINGER: S = S { en: "Toilet handle", ko: "변기 손잡이", ja: "トイレのレバー" };
     pub const GOT_ITEM: S = S { en: "You got:", ko: "얻었다:", ja: "手に入れた:" };
+
+    // 엔딩 안내(ending.rs) — 레이싱: 트랙 탈출 → 금고 절반 → 프린터 우편함 / 리듬: 주체 처치 → 손잡이 → 호수.
+    pub const EXIT_OPEN: S = S {
+        en: "The exit off the track is open. Head outside.",
+        ko: "트랙 밖으로 나가는 출구가 열렸다. 밖으로 나가 보자.",
+        ja: "トラックの外へ出る出口が開いた。外へ出てみよう。",
+    };
+    pub const VAULT_HUGE: S = S {
+        en: "Half a vault, as big as a mountain. Take a look.",
+        ko: "산만큼 거대한 금고의 절반이다. 조사해 보자.",
+        ja: "山ほど巨大な金庫の半分だ。調べてみよう。",
+    };
+    pub const PRINTER_SEND: S = S {
+        en: "A printer-shaped mailbox. Put the half inside.",
+        ko: "프린터처럼 생긴 우편함이다. 금고 절반을 넣어 보자.",
+        ja: "プリンターのような郵便受けだ。金庫の半分を入れてみよう。",
+    };
+    pub const KILL_PROMPT: S = S {
+        en: "Keep clicking the game's subject until it falls.",
+        ko: "게임의 주체가 쓰러질 때까지 계속 클릭하자.",
+        ja: "ゲームの主が倒れるまでクリックし続けよう。",
+    };
+    pub const ROCK_PROMPT: S = S {
+        en: "A toilet handle is stuck in the rock like a legendary sword.",
+        ko: "바위에 변기 손잡이가 전설의 검처럼 꽂혀 있다.",
+        ja: "岩にトイレのレバーが伝説の剣のように刺さっている。",
+    };
+    pub const LAKE_PROMPT: S = S {
+        en: "Put the handle into the lake beside it.",
+        ko: "옆의 호수에 손잡이를 넣어 보자.",
+        ja: "隣の湖にレバーを入れてみよう。",
+    };
 }

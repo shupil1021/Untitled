@@ -70,6 +70,7 @@ pub enum DeskAction {
     SeedPlanted,
     FlowerSent,
     DeliverMail(MailId),
+    ResendMini(MiniKind),
     SaveMini(MiniKind, MiniProgress),
 }
 
@@ -508,6 +509,7 @@ impl WindowManager {
                 AppAction::SeedPlanted => actions.push(DeskAction::SeedPlanted),
                 AppAction::FlowerSent => actions.push(DeskAction::FlowerSent),
                 AppAction::DeliverMail(id) => actions.push(DeskAction::DeliverMail(id)),
+                AppAction::ResendMini(kind) => actions.push(DeskAction::ResendMini(kind)),
                 AppAction::SaveMini(k, p) => actions.push(DeskAction::SaveMini(k, p)),
             }
         }

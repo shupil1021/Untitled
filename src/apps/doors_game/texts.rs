@@ -1,4 +1,4 @@
-//! 미션 방 NPC 의 대사 모음과 이름표 — 눈 / 뇌 / 손가락의 방이 같은 흐름이고 문구만 다르다.
+//! 미션 방 NPC 의 대사 모음과 이름표 — 눈의 방 / 금고의 방 / 화장실의 NPC 대사.
 
 use crate::foundation::MiniKind;
 
@@ -30,26 +30,27 @@ pub(super) fn mission_text(kind: MiniKind) -> &'static MissionText {
         machine_done: &["아케이드 기계는 조용하다."],
     };
     static BRAIN: MissionText = MissionText {
-        talk_first: &["바닥의 도로 위에 표지판이 서 있다.", "집까지 가는 길이야. 목적지만 바뀌지 않으면 돼.", "표지판이 운전대 모양의 기계 쪽을 가리킨다."],
+        talk_first: &["바닥의 도로 위에 표지판이 서 있다.", "집까지 가는 길이야. 이 길 끝에 금고의 나머지 절반이 있어.", "표지판이 운전대 모양의 기계 쪽을 가리킨다."],
         talk_waiting: &["저 기계에서 게임을 받아."],
         machine_locked: &["운전대 기계는 꺼져 있다.", "먼저 표지판과 이야기해 보자."],
         machine_send: &["운전대 기계의 '게임 받기'를 눌렀다.", "어디선가 알림음이 울린다..."],
         machine_waiting: &["이미 게임을 받았다.", "컴퓨터에서 확인해 보자."],
-        received: &["어디선가 보낸 짓무른 뇌가 손에 쥐어져 있다.", "'짓무른 뇌'를 얻었다."],
+        received: &["어디선가 보낸 금고 절반이 손에 쥐어져 있다.", "'금고 절반'을 얻었다.", "방에 서 있는 금고 반쪽에 맞춰 보자."],
         talk_received: &["돌아왔는데, 정말 같은 곳일까?", "창밖 풍경이 멈췄다. 방은 그대로다."],
         talk_done: &["...여기가 집이었나."],
         machine_done: &["운전대 기계는 조용하다."],
     };
+    // 화장실의 기사 — 게임 받기 기계가 없고(machine_* 는 안 쓴다) 기사의 의뢰를 수락하면 PACK 이 메일로 온다.
     static FINGER: MissionText = MissionText {
-        talk_first: &["장갑을 낀 담당자가 이쪽을 본다.", "손은 빌려줄게. 박자만 네가 맞춰.", "그는 포장 기계의 대기 버튼을 턱짓으로 가리켰다."],
-        talk_waiting: &["저 기계 버튼을 눌러."],
-        machine_locked: &["포장 기계는 멈춰 있다.", "먼저 담당자와 이야기해 보자."],
-        machine_send: &["포장 기계의 대기 버튼을 눌렀다.", "어디선가 알림음이 울린다..."],
-        machine_waiting: &["이미 버튼을 눌렀다.", "컴퓨터에서 확인해 보자."],
-        received: &["어디선가 보낸 절단된 손가락이 손에 쥐어져 있다.", "'절단된 손가락'을 얻었다."],
-        talk_received: &["손님이 손님을 만들었네.", "멈춘 기계가 한 번만 박자를 쳤다."],
-        talk_done: &["...다음 손님은 아직이야."],
-        machine_done: &["포장 기계는 멈춰 있다."],
+        talk_first: &["갑옷 차림의 기사가 변기 앞을 서성이고 있다.", "내 칼을 잃어버려서 화장실을 못 쓰겠소.", "내 칼을 찾아주시오."],
+        talk_waiting: &["이 게임의 끝에 나의 칼이 있소.", "...찾아주시오."],
+        machine_locked: &[],
+        machine_send: &[],
+        machine_waiting: &[],
+        received: &["손이 내민 변기 손잡이를 받았다.", "손은 다시 변기 속으로 들어갔다.", "'변기 손잡이'를 얻었다."],
+        talk_received: &["기사가 변기 손잡이를 쓰다듬는다.", "나의 칼이 돌아왔소. 이제 화장실을 쓸 수 있겠군.", "기사는 만족스럽게 변기 앞에 자리를 잡았다."],
+        talk_done: &["...사용 중이오."],
+        machine_done: &[],
     };
     match kind {
         MiniKind::Eye => &EYE,
@@ -69,15 +70,15 @@ pub(super) fn gate_of(kind: MiniKind) -> Gate {
 pub(super) fn item_name(kind: MiniKind) -> &'static str {
     match kind {
         MiniKind::Eye => "충혈된 눈",
-        MiniKind::Brain => "짓무른 뇌",
-        MiniKind::Finger => "절단된 손가락",
+        MiniKind::Brain => "소환 조각(레이싱)",
+        MiniKind::Finger => "소환 조각(리듬)",
     }
 }
 
 pub(super) fn door_name(kind: MiniKind) -> &'static str {
     match kind {
         MiniKind::Eye => "눈 표식 문",
-        MiniKind::Brain => "뇌 표식 문",
-        MiniKind::Finger => "손가락 표식 문",
+        MiniKind::Brain => "금고가 보이는 문",
+        MiniKind::Finger => "화장실 문",
     }
 }

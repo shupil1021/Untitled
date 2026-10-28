@@ -1,4 +1,4 @@
-//! 코드로 만드는 이미지 — 게임 폴더의 그림(문/화분/잡음), 서브 게임이 보내는 꽃 사진, 미니게임 보상 사진(눈/뇌/손가락).
+//! 코드로 만드는 이미지 — 게임 폴더의 그림(문/화분/잡음), 서브 게임이 보내는 꽃 사진, 미니게임 보상 사진(눈/금고 절반).
 
 use crate::random::Rng;
 
@@ -6,10 +6,10 @@ use crate::random::Rng;
 // IMAGE_NAMES 순서대로 — Assets::load 가 이 순서로 photos 에 올리므로 FileKind::Img(i) 의
 // i 가 그대로 이 목록의 인덱스다.
 pub fn generated_images() -> [image::RgbaImage; 7] {
-    [door_image(), flower_pot_image(), static_image(), flower_image(), eye_image(), brain_image(), finger_image()]
+    [door_image(), flower_pot_image(), static_image(), flower_image(), eye_image(), vault_half_image(), finger_image()]
 }
 
-// 미니게임 보상 사진 셋(충혈된 눈 / 짓무른 뇌 / 절단된 손가락)이 생성 이미지 목록에서 시작하는 인덱스 —
+// 미니게임 보상 사진 셋(충혈된 눈 / 금고 절반 / [쓰이지 않는 손가락])이 생성 이미지 목록에서 시작하는 인덱스 —
 // MiniKind::image_index() 가 여기에 MiniKind::index() 를 더한다.
 pub const REWARD_IMAGE_BASE: usize = 4;
 
@@ -42,31 +42,33 @@ fn eye_image() -> image::RgbaImage {
     })
 }
 
-// 짓무른 뇌 — 주름 잡힌 분홍 덩어리에 거뭇하게 곪은 얼룩.
-fn brain_image() -> image::RgbaImage {
-    let mut rng = Rng::new(0xB4A1);
-    let spots: Vec<(f32, f32, f32)> = (0..7).map(|_| (14.0 + rng.unit() * 28.0, 14.0 + rng.unit() * 24.0, 2.5 + rng.unit() * 3.5)).collect();
+// 금고 절반 — 쇠색 금고를 세로로 반 갈라 놓은 그림: 왼쪽엔 다이얼과 손잡이, 오른쪽은 잘려서 속이 보인다.
+fn vault_half_image() -> image::RgbaImage {
     image::RgbaImage::from_fn(56, 56, |x, y| {
         let (fx, fy) = (x as f32, y as f32);
-        let (dx, dy) = (fx - 28.0, fy - 26.0);
-        let blob = (dx / 23.0).powi(2) + (dy / 19.0).powi(2) < 1.0;
-        let stem = (25..31).contains(&x) && (42..53).contains(&y);
-        if !blob && !stem {
+        let body = (6..50).contains(&y) && (6..38).contains(&x);
+        if !body {
             return image::Rgba([12, 12, 14, 255]);
         }
-        if stem && !blob {
-            return image::Rgba([170, 120, 125, 255]);
+        let border = x < 9 || !(9..47).contains(&y);
+        if x >= 33 {
+            // 잘린 단면 — 안쪽이 어둡게 비어 보인다.
+            return image::Rgba([36, 38, 44, 255]);
         }
-        if spots.iter().any(|&(sx, sy, sr)| ((fx - sx).powi(2) + (fy - sy).powi(2)).sqrt() < sr) {
-            return image::Rgba([102, 104, 62, 255]); // 짓무른 곳
+        if border {
+            return image::Rgba([86, 90, 100, 255]);
         }
-        let fold = ((fx * 0.55 + (fy * 0.45).sin() * 2.4).sin()) > 0.82 || (dx.abs() < 1.2 && dy < 6.0);
-        if fold {
-            image::Rgba([150, 88, 104, 255])
-        } else {
-            let shade = 1.0 - (dx * dx / 700.0 + dy * dy / 520.0) * 0.25;
-            image::Rgba([(214.0 * shade) as u8, (154.0 * shade) as u8, (166.0 * shade) as u8, 255])
+        let (dx, dy) = (fx - 22.0, fy - 28.0);
+        let r = (dx * dx + dy * dy).sqrt();
+        if r < 3.0 {
+            return image::Rgba([220, 190, 90, 255]); // 다이얼 가운데
         }
+        if r < 9.0 {
+            let tick = ((dy.atan2(dx) * 6.0).sin()).abs() < 0.2;
+            return if tick { image::Rgba([60, 62, 70, 255]) } else { image::Rgba([150, 154, 164, 255]) };
+        }
+        let shade = 1.0 - (x as f32 - 9.0) / 90.0;
+        image::Rgba([(122.0 * shade) as u8, (126.0 * shade) as u8, (136.0 * shade) as u8, 255])
     })
 }
 

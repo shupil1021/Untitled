@@ -44,7 +44,6 @@ fn year_passed(planted_at: f64, now: f64) -> bool {
 // ---- ENA 식 연출(game3d/ena.rs: 뚝뚝 끊는 프레임 + 오버슈트) ----
 const ROPE_DROP_SECS: f32 = 1.25; // 밧줄이 내려오는 데 걸리는 시간
 const ROPE_LEN: f32 = 2.6;
-const ROPE_SEGMENTS: usize = 8;
 const CAN_ANIM_SECS: f32 = 1.2; // 물뿌리개가 튀어 오르며 사라지는 시간
 
 // 지금 있는 곳.
@@ -207,30 +206,20 @@ impl MazeGameApp {
     fn decor(&self) -> Vec<Box3D> {
         let Place::Maze { kind, goal } = &self.place else { return Vec::new() };
         let mut out = Vec::new();
-        let t = ena_time(self.clock);
         if let MazeKind::Key(i) = *kind
             && self.progress.keys[i]
         {
-            // 밧줄 — 마디 여러 개가 천장에서 뚝뚝 끊겨 내려오며 도착할 때 한 번 더 길게 늘어났다 돌아오고,
-            // 다 내려온 뒤엔 아래쪽일수록 크게 흔들린다.
+            // 밧줄 — 그냥 긴 막대 하나가 천장에서 뚝뚝 끊겨 내려오고(ENA 식), 도착할 때 한 번 더 길게 늘어났다 돌아온다.
             let elapsed = self.rope_since.map_or(ROPE_DROP_SECS, |t0| ena_time(self.clock - t0).max(0.0));
-            let drop = overshoot(elapsed / ROPE_DROP_SECS) * ROPE_LEN; // 지금 길이
-            let seg = ROPE_LEN / ROPE_SEGMENTS as f32;
-            let settled = elapsed >= ROPE_DROP_SECS;
-            for n in 0..ROPE_SEGMENTS {
-                let top = ROPE_LEN - n as f32 * seg;
-                if ROPE_LEN - top >= drop {
-                    break; // 아직 여기까지는 안 내려왔다
-                }
-                let along = n as f32 / ROPE_SEGMENTS as f32;
-                let sway = if settled { (t * 4.0 + n as f32 * 0.7).sin() * 0.07 * along } else { (t * 9.0 + n as f32).sin() * 0.05 * along };
+            let len = (overshoot(elapsed / ROPE_DROP_SECS) * ROPE_LEN).max(0.0); // 지금 길이
+            if len > 0.01 {
                 out.push(Box3D {
-                    center: [goal[0] + 0.7 + sway, top - seg / 2.0, goal[2]],
-                    half: [0.045, seg / 2.0 - 0.01, 0.045],
+                    center: [goal[0] + 0.7, ROPE_LEN - len / 2.0, goal[2]],
+                    half: [0.045, len / 2.0, 0.045],
                     yaw: 0.0,
                     pitch: 0.0,
-                    roll: sway * 1.2,
-                    color: if n % 2 == 0 { [0.75, 0.62, 0.4, 1.0] } else { [0.62, 0.5, 0.32, 1.0] },
+                    roll: 0.0,
+                    color: [0.7, 0.57, 0.36, 1.0],
                     texture: None,
                     walkable: false,
                     solid: false,

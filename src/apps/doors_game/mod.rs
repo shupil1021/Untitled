@@ -27,13 +27,14 @@ mod furniture;
 mod interact;
 mod rooms;
 mod scene;
+mod sfx;
 mod texts;
 mod travel;
 mod world;
 
 // 개발용 미리보기(examples/room_preview.rs) — 시작 방의 상자들과 가구 모델.
 pub fn preview_start_room() -> (Vec<crate::render::mesh3d::Box3D>, Vec<crate::render::mesh3d::MeshObject>) {
-    (world::build_room(0.0), furniture::room_meshes())
+    (world::room_visible(0.0), furniture::room_meshes(0.0))
 }
 
 use std::cell::RefCell;
@@ -60,6 +61,7 @@ const DOOR_OPEN_SECS: f32 = 1.4; // 자물쇠가 풀리고 문이 올라가는 �
 const UNFOLD_SECS: f32 = 2.0; // 계단이 몸을 펼치는 데 걸리는 시간
 const FEED_OPTIONS: &str = "[Y] 먹인다   [N] 나중에";
 const EXCHANGE_OPTIONS: &str = "[Y] 교환하기   [N] 나중에";
+const RESEND_OPTIONS: &str = "[Y] 다시 받기   [N] 괜찮아";
 
 // 지금 조준선이 향한 대상.
 #[derive(Clone, Copy, PartialEq)]
@@ -75,6 +77,8 @@ enum Ask {
     Errand,   // 소파 NPC 의 재료 의뢰 수락
     Exchange, // 재료 셋을 건네 Mr. POTATO CHIP 과 바꾸기
     Feed,     // 계단 NPC 에게 Mr. POTATO CHIP 먹이기
+    Knight,   // 화장실 기사의 칼 찾기 의뢰 수락(MAIN H-1)
+    Resend(MiniKind), // 받은 게임/보상 파일을 잃어버렸을 때 "다시 받기"(CRT SYS-0)
 }
 
 pub struct DoorsGameApp {
@@ -92,6 +96,7 @@ pub struct DoorsGameApp {
     letter_notify_pending: bool, // 편지를 넣은 걸 OS 에 아직 못 알렸다(대화가 끝나면 알린다)
     second_mail_sent: bool, // 그 확인을 OS 에 알려서 두 번째 메일을 요청했는지(한 번만)
     pending_mail: Option<MailId>, // 대화가 끝나면 OS 에 도착시켜 달라고 할 메일
+    pending_resend: Option<MiniKind>, // 대화가 끝나면 OS 에 다시 받게 해 달라고 할 미니게임
     ask: Option<Ask>,            // 지금 떠 있는 [Y]/[N] 질문(None 이면 도어즈의 부탁)
     // 장소 이동: 대화가 다 끝나면 화면을 덮었다가 장면을 바꾼다.
     fade: Fade,
@@ -111,6 +116,8 @@ pub struct DoorsGameApp {
     barriers: Vec<Box3D>,
     scene: Option<Rc<Scene>>, // 지금 장소의 장면(바뀔 때만 다시 만든다 — scene.rs)
     bgm: bgm::Bgm,            // 시작 방 배경음악(무한 반복)
+    sfx: sfx::Sfx,            // 퀘스트 시작 / 물 내리기 효과음
+    sfx_cue: Option<sfx::Cue>, // 이번 프레임에 틀 효과음
     settings: Option<Rc<RefCell<Settings>>>, // 소리 크기 설정(OS 에서 열 때만 있다)
 }
 
@@ -141,6 +148,8 @@ impl DoorsGameApp {
         let (jungle, barriers) = if place == MainPlace::Jungle { (Self::jungle_scene(&progress), floor2::barriers()) } else { (Vec::new(), Vec::new()) };
         DoorsGameApp {
             bgm: bgm::Bgm::default(),
+            sfx: sfx::Sfx::default(),
+            sfx_cue: None,
             settings: None,
             player,
             slot: RenderSlot::acquire(),
@@ -155,6 +164,7 @@ impl DoorsGameApp {
             progress,
             second_mail_sent: false,
             pending_mail: None,
+            pending_resend: None,
             ask: None,
             fade: Fade::new(),
             pending_move: None,
@@ -171,7 +181,7 @@ impl DoorsGameApp {
     }
 
     fn jungle_scene(p: &DoorsProgress) -> Vec<Box3D> {
-        floor2::build_scene(MiniKind::ALL.map(|k| p.missions[k.index()] == MissionStep::Done), p.exchanged)
+        floor2::build_scene(MiniKind::ALL.map(|k| p.missions[k.index()].has_material(k)), p.exchanged)
     }
 
     fn line(text: &str) -> Entry {
@@ -187,7 +197,7 @@ impl DoorsGameApp {
         if self.progress.exchanged {
             return 0;
         }
-        self.progress.missions.iter().filter(|&&m| m >= MissionStep::Received).count()
+        MiniKind::ALL.iter().filter(|&&k| self.progress.missions[k.index()].has_material(k)).count()
     }
 
     fn has_chip(&self) -> bool {
@@ -246,12 +256,29 @@ impl DoorsGameApp {
                     self.progress.exchanged = true;
                     self.jungle = Self::jungle_scene(&self.progress);
                     self.dialogue.start(vec![
-                        Self::line("눈, 뇌, 손가락을 한꺼번에 소파에게 건넸다."),
+                        Self::line("눈과 소환 조각 둘을 한꺼번에 소파에게 건넸다."),
                         Self::line("소파의 빈 자리가 한 칸 늘어났다."),
                         Self::line("소파 위에 봉투가 하나 놓여 있다."),
                     ]);
                 } else {
                     self.dialogue.start(vec![Self::line("소파가 하품을 한다.")]);
+                }
+            }
+            // 기사의 칼 찾기 의뢰(MAIN H-1 / H-2) — 수락하면 방귀 + 나팔 연출 뒤 PACK 설치 메일이 간다.
+            Some(Ask::Knight) => {
+                if yes {
+                    self.accept_knight();
+                } else {
+                    self.dialogue.start(vec![Self::line("기사는 무겁게 한숨을 쉬었다.")]);
+                }
+            }
+            // 다시 받기 — 안내 메일과 설치 파일/보상 사진이 사라졌으면 OS 가 새로 만들어 준다.
+            Some(Ask::Resend(kind)) => {
+                if yes {
+                    self.pending_resend = Some(kind);
+                    self.dialogue.start(vec![Self::line("다시 한 번 받았다."), Self::line("컴퓨터에서 확인해 보자.")]);
+                } else {
+                    self.dialogue.start(vec![Self::line("괜찮다고 했다.")]);
                 }
             }
             // 계단에게 Mr. POTATO CHIP 먹이기(MAIN C-4) — 한 개를 쓰고 급식 완료를 같이 저장한다.
@@ -296,6 +323,7 @@ impl App for DoorsGameApp {
         }
         let scene = Rc::clone(self.scene.as_ref().expect("방금 만들었다"));
         self.bgm.update(self.progress.place == MainPlace::StartRoom, self.settings.as_ref());
+        self.sfx.update(self.sfx_cue.take(), dt, self.settings.as_ref());
 
         // 대화창이 떠 있는 동안은 이동·시점·조준을 멈춘다.
         let frozen = self.dialogue.active() || self.fade.active() || self.door_anim.is_some() || self.unfold_anim.is_some();
@@ -352,6 +380,11 @@ impl App for DoorsGameApp {
         {
             return AppAction::DeliverMail(id);
         }
+        if !self.dialogue.active()
+            && let Some(kind) = self.pending_resend.take()
+        {
+            return AppAction::ResendMini(kind);
+        }
         // 진행 상황이 바뀌었으면 OS 에 저장을 요청한다.
         if self.progress != self.saved {
             self.saved = self.progress.clone();
@@ -371,8 +404,8 @@ impl DoorsGameApp {
         }
         if !p.exchanged {
             for kind in MiniKind::ALL {
-                if p.missions[kind.index()] >= MissionStep::Received {
-                    lines.push(item_name(kind));
+                if let Some(name) = carried_item(kind, p.missions[kind.index()]) {
+                    lines.push(name);
                 }
             }
         }
@@ -382,6 +415,17 @@ impl DoorsGameApp {
         for (i, line) in lines.iter().enumerate() {
             r.text(view.px(10.0), view.py(10.0 + i as f32 * 20.0), line, 0.8 * view.s, [0.75, 0.8, 1.0, 1.0]);
         }
+    }
+}
+
+// 지금 손에 들고 있는 그 미션의 물건 — 눈은 받자마자, 레이싱/리듬은 중간 물건(금고 절반 / 변기 손잡이)을 받았다가
+// 조립하면 사라지고 소환 조각이 들어온다.
+fn carried_item(kind: MiniKind, step: MissionStep) -> Option<&'static str> {
+    match (kind, step) {
+        (MiniKind::Brain, MissionStep::Received) => Some("금고 절반"),
+        (MiniKind::Finger, MissionStep::Received) => Some("변기 손잡이"),
+        _ if step.has_material(kind) => Some(item_name(kind)),
+        _ => None,
     }
 }
 

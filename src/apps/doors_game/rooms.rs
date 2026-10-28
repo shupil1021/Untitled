@@ -2,7 +2,7 @@
 //! 안쪽에 NPC 와 "게임 받기" 기계(Spot::Npc / Spot::Machine)가 있고, 시작한 자리 뒤쪽 벽에 나가는 문
 //! (Spot::Exit)이 있다. 배치와 모양만 여기에 있고 무엇을 언제 할지는 mod.rs 가 정한다.
 
-use crate::foundation::MiniKind;
+use crate::foundation::{MiniKind, MissionStep};
 use crate::render::mesh3d::Box3D;
 
 use super::super::game3d::ena::{ena_time, smooth};
@@ -24,6 +24,9 @@ pub enum Spot {
     Machine,
     Exit,
     StairStep, // 펼쳐진 계단의 첫 칸
+    Safe,      // 금고의 방의 금고(절반 → 완성 → 열기)
+    Toilet,    // 화장실의 변기(손 → 손잡이 → 조립 → 물 내리기 → 소환 조각)
+    Fixture(u8), // 화장실의 욕조 / 세면대 / 거울 — 조사만 된다
 }
 
 pub struct Room {
@@ -58,12 +61,13 @@ fn exit_door(items: &mut Vec<Item<Spot>>, boxes: &mut Vec<Box3D>) {
     items.push(Item::marker(Spot::Exit, [0.0, 1.1, MAX_Z - THICK - 0.1], [0.65, 1.1, 0.2], "[E] Exit"));
 }
 
-// 미션 방. done 은 그 미션의 NPC 와 마지막 이야기까지 마쳤는지(방이 달라 보이는 곳이 있다), clock 은 움직이는 풍경용.
-pub fn mission_room(kind: MiniKind, done: bool, received: bool, clock: f32) -> Room {
+// 미션 방. step 은 그 미션의 진행(방이 달라 보이는 곳이 있다), hand_out 은 화장실 변기에서 손이 나와 있는지,
+// clock 은 움직이는 풍경용.
+pub fn mission_room(kind: MiniKind, step: MissionStep, hand_out: bool, clock: f32) -> Room {
     match kind {
-        MiniKind::Eye => eye_room(done, received),
-        MiniKind::Brain => brain_room(done, clock),
-        MiniKind::Finger => finger_room(done),
+        MiniKind::Eye => eye_room(step >= MissionStep::Done, step >= MissionStep::Received),
+        MiniKind::Brain => brain_room(step, clock),
+        MiniKind::Finger => bathroom(step, hand_out),
     }
 }
 
@@ -92,7 +96,8 @@ fn eye_room(done: bool, received: bool) -> Room {
     Room { boxes, items, clear: [0.1, 0.03, 0.05, 1.0], barriers: Vec::new() }
 }
 
-fn brain_room(done: bool, clock: f32) -> Room {
+fn brain_room(step: MissionStep, clock: f32) -> Room {
+    let done = step >= MissionStep::Fragment;
     let mut boxes = shell([0.12, 0.26, 0.28, 1.0], [0.14, 0.15, 0.16, 1.0], MIN_Z);
     let mut items = Vec::new();
     // 바닥에 그려진 도로와 점선
@@ -119,35 +124,80 @@ fn brain_room(done: bool, clock: f32) -> Room {
     boxes.push(deco([2.8, 1.25, -4.2], [0.42, 0.04, 0.42], [0.1, 0.1, 0.1, 1.0]));
     boxes.push(deco([2.8, 1.25, -4.2], [0.08, 0.06, 0.08], [0.9, 0.2, 0.25, 1.0]));
     items.push(Item::marker(Spot::Machine, [2.8, 1.1, -4.2], [0.6, 0.7, 0.5], "[E] Driving machine"));
+    // 금고 — 처음엔 한쪽 절반뿐이고(잘린 단면 너머로 속이 비어 보인다), 받은 절반을 맞추면 온전해지며, 열면 문이 열려 있다.
+    let steel = [0.42, 0.44, 0.5, 1.0];
+    boxes.push(block([4.2, 0.8, -2.4], [0.55, 0.8, 0.8], steel));
+    let complete = step >= MissionStep::Built;
+    if complete {
+        boxes.push(block([4.2, 0.8, -0.8], [0.55, 0.8, 0.8], steel));
+        boxes.push(deco([3.64, 0.8, -1.6], [0.02, 0.8, 0.02], [0.2, 0.2, 0.24, 1.0]));
+    } else {
+        boxes.push(deco([4.2, 0.8, -1.58], [0.5, 0.74, 0.02], [0.05, 0.05, 0.07, 1.0]));
+    }
+    let dial_z = if complete { -1.6 } else { -2.4 };
+    boxes.push(deco([3.64, 0.9, dial_z], [0.02, 0.18, 0.18], [0.7, 0.72, 0.78, 1.0]));
+    boxes.push(deco([3.62, 0.9, dial_z], [0.02, 0.05, 0.05], [0.85, 0.72, 0.3, 1.0]));
+    if step >= MissionStep::Fragment {
+        // 열린 금고 문과 텅 빈 속.
+        boxes.push(deco([3.64, 0.8, -1.6], [0.02, 0.62, 0.62], [0.03, 0.03, 0.05, 1.0]));
+        boxes.push(deco([3.3, 0.8, -0.4], [0.3, 0.75, 0.04], [0.5, 0.52, 0.58, 1.0]));
+    }
+    items.push(Item::marker(Spot::Safe, [3.65, 0.9, -1.6], [0.6, 0.9, 1.0], "[E] Vault"));
     exit_door(&mut items, &mut boxes);
     Room { boxes, items, clear: [0.04, 0.1, 0.11, 1.0], barriers: Vec::new() }
 }
 
-fn finger_room(done: bool) -> Room {
-    let mut boxes = shell([0.52, 0.44, 0.34, 1.0], [0.3, 0.26, 0.2, 1.0], MIN_Z);
+// 화장실 — 변기(손잡이 자리가 비어 있다)·욕조·세면대·거울이 있고, 칼을 잃어버린 기사가 서 있다. 변기는 진행에 따라
+// 달라진다: 손잡이를 받을 때까지 빈 자리 → 호수에 넣으면 변기 속에서 손이 나온다(hand_out) → 손잡이를 끼운다(Built)
+// → 물을 내리면 변기 안에 소환 조각이 떠오른다(Revealed).
+fn bathroom(step: MissionStep, hand_out: bool) -> Room {
+    let mut boxes = shell([0.55, 0.6, 0.62, 1.0], [0.4, 0.45, 0.5, 1.0], MIN_Z);
     let mut items = Vec::new();
-    // 컨베이어와 쌓인 상자들
-    boxes.push(block([0.0, 0.35, -3.2], [3.4, 0.35, 0.55], [0.18, 0.18, 0.2, 1.0]));
-    for i in 0..5 {
-        boxes.push(deco([-2.4 + i as f32 * 1.1, 0.95, -3.2], [0.3, 0.25, 0.3], [0.68, 0.5, 0.3, 1.0]));
+    let white = [0.92, 0.93, 0.95, 1.0];
+    // 변기 — 몸통, 물탱크, 물 고인 안쪽.
+    boxes.push(block([-1.0, 0.3, -5.05], [0.38, 0.3, 0.5], white));
+    boxes.push(block([-1.0, 0.8, -5.62], [0.4, 0.5, 0.2], white));
+    boxes.push(deco([-1.0, 0.62, -4.98], [0.26, 0.02, 0.34], [0.15, 0.25, 0.35, 1.0]));
+    let socket = [-0.62, 1.0, -5.4];
+    if step >= MissionStep::Built {
+        // 끼워 넣은 손잡이
+        boxes.push(deco([socket[0], socket[1], socket[2] + 0.1], [0.14, 0.03, 0.03], [0.82, 0.84, 0.9, 1.0]));
+        boxes.push(deco([socket[0] + 0.15, socket[1], socket[2] + 0.1], [0.04, 0.06, 0.06], [0.92, 0.92, 0.97, 1.0]));
+    } else {
+        // 비어 있는 손잡이 자리
+        boxes.push(deco([socket[0], socket[1], socket[2] + 0.01], [0.06, 0.06, 0.02], [0.05, 0.05, 0.07, 1.0]));
     }
-    for k in 0..3 {
-        boxes.push(block([-4.2, 0.3 + k as f32 * 0.6, -5.2], [0.5, 0.3, 0.5], [0.6, 0.44, 0.26, 1.0]));
+    if hand_out && step < MissionStep::Received {
+        // 변기 속에서 올라온 손이 손잡이를 내밀고 있다.
+        boxes.push(deco([-1.0, 0.95, -4.98], [0.06, 0.32, 0.06], [0.95, 0.85, 0.75, 1.0]));
+        boxes.push(deco([-1.0, 1.32, -4.98], [0.14, 0.08, 0.07], [0.95, 0.85, 0.75, 1.0]));
+        boxes.push(deco([-1.0, 1.42, -4.98], [0.2, 0.03, 0.03], [0.82, 0.84, 0.9, 1.0]));
     }
-    // 장갑 NPC — 몸통, 머리, 하얀 장갑 두 개
-    boxes.push(block([-2.8, 0.9, -4.6], [0.35, 0.9, 0.25], [0.25, 0.3, 0.45, 1.0]));
-    boxes.push(block([-2.8, 1.95, -4.6], [0.32, 0.32, 0.3], [0.75, 0.6, 0.5, 1.0]));
-    boxes.push(deco([-3.3, 1.2, -4.2], [0.18, 0.2, 0.15], [0.97, 0.97, 0.97, 1.0]));
-    boxes.push(deco([-2.3, 1.2, -4.2], [0.18, 0.2, 0.15], [0.97, 0.97, 0.97, 1.0]));
-    items.push(Item::marker(Spot::Npc, [-2.8, 1.6, -4.6], [0.6, 1.0, 0.5], "[E] Talk"));
-    // 포장 기계 — 멈춰 있고, 앞에 대기 버튼.
-    boxes.push(block([2.8, 1.0, -4.8], [0.7, 1.0, 0.6], [0.3, 0.32, 0.3, 1.0]));
-    let lamp = if done { [0.3, 0.9, 0.4, 1.0] } else { [0.9, 0.7, 0.2, 1.0] };
-    boxes.push(deco([2.8, 1.1, -4.18], [0.2, 0.2, 0.05], [0.85, 0.15, 0.18, 1.0]));
-    boxes.push(deco([2.8, 1.7, -4.18], [0.1, 0.06, 0.03], lamp));
-    items.push(Item::marker(Spot::Machine, [2.8, 1.1, -4.2], [0.6, 0.9, 0.5], "[E] Standby button"));
+    if step == MissionStep::Revealed {
+        // 물 위에 떠오른 소환 조각
+        boxes.push(deco([-1.0, 0.72, -4.98], [0.1, 0.1, 0.1], [0.75, 0.55, 1.0, 1.0]));
+    }
+    items.push(Item::marker(Spot::Toilet, [-1.0, 0.8, -4.9], [0.55, 0.8, 0.7], "[E] Toilet"));
+    // 욕조
+    boxes.push(block([3.6, 0.35, -4.8], [0.95, 0.35, 0.55], white));
+    boxes.push(deco([3.6, 0.72, -4.8], [0.8, 0.02, 0.4], [0.18, 0.3, 0.4, 1.0]));
+    items.push(Item::marker(Spot::Fixture(0), [3.6, 0.7, -4.5], [1.0, 0.5, 0.6], "[E] Bathtub"));
+    // 세면대와 거울 — 서쪽 벽
+    boxes.push(block([-4.5, 0.45, -1.0], [0.3, 0.45, 0.4], white));
+    boxes.push(deco([-4.5, 0.92, -1.0], [0.26, 0.03, 0.34], [0.7, 0.75, 0.8, 1.0]));
+    items.push(Item::marker(Spot::Fixture(1), [-4.4, 0.9, -1.0], [0.4, 0.5, 0.5], "[E] Sink"));
+    boxes.push(deco([MIN_X + THICK + 0.03, 1.8, -1.0], [0.02, 0.55, 0.42], [0.7, 0.82, 0.9, 1.0]));
+    items.push(Item::marker(Spot::Fixture(2), [MIN_X + THICK + 0.1, 1.8, -1.0], [0.3, 0.6, 0.5], "[E] Mirror"));
+    // 기사 — 갑옷 몸통, 투구, 붉은 깃털, 칼집만 빈 허리띠.
+    let steel = [0.55, 0.58, 0.64, 1.0];
+    boxes.push(block([1.6, 0.9, -4.3], [0.36, 0.9, 0.26], steel));
+    boxes.push(block([1.6, 2.0, -4.3], [0.3, 0.3, 0.3], [0.62, 0.65, 0.72, 1.0]));
+    boxes.push(deco([1.6, 2.0, -3.99], [0.22, 0.04, 0.02], [0.05, 0.05, 0.07, 1.0]));
+    boxes.push(deco([1.6, 2.4, -4.3], [0.05, 0.14, 0.2], [0.8, 0.15, 0.18, 1.0]));
+    boxes.push(deco([1.26, 0.95, -4.3], [0.03, 0.05, 0.3], [0.3, 0.2, 0.12, 1.0]));
+    items.push(Item::marker(Spot::Npc, [1.6, 1.6, -4.3], [0.6, 1.0, 0.5], "[E] Talk"));
     exit_door(&mut items, &mut boxes);
-    Room { boxes, items, clear: [0.12, 0.1, 0.07, 1.0], barriers: Vec::new() }
+    Room { boxes, items, clear: [0.1, 0.11, 0.12, 1.0], barriers: Vec::new() }
 }
 
 // 계단 입구 — 안쪽(북쪽)은 낭떠러지고, 계단 NPC 가 웅크려 길을 막고 있다. 먹고 나면 몸을 펼쳐 아래로
@@ -205,9 +255,11 @@ mod tests {
     #[test]
     fn every_room_has_an_exit_and_a_way_to_talk() {
         for kind in MiniKind::ALL {
-            let room = mission_room(kind, false, false, 0.0);
-            for spot in [Spot::Npc, Spot::Machine, Spot::Exit] {
-                assert!(room.items.iter().any(|it| it.target == spot), "{kind:?} 방에 {spot:?} 가 없다");
+            let room = mission_room(kind, MissionStep::Start, false, 0.0);
+            // 화장실은 기계 없이 기사와 말하는 것으로 의뢰가 시작된다.
+            let spots: &[Spot] = if kind == MiniKind::Finger { &[Spot::Npc, Spot::Toilet, Spot::Exit] } else { &[Spot::Npc, Spot::Machine, Spot::Exit] };
+            for spot in spots {
+                assert!(room.items.iter().any(|it| it.target == *spot), "{kind:?} 방에 {spot:?} 가 없다");
             }
         }
         let hall = stair_hall(false, 0.0);
@@ -229,8 +281,19 @@ mod tests {
 
     #[test]
     fn done_changes_the_look_of_the_room() {
-        let a = mission_room(MiniKind::Eye, false, false, 0.0);
-        let b = mission_room(MiniKind::Eye, true, true, 0.0);
+        let a = mission_room(MiniKind::Eye, MissionStep::Start, false, 0.0);
+        let b = mission_room(MiniKind::Eye, MissionStep::Done, false, 0.0);
         assert!(b.boxes.len() > a.boxes.len(), "눈이 감긴다(눈꺼풀 상자가 늘어난다)");
+    }
+
+    #[test]
+    fn the_vault_and_the_toilet_change_with_progress() {
+        let count = |kind, step, hand| mission_room(kind, step, hand, 0.0).boxes.len();
+        // 금고: 절반 → 완성(상자가 늘어난다) → 열림(상자가 더 늘어난다)
+        assert!(count(MiniKind::Brain, MissionStep::Built, false) > count(MiniKind::Brain, MissionStep::Received, false) - 1);
+        assert!(count(MiniKind::Brain, MissionStep::Fragment, false) > count(MiniKind::Brain, MissionStep::Built, false));
+        // 변기: 손이 나오면 손 상자가 생기고, 손잡이를 받으면 손이 들어간다.
+        assert!(count(MiniKind::Finger, MissionStep::Sent, true) > count(MiniKind::Finger, MissionStep::Sent, false));
+        assert!(count(MiniKind::Finger, MissionStep::Revealed, false) > count(MiniKind::Finger, MissionStep::Built, false));
     }
 }

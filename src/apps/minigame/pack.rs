@@ -14,7 +14,7 @@ pub const SPAWN_X: f32 = -40.0; // 상자가 나타나는 x
 pub const BOX_HALF: f32 = 18.0; // 상자 반너비
 pub const LINE_HALF: f32 = 1.5; // 바 반두께
 pub const SPEED: f32 = (LINE_X - SPAWN_X) / TRAVEL; // 상자가 컨베이어를 가는 속도(px/s)
-pub const WINDOW: f32 = (BOX_HALF + LINE_HALF) / SPEED; // 바와 겹쳐 있는 시간의 절반(초) — 약 0.11초
+pub const WINDOW: f32 = 0.25; // 판정선을 지나는 시점 앞뒤로 이만큼(초) 안에 입력하면 성공(시트: ±0.25초) — 화면의 밝은 판정 구간과 같다
 const MISFIRE: f32 = 0.6; // 판정 구간 밖이어도 이 안에서 누르면 가장 가까운 상자가 실패
 pub const TRAVEL: f32 = 2.0; // 상자가 나타나서 판정선에 닿기까지(초)
 const GAP: f32 = 1.1; // 상자 간격(초)
@@ -155,10 +155,10 @@ mod tests {
     }
 
     #[test]
-    fn only_the_moment_the_box_overlaps_the_bar_counts() {
-        let (r, _) = play(&[Some(0.08), Some(-0.08), Some(0.2), Some(-0.2)]);
-        assert_eq!(r.hits(), 2, "바에 걸쳐 있을 때(±0.1초)만 성공, 그 밖은 실패");
-        const { assert!(WINDOW > 0.09 && WINDOW < 0.13) };
+    fn only_inside_the_judgement_window_counts() {
+        let (r, _) = play(&[Some(0.2), Some(-0.2), Some(0.4), Some(-0.4)]);
+        assert_eq!(r.hits(), 2, "판정선 앞뒤 ±0.25초 안에서만 성공, 그 밖은 실패");
+        const { assert!(WINDOW == 0.25) };
     }
 
     // 마구 연타하면 구간 밖에서 누른 것이 상자를 망쳐 합격 못 한다.

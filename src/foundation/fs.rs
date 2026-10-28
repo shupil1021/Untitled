@@ -261,13 +261,33 @@ impl FileSystem {
             if id == kind.task_mail() && self.mini_setup[i].is_none() {
                 self.mini_setup[i] = Some(self.add(kind.setup_name(), FileKind::MiniSetup(kind)));
             }
-            if id == kind.reward_mail() && self.reward_image[i].is_none() {
+            if Some(id) == kind.reward_mail() && self.reward_image[i].is_none() {
                 self.reward_image[i] = Some(self.add(kind.image_name(), FileKind::Img(kind.image_index())));
             }
         }
         if id == MailId::Photo {
             self.ensure_flower_image();
         }
+    }
+
+    // "다시 받기" — 그 미니게임의 안내 메일이 없으면 다시 도착시키고, 영구 삭제돼서 사라진 설치 파일/보상 사진은
+    // 새로 만들어 메일에 다시 붙인다(CRT SYS-0). 아무것도 안 바뀌었으면(메일에 그대로 있으면) false.
+    pub fn resend_mini_mails(&mut self, kind: MiniKind) -> bool {
+        let i = kind.index();
+        let mut changed = self.deliver_mail(kind.task_mail());
+        if let Some(id) = self.mini_setup[i]
+            && matches!(self.nodes[id].kind, FileKind::Deleted)
+        {
+            self.mini_setup[i] = Some(self.add(kind.setup_name(), FileKind::MiniSetup(kind)));
+            changed = true;
+        }
+        if let Some(id) = self.reward_image[i]
+            && matches!(self.nodes[id].kind, FileKind::Deleted)
+        {
+            self.reward_image[i] = Some(self.add(kind.image_name(), FileKind::Img(kind.image_index())));
+            changed = true;
+        }
+        changed
     }
 
     // 그 미니게임의 보상 사진을 메일에서 내려받았는지 — 메인 게임이 재료를 받는 조건이다.
@@ -573,6 +593,21 @@ mod tests {
     }
 
     // 미니게임 메일은 도착할 때 설치 파일 / 보상 사진 노드를 달고 오고, 사진을 내려받으면 그 게임의 보상이 "받아진" 것으로 친다.
+    // "다시 받기" — 설치 파일을 영구 삭제해도 다시 받을 수 있고, 멀쩡하면 아무것도 바뀌지 않는다.
+    #[test]
+    fn a_deleted_installer_can_be_received_again() {
+        let mut fs = FileSystem::new();
+        fs.deliver_mail(MailId::BrainTask);
+        let first = fs.mini_setup[1].expect("설치 파일 노드");
+        assert!(!fs.resend_mini_mails(MiniKind::Brain), "그대로 있으면 바뀌는 게 없다");
+        fs.delete_permanently(first);
+        assert!(fs.resend_mini_mails(MiniKind::Brain));
+        let second = fs.mini_setup[1].expect("새 설치 파일 노드");
+        assert_ne!(first, second);
+        assert_eq!(fs.mail_attachments().last().copied().flatten(), Some(second), "메일에 새 첨부가 붙는다");
+        assert_eq!(fs.mail_log, [MailId::BrainTask], "메일이 두 번 쌓이지 않는다");
+    }
+
     #[test]
     fn minigame_mails_carry_their_files() {
         let mut fs = FileSystem::new();

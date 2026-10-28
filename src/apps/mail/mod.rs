@@ -18,6 +18,7 @@ use super::widgets::{ease_scroll, scrollbar, Scrollbar};
 use super::{App, AppAction, WinInput};
 
 struct MailMsg {
+    id: MailId, // 언어를 바꾸면 이걸로 보낸 사람/제목/본문을 다시 고른다
     from: &'static str,
     to: &'static str,
     cc: &'static str,
@@ -148,6 +149,7 @@ pub struct MailApp {
     body_scroll_disp: f32,
     body_sb_drag: bool,
     body_wrapped: Vec<String>,
+    built_lang: Language, // messages 의 글을 이 언어로 골랐다 — 설정에서 언어를 바꾸면 다시 고른다
     body_wrapped_key: (usize, i32), // (선택된 메시지, 반올림한 폭 픽셀) — 캐시 무효화 키
     // Sent Items 읽기 화면도 같은 요령으로 줄바꿈을 캐싱하지만, Inbox 캐시와 필드를
     // 같이 쓰면 "Inbox 0번 읽다가 Sent 0번으로 넘어가도 인덱스가 같아 캐시가 그대로
@@ -210,6 +212,7 @@ impl MailApp {
             body_scroll_disp: 0.0,
             body_sb_drag: false,
             body_wrapped: Vec::new(),
+            built_lang: lang,
             body_wrapped_key: (usize::MAX, i32::MIN),
             sent_wrapped: Vec::new(),
             sent_wrapped_key: (usize::MAX, i32::MIN),
@@ -422,6 +425,13 @@ impl App for MailApp {
         r.rect(area.x, area.y, area.w, area.h, FACE);
         let smooth = self.settings.borrow().smooth_scroll;
         let lang = self.settings.borrow().language;
+        if lang != self.built_lang {
+            for m in &mut self.messages {
+                m.relocalize(lang);
+            }
+            self.built_lang = lang;
+            self.body_wrapped_key = (usize::MAX, i32::MIN);
+        }
         self.draw_menu_bar(r, area, lang);
 
         let body_top = area.y + MENU_H;

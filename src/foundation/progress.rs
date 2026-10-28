@@ -41,6 +41,8 @@ pub struct DoorsProgress {
     #[serde(default)]
     pub chip_fed: bool,              // 계단 NPC 에게 먹였다(MAIN C-4)
     #[serde(default)]
+    pub hand_out: bool,              // 호수에 넣은 손잡이를 받으려고 변기 속 손이 나왔다(MAIN H-3)
+    #[serde(default)]
     pub floor2_done: bool,           // 2층을 끝냈다(MAIN C-5)
     #[serde(default)]
     pub pose: Option<[f32; 4]>,      // 창이 뒤로 가기 직전 서 있던 자리(x, y, z, yaw) — 이어서 할 때 거기서 시작
@@ -53,8 +55,21 @@ pub enum MissionStep {
     Start,    // 아직 NPC 와 이야기하지 않았다
     Talked,   // NPC 의 의뢰를 들었다(E-1)
     Sent,     // 기계에서 게임을 받았다 — CRT 로 설치 파일 메일이 갔다(E-2)
-    Received, // 보상 사진을 내려받아 재료가 인벤토리에 들어왔다(E-3)
-    Done,     // NPC 의 마지막 이야기까지 마쳤다(E-4)
+    Received, // 눈: 충혈된 눈이 인벤토리에(E-3) / 금고의 방: 금고 절반을 받았다(R-3) / 화장실: 변기 손잡이를 받았다(H-4)
+    Built,    // 금고 절반을 맞춰 금고가 완성됐다(R-4) / 변기 손잡이를 끼웠다(H-5)
+    Revealed, // 화장실: 물을 내려 변기 안에 소환 조각이 떠올랐다(H-6)
+    Fragment, // 소환 조각(레이싱/리듬)을 인벤토리에 넣었다(R-5 / H-7)
+    Done,     // NPC 의 마지막 이야기까지 마쳤다(E-4 / H-8)
+}
+
+impl MissionStep {
+    // 교환에 쓸 최종 재료를 들고 있는지 — 눈은 받는 순간, 레이싱/리듬은 소환 조각을 얻은 순간부터.
+    pub fn has_material(self, kind: MiniKind) -> bool {
+        match kind {
+            MiniKind::Eye => self >= MissionStep::Received,
+            MiniKind::Brain | MiniKind::Finger => self >= MissionStep::Fragment,
+        }
+    }
 }
 
 // 메인 게임의 장소.
@@ -129,11 +144,12 @@ impl MiniKind {
         }
     }
 
-    // 보상 사진 파일 이름과 gamefiles::generated_images() 안의 인덱스.
+    // 메일로 오는 보상 사진 파일 이름과 gamefiles::generated_images() 안의 인덱스 — 눈과 금고 절반만 있다
+    // (리듬은 호수에 넣은 손잡이를 변기 속 손에게서 받으므로 메일/사진이 없다).
     pub fn image_name(self) -> &'static str {
         match self {
             MiniKind::Eye => "bloodshot_eye.png",
-            MiniKind::Brain => "worn_brain.png",
+            MiniKind::Brain => "vault_half.png",
             MiniKind::Finger => "severed_finger.png",
         }
     }
@@ -151,11 +167,21 @@ impl MiniKind {
         }
     }
 
-    pub fn reward_mail(self) -> MailId {
+    // 보상을 우체통(프린터)에 넣었을 때 가는 메일 — 리듬은 없다.
+    pub fn reward_mail(self) -> Option<MailId> {
         match self {
-            MiniKind::Eye => MailId::EyeReward,
-            MiniKind::Brain => MailId::BrainReward,
-            MiniKind::Finger => MailId::FingerReward,
+            MiniKind::Eye => Some(MailId::EyeReward),
+            MiniKind::Brain => Some(MailId::BrainReward),
+            MiniKind::Finger => None,
+        }
+    }
+
+    // 첫 실패 뒤 한 번 가는 힌트 메일.
+    pub fn hint_mail(self) -> MailId {
+        match self {
+            MiniKind::Eye => MailId::EyeHint,
+            MiniKind::Brain => MailId::BrainHint,
+            MiniKind::Finger => MailId::FingerHint,
         }
     }
 }
@@ -165,7 +191,9 @@ impl MiniKind {
 pub struct MiniProgress {
     pub cleared: bool,       // 클리어해서 보상 상자가 나왔다
     pub reward_taken: bool,  // 상자에서 재료를 꺼냈다
-    pub reward_sent: bool,   // 재료를 우체통에 넣어 보냈다
+    pub reward_sent: bool,   // 재료를 우체통에 넣어 보냈다(리듬은 호수에 넣었다)
+    #[serde(default)]
+    pub way_open: bool,      // 클리어 뒤 보상 앞의 길을 열었다 — 레이싱: 트랙 밖으로 나왔다(XA-0), 리듬: 게임의 주체를 처치했다(XB-1)
 }
 
 // 받은편지함에 도착할 수 있는 메일들 — 도착 순서는 게임 진행에 따라 달라서(mail_log) 번호가
@@ -184,7 +212,10 @@ pub enum MailId {
     BrainTask,
     BrainReward,
     FingerTask,
-    FingerReward,
+    FingerReward, // 예전 저장 파일에만 있을 수 있다(지금 리듬은 보상 메일이 없다)
+    EyeHint,    // 각 미니게임을 처음 실패한 뒤 한 번 오는 힌트 메일
+    BrainHint,
+    FingerHint,
     Meal, // "식사 준비" — 소파 NPC 에게서 Mr. POTATO CHIP 을 받으면 도착(MAIN C-2)
 }
 // File Explorer 의 "AppData" 탭 = 이 이름의 폴더 노드의 내용(탭 이름도 같은 문자열).

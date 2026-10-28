@@ -1,0 +1,6 @@
+newmtl Ceiling
+Kd 0.088982 0.088982 0.083535
+newmtl Floor
+Kd 0.063724 0.054972 0.046964
+newmtl Wall
+Kd 0.170645 0.154872 0.132868
