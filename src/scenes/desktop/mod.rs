@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::apps::{
-    explorer_app_for_folder, explorer_app_refreshed, mail_attachable_files, open, CreditsApp, ExplorerApp, ExplorerLocation, MailApp,
+    explorer_app_for_folder, explorer_app_refreshed, mail_attachable_files, open, CreditsApp, DateTimeApp, ExplorerApp, ExplorerLocation, MailApp,
     MoveDest, OfficialSiteApp, Opened, SettingsApp, mail_from, mail_subject,
 };
 use crate::foundation::{
@@ -59,6 +59,7 @@ const GRID_MAX_ROW: i32 = 6; // 행 0..=6 (7행)
 // 순전히 폭 계산용 영어 원문이고, 실제로 그릴 땐 menu_item_label() 로 언어별
 // 문구를 따로 골라 쓴다.
 const MENU_ITEMS: [&str; 4] = ["Official Site", "Credits", "Settings", "Shut Down"];
+const SHUT_DOWN_IDX: i32 = 3; // MENU_ITEMS 에서 Shut Down 의 자리
 // 빈 바탕화면 우클릭 메뉴 — 시작 메뉴와 항목이 같지만 Shut Down 은 뺐다.
 const CONTEXT_MENU_ITEMS: [&str; 3] = ["Official Site", "Credits", "Settings"];
 
@@ -80,6 +81,7 @@ const CTX_ROW_H: f32 = CELL_H * CTX_TEXT_SCALE + 4.0;
 const SETTINGS_WIN: FileId = usize::MAX - 1;
 const CREDITS_WIN: FileId = usize::MAX - 2;
 const OFFICIAL_SITE_WIN: FileId = usize::MAX - 3;
+const DATETIME_WIN: FileId = usize::MAX - 4;
 
 struct IconDrag {
     start: (f32, f32),                // 드래그 시작 시점 마우스 좌표
@@ -116,6 +118,10 @@ pub struct DesktopScene {
     clock_popup: bool,    // 시계를 눌러서 연 날짜 팝업
     sub_game_timer: f32,  // 두 번째 메일이 온 뒤 흐른 시간 — SUB_GAME_DELAY 가 지나면 서브 게임 아이콘이 생긴다
     toast_timer: f32,                // 위 알림이 사라지기까지 남은 시간
+    // PC 시계를 돌렸는지 알아채는 기준점 — 시작할 때의 시스템 시각과 단조 시계. 둘의 흐름이 어긋난 만큼이 시계를 돌린 양이다.
+    clock_probe: (f64, std::time::Instant),
+    stage_clock: (crate::foundation::StoryStage, f32), // 지금 이야기 단계와 그 단계에서 흐른 시간 — 단계가 바뀔 때 소요 시간을 로컬 기록에 남긴다
+    skew_notified: [bool; 2], // SkewNotice 종류마다 이번에 이미 알렸는지(시계가 정상으로 돌아오면 다시 알릴 수 있다)
     erase_confirm: bool,   // "Erase All Memory" 확인창 — 화면 전체(다른 창 포함)를 덮는 진짜 모달
     // 창을 열었다 옮기거나 크기를 바꾼 적 있으면 마지막 자리를 여기 기억해둔다(파일
     // ID 로 키) — 지금 열려있는 창은 매 프레임 wm 에서 값을 다시 읽어와 갱신하고,
@@ -144,6 +150,11 @@ impl Toast {
     // 새 메일 알림 — 보낸 사람 + 제목.
     fn new_mail(from: &str, subject: &str) -> Toast {
         Toast { title: s::NEW_MAIL, line1: from.to_string(), line2: subject.to_string(), opens_mail: true }
+    }
+
+    // 메일과 상관없는 안내(저장 실패, 시계 안내 등) — 누르면 닫히기만 한다.
+    fn notice(title: S, line1: &str, line2: &str) -> Toast {
+        Toast { title, line1: line1.to_string(), line2: line2.to_string(), opens_mail: false }
     }
 }
 
@@ -187,6 +198,9 @@ impl DesktopScene {
             // 게임 폴더가 생기기 전에 설치한 예전 저장 파일에도 파일들을 채워 넣는다.
             crate::gamefiles::install_into(&mut fs);
         }
+        // 설치된 게임 폴더의 파일들을 지금 진행에 맞춘다(이 기능이 생기기 전에 설치한 저장 파일도 채운다).
+        let now = clock::local_unix_now() + fs.clock_offset_secs;
+        crate::gamefiles::sync_game_files(&mut fs, now);
         // Photos.lock 이 풀려서 폴더로 바뀌었는지는 이제 별도 플래그 없이 fs 스냅샷
         // 자체(이름이 이미 "Photos" 로 바뀌어 있는지)로 판단한다.
         let unlocked = fs.find_by_name("Photos").is_some();
@@ -214,6 +228,9 @@ impl DesktopScene {
             hint_timer: 0.0,
             clock_popup: false,
             toast_timer: 0.0,
+            clock_probe: (miniquad::date::now(), std::time::Instant::now()),
+            stage_clock: (crate::foundation::StoryStage::WaitMail, 0.0),
+            skew_notified: [false; 2],
             erase_confirm: false,
             window_geometry,
         }
@@ -261,7 +278,7 @@ impl Scene for DesktopScene {
             if mr.contains(m.0, m.1) {
                 consumed = true;
                 let idx = ((m.1 - (mr.y + 4.0)) / 24.0) as i32;
-                if idx == 3 {
+                if idx == SHUT_DOWN_IDX {
                     shutdown = true;
                 } else {
                     self.run_menu_action(idx, f.settings.clone(), work);
@@ -326,6 +343,11 @@ impl Scene for DesktopScene {
         if self.clock_popup && click && !consumed {
             if self.clock_popup_rect().contains(m.0, m.1) {
                 consumed = true;
+                // 팝업의 "날짜/시간 조정" 버튼 — 가상 시계 창을 연다.
+                if self.clock_popup_button_rect().contains(m.0, m.1) {
+                    self.clock_popup = false;
+                    self.open_datetime(&f.settings, work);
+                }
             } else {
                 self.clock_popup = false;
             }
@@ -457,6 +479,10 @@ impl Scene for DesktopScene {
         if shutdown {
             self.write_save(&f.settings);
         }
+        // 저장에 막 실패했으면(보통 폴더 쓰기 권한) 조용히 넘어가지 않고 알린다 — 같은 실패는 한 번만 알린다.
+        if crate::foundation::take_save_failure() {
+            self.show_notice(Toast::notice(s::SAVE_FAILED, t(lang, s::SAVE_FAILED_LINE1), t(lang, s::SAVE_FAILED_LINE2)));
+        }
 
         // 커서: 창 관리자가 이미 뭔가(리사이즈/이동) 정했으면 그게 우선이고, 아니면
         // 클릭 가능한 데스크톱 요소 위나 아이콘 드래그 중엔 Hand 로.
@@ -512,7 +538,7 @@ impl Scene for DesktopScene {
 }
 
 mod actions;
-mod clock;
+pub(crate) mod clock;
 mod icons;
 mod network;
 mod popups;

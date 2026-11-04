@@ -24,12 +24,16 @@ impl DesktopScene {
         }
         // 문(도어즈)의 편지 메일을 읽었는지 매 프레임 최신 값을 게임에 알려준다 — 문 게임이 일시
         // 정지에서 풀리는 조건이다(signals.rs).
-        crate::signals::set_letter_mail_read(self.fs.is_mail_read(MailId::Letter));
-        for kind in crate::foundation::MiniKind::ALL {
-            crate::signals::set_reward_downloaded(kind.index(), self.fs.reward_downloaded(kind));
-        }
-        crate::signals::set_lake_delivered(self.fs.minis[crate::foundation::MiniKind::Finger.index()].reward_sent);
-        crate::signals::set_flower_downloaded(self.fs.flower_image.is_some_and(|id| self.fs.ever_downloaded.contains(&id)));
+        crate::signals::publish(crate::signals::OsState {
+            letter_mail_read: self.fs.is_mail_read(MailId::Letter),
+            flower_downloaded: self.fs.flower_image.is_some_and(|id| self.fs.ever_downloaded.contains(&id)),
+            reward_downloaded: crate::foundation::MiniKind::ALL.map(|kind| self.fs.reward_downloaded(kind)),
+            lake_delivered: self.fs.minis[crate::foundation::MiniKind::Finger.index()].reward_sent,
+            clock_offset_secs: self.fs.clock_offset_secs,
+            ini_edit: crate::gamefiles::ini_edit(&self.fs),
+        });
+        self.track_story_stage(f);
+        self.check_clock_skew(f);
         // 씨앗을 심은 뒤 잠깐 있다가 시간 힌트 메일(시트 SUB A+a-15 의 메일 가이딩)이 온다.
         if self.fs.seed_planted && !self.fs.has_mail(MailId::Hint) {
             self.hint_timer += f.dt;
@@ -55,5 +59,48 @@ impl DesktopScene {
                 self.toast = None;
             }
         }
+    }
+
+    // PC 시계를 크게 돌렸으면(이 게임의 시간 퍼즐) 다음에 뭘 하면 되는지 한 번 알려준다 — 꽃이 아직 안 폈으면
+    // 서브 게임을 열어 보라고, 이미 폈으면 시계를 원래대로 돌려도 된다고. 시계가 정상으로 돌아오면 다시 알릴 수 있다.
+    fn check_clock_skew(&mut self, f: &mut Frame) {
+        let (wall0, mono0) = self.clock_probe;
+        let skew = clock::clock_skew_secs(wall0, miniquad::date::now(), mono0.elapsed().as_secs_f64());
+        if skew.abs() < 3600.0 {
+            self.skew_notified = [false; 2];
+            return;
+        }
+        let p = &self.fs.maze_progress;
+        let Some(notice) = clock::skew_notice(skew, p.planted, p.bloomed) else { return };
+        let slot = match notice {
+            clock::SkewNotice::CheckFlower => 0,
+            clock::SkewNotice::SetClockBack => 1,
+        };
+        if self.skew_notified[slot] {
+            return;
+        }
+        self.skew_notified[slot] = true;
+        let lang = f.settings.borrow().language;
+        let (l1, l2) = match notice {
+            clock::SkewNotice::CheckFlower => (s::CLOCK_AHEAD_LINE1, s::CLOCK_AHEAD_LINE2),
+            clock::SkewNotice::SetClockBack => (s::CLOCK_BACK_LINE1, s::CLOCK_BACK_LINE2),
+        };
+        self.show_notice(Toast::notice(s::CLOCK_NOTICE, t(lang, l1), t(lang, l2)));
+    }
+
+    // 이야기 단계가 바뀔 때마다 이전 단계에서 얼마나 걸렸는지 로컬 플레이 기록에 남긴다(화면에는 아무것도 안 보인다).
+    fn track_story_stage(&mut self, f: &mut Frame) {
+        let stage = crate::foundation::story_stage(&self.fs);
+        if stage != self.stage_clock.0 {
+            // 막 켰을 때의 첫 프레임(1초 미만)은 건너뛴다.
+            let (prev, secs) = self.stage_clock;
+            if secs >= 1.0 {
+                let enabled = f.settings.borrow().local_log;
+                crate::foundation::playlog::event(enabled, "step", serde_json::json!({ "from": prev.index(), "to": stage.index(), "secs": secs.round() }));
+            }
+            self.stage_clock = (stage, 0.0);
+            return;
+        }
+        self.stage_clock.1 += f.dt;
     }
 }

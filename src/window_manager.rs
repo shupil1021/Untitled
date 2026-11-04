@@ -71,6 +71,8 @@ pub enum DeskAction {
     FlowerSent,
     DeliverMail(MailId),
     ResendMini(MiniKind),
+    SetClockOffset(i64),
+    SaveText(FileId, String),
     SaveMini(MiniKind, MiniProgress),
 }
 
@@ -510,11 +512,19 @@ impl WindowManager {
                 AppAction::FlowerSent => actions.push(DeskAction::FlowerSent),
                 AppAction::DeliverMail(id) => actions.push(DeskAction::DeliverMail(id)),
                 AppAction::ResendMini(kind) => actions.push(DeskAction::ResendMini(kind)),
+                AppAction::SetClockOffset(secs) => actions.push(DeskAction::SetClockOffset(secs)),
+                AppAction::SaveText(file, text) => actions.push(DeskAction::SaveText(file, text)),
                 AppAction::SaveMini(k, p) => actions.push(DeskAction::SaveMini(k, p)),
             }
         }
 
         if !close_ids.is_empty() {
+            // 닫히는 창에 아직 저장 안 된 글이 있으면 마지막으로 저장한다(메모장의 자동 저장이 아직 안 돌았을 수 있다).
+            for w in self.windows.iter_mut().filter(|w| close_ids.contains(&w.id)) {
+                if let Some((file, text)) = w.app.flush_text() {
+                    actions.push(DeskAction::SaveText(file, text));
+                }
+            }
             self.windows.retain(|w| !close_ids.contains(&w.id));
         }
 

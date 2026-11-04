@@ -23,7 +23,15 @@ const ROOM_ORIGIN: [f32; 3] = [0.0, 0.0, -0.5];
 const DOOR_ORIGIN: [f32; 3] = [0.0, 0.1 * ROOM_SCALE, -3.43];
 const WHITE: [f32; 4] = [1.0; 4];
 
+// 정글 모델 — 멀리 보이는 언덕과 나무 한 그루(Blender 에서 방/문과 같은 단위로 만들었다).
+const HILLS_SCALE: f32 = ROOM_SCALE;
+pub const HILLS_ORIGIN: [f32; 3] = [0.0, -1.0, 68.0];
+// 나무는 키 5m 쯤이 되게 키운다(모델은 8.7 높이).
+const TREE_SCALE: f32 = 0.6;
+pub const TREE_ORIGIN: [f32; 3] = [9.0, 0.0, 11.0];
+
 thread_local! {
+    static JUNGLE: RefCell<Option<[Rc<MeshData>; 2]>> = const { RefCell::new(None) };
     // 파싱은 한 번만 — 장면이 다시 만들어질 때마다 OBJ 를 또 읽지 않는다.
     static MODELS: RefCell<Option<[Rc<MeshData>; 5]>> = const { RefCell::new(None) };
 }
@@ -52,6 +60,21 @@ fn object(mesh: &Rc<MeshData>, origin: [f32; 3], yaw: f32, scale: f32) -> MeshOb
     MeshObject { center: origin, yaw, pitch: 0.0, roll: 0.0, scale: [scale; 3], color: WHITE, texture: None, walkable: false, solid: false, mesh: Rc::clone(mesh) }
 }
 
+// 정글 장면의 메시 — 언덕(먼 배경)과 나무. 나무 줄기 충돌은 floor2 가 눈에 안 보이는 상자로 따로 낸다.
+pub fn jungle_meshes() -> Vec<MeshObject> {
+    let [hills, tree] = JUNGLE.with(|m| {
+        m.borrow_mut()
+            .get_or_insert_with(|| {
+                [
+                    load(include_str!("../../../assets/models/jungle_hills.obj"), include_str!("../../../assets/models/jungle.mtl")),
+                    load(include_str!("../../../assets/models/jungle_tree.obj"), include_str!("../../../assets/models/jungle.mtl")),
+                ]
+            })
+            .clone()
+    });
+    vec![object(&hills, HILLS_ORIGIN, 0.0, HILLS_SCALE), object(&tree, TREE_ORIGIN, 0.0, TREE_SCALE)]
+}
+
 // 방 껍데기와 문, 책상(서쪽 벽, 서랍이 방 안쪽으로 열려 있다), 책장(동쪽 벽, 열린 면이 방 쪽), 우편함(서쪽 벽, 문이 방 쪽).
 // door_lift 는 문이 올라간 높이.
 pub fn room_meshes(door_lift: f32) -> Vec<MeshObject> {
@@ -78,5 +101,14 @@ mod tests {
             assert!(!m.mesh.triangles.is_empty());
             assert_eq!(m.mesh.tri_colors.len(), m.mesh.triangles.len());
         }
+    }
+
+    #[test]
+    fn jungle_models_fit_the_vertex_budget() {
+        let meshes = jungle_meshes();
+        assert_eq!(meshes.len(), 2);
+        // 렌더러는 한 번에 정점 65535 개까지만 그린다 — 박스(약 1.5만)가 들어갈 자리를 남긴다.
+        let verts: usize = meshes.iter().map(|m| m.mesh.triangles.len() * 3).sum();
+        assert!(verts <= 45_000, "{verts}");
     }
 }

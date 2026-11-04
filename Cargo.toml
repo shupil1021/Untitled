@@ -1,6 +1,6 @@
 [package]
 name = "crackhead"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 # director/director_panel(연출·영상 제작용 별개 실행 파일)이 추가되면서 `cargo
 # run`이 "어느 걸 실행할지 모르겠다"며 --bin 을 요구하기 시작했다 — 실제 게임
@@ -46,6 +46,8 @@ windows = { version = "0.58", features = [
     # 최신 IME(TSF/Cicero)가 화면 구석에 따로 띄우는 언어 표시줄 미니 창을 찾아
     # 숨기는 용도(GetCurrentProcessId) — src/ime.rs::hide_cicero_windows 참고.
     "Win32_System_Threading",
+    # 작업표시줄 시계가 이 PC 의 시간대로 보이게(GetTimeZoneInformation).
+    "Win32_System_Time",
 ] }
 # Official Site 창 안에 실제 웹페이지를 렌더링하고 주기적으로 캡처해서 우리 텍스처로
 # 올리는 용도 — 이렇게 하면 그 이미지도 다른 모든 화면처럼 CRT 셰이더를 그대로 탄다.

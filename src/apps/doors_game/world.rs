@@ -4,7 +4,7 @@ use crate::render::mesh3d::{Box3D, Camera};
 
 use super::super::game3d::boxes::solid;
 
-use super::super::game3d::player::aim_dist;
+use super::super::game3d::player::aim_score;
 
 const FLOOR_COLOR: [f32; 4] = [0.28, 0.26, 0.24, 1.0];
 const CEILING_COLOR: [f32; 4] = [0.33, 0.33, 0.32, 1.0];
@@ -161,7 +161,7 @@ pub fn aimed_target(cam: &Camera, door_pos: [f32; 3], available: impl Fn(Target)
     let candidates = [Target::Door, Target::Letter, Target::Mailbox].into_iter().chain((0..PROPS.len()).map(Target::Prop));
     candidates
         .filter(|&t| available(t))
-        .filter_map(|t| aim_dist(cam, if t == Target::Door { door_pos } else { t.pos() }).map(|d| (t, d)))
+        .filter_map(|t| aim_score(cam, if t == Target::Door { door_pos } else { t.pos() }).map(|d| (t, d)))
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(t, _)| t)
 }

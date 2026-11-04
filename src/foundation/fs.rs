@@ -97,6 +97,14 @@ pub struct FileSystem {
     // 서브 게임에서 씨앗을 심었는지 — 힌트 메일이 올 차례인지 판단하는 데 쓴다.
     #[serde(default)]
     pub seed_planted: bool,
+    // 가상 시계 — "날짜 및 시간 조정" 창에서 맞춘, 실제 PC 시간에 더해지는 초(0 이면 실제 시간 그대로). 시스템 시계를
+    // 바꿀 수 없는 PC 에서도 서브 게임의 시간 퍼즐을 풀 수 있게 하는 대체 경로다.
+    #[serde(default)]
+    pub clock_offset_secs: i64,
+    // 플레이어가 메모장에서 고친 글 파일들 — 게임이 진행에 맞춰 자기 파일을 다시 쓸 때(gamefiles::sync_game_files) 이 파일들은
+    // 건드리지 않는다(고친 흔적이 그대로 남는다).
+    #[serde(default)]
+    pub player_edited: Vec<FileId>,
     // 꽃 사진 첨부 노드(flower.png) — 꽃이 발송될 때 처음 만들어진다. 바탕화면/Downloads 어디에도
     // 안 놓이고 메일에서 "Download" 해야 Downloads 에 생긴다.
     #[serde(default)]
@@ -205,6 +213,8 @@ impl FileSystem {
             doors_progress: DoorsProgress::default(),
             maze_progress: MazeProgress::default(),
             seed_planted: false,
+            clock_offset_secs: 0,
+            player_edited: Vec::new(),
             flower_image: None,
             mail_read: Vec::new(),
             sent_mail: Vec::new(),
@@ -404,6 +414,30 @@ impl FileSystem {
 
     pub fn get(&self, id: FileId) -> &FileNode {
         &self.nodes[id]
+    }
+
+    // 메모장이 고친 내용을 글 파일에 저장한다 — 글 파일이 아니면 false. 너무 길면 잘라서 저장하고, "플레이어가 고친 파일"로 기록한다.
+    pub fn save_text(&mut self, id: FileId, text: String) -> bool {
+        const MAX_CHARS: usize = 20_000;
+        match self.nodes.get_mut(id).map(|n| &mut n.kind) {
+            Some(FileKind::Txt(old)) => {
+                *old = text.chars().take(MAX_CHARS).collect();
+                if !self.player_edited.contains(&id) {
+                    self.player_edited.push(id);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub fn was_edited_by_player(&self, id: FileId) -> bool {
+        self.player_edited.contains(&id)
+    }
+
+    // 게임 폴더의 파일 내용을 갱신할 때 쓴다(gamefiles::sync_game_files).
+    pub fn get_mut(&mut self, id: FileId) -> &mut FileNode {
+        &mut self.nodes[id]
     }
 
     // desktop.rs 가 Credits/Official Site 처럼 "실제 파일은 아니지만 중복으로
@@ -631,4 +665,19 @@ mod tests {
         assert!(!fs.deliver_mail(MailId::EyeReward));
         assert_eq!(fs.all_of_kind(|_| true).len(), nodes);
     }
+
+    // 메모장이 고친 글은 글 파일에만 저장되고 "플레이어가 고친 파일"로 기록되며, 너무 길면 잘린다.
+    #[test]
+    fn notepad_edits_are_saved_to_text_files_only() {
+        let mut fs = FileSystem::new();
+        let txt = fs.add("note.txt", FileKind::Txt("old".to_string()));
+        let folder = fs.add("dir", FileKind::Folder { children: Vec::new() });
+        assert!(fs.save_text(txt, "new text".to_string()) && !fs.save_text(folder, "x".to_string()));
+        assert!(matches!(&fs.get(txt).kind, FileKind::Txt(t) if t == "new text"));
+        assert!(fs.was_edited_by_player(txt) && !fs.was_edited_by_player(folder));
+        assert!(fs.save_text(txt, "가".repeat(30_000)));
+        assert!(matches!(&fs.get(txt).kind, FileKind::Txt(t) if t.chars().count() == 20_000), "너무 길면 잘린다");
+        assert_eq!(fs.player_edited, vec![txt], "같은 파일은 한 번만 기록한다");
+    }
 }
+

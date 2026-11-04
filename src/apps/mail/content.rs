@@ -43,6 +43,7 @@ pub fn mail_subject(id: MailId, lang: Language) -> &'static str {
             MailId::BrainHint => s::BRAIN_HINT_MAIL_SUBJECT,
             MailId::FingerHint => s::FINGER_HINT_MAIL_SUBJECT,
             MailId::Meal => s::MEAL_MAIL_SUBJECT,
+            MailId::End2F => s::END2F_MAIL_SUBJECT,
         },
     )
 }
@@ -68,6 +69,7 @@ pub(super) fn mail_body(id: MailId, lang: Language) -> &'static str {
             MailId::BrainHint => crate::strings::minigame::DRIVE_HINT,
             MailId::FingerHint => crate::strings::minigame::PACK_HINT,
             MailId::Meal => s::MEAL_MAIL_BODY,
+            MailId::End2F => s::END2F_MAIL_BODY,
         },
     )
 }

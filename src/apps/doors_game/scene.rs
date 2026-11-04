@@ -7,13 +7,13 @@ use std::hash::{Hash, Hasher};
 
 use crate::apps::game3d::ena::ena_time;
 use crate::apps::game3d::item::Item;
-use crate::apps::game3d::player::aim_dist;
+use crate::apps::game3d::player::aim_score;
 use crate::foundation::{MainPlace, MiniKind};
 use crate::render::mesh3d::{Box3D, MeshObject};
 
 use super::floor2;
 use super::rooms::{self, Spot};
-use super::furniture::room_meshes;
+use super::furniture::{jungle_meshes, room_meshes};
 use super::world::{aimed_target, build_room, invisible_colliders, letter_box, room_visible, Target, EXIT_POS, HANDLE_POS};
 use super::{Aim, DoorsGameApp, ROOM_CLEAR};
 
@@ -64,7 +64,7 @@ impl DoorsGameApp {
                 shown.extend(jungle_items.iter().filter(|it| it.draw).map(|it| it.to_box()));
                 let mut collide = shown.clone();
                 collide.extend(self.barriers.iter().cloned());
-                Scene { key, clear: floor2::CLEAR_COLOR, collide, shown, meshes: Vec::new(), room_items: Vec::new(), jungle_items }
+                Scene { key, clear: floor2::CLEAR_COLOR, collide, shown, meshes: jungle_meshes(), room_items: Vec::new(), jungle_items }
             }
             MainPlace::MissionRoom(kind) => {
                 let step = p.missions[kind.index()];
@@ -85,7 +85,7 @@ impl DoorsGameApp {
     // 조준선(화면 중앙)이 향한 가장 가까운 조사 대상.
     pub(super) fn compute_aim(&self, scene: &Scene) -> Option<Aim> {
         let cam = self.player.camera();
-        let nearest = |centers: &mut dyn Iterator<Item = (usize, [f32; 3])>| centers.filter_map(|(i, c)| aim_dist(&cam, c).map(|d| (i, d))).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(i, _)| i);
+        let nearest = |centers: &mut dyn Iterator<Item = (usize, [f32; 3])>| centers.filter_map(|(i, c)| aim_score(&cam, c).map(|d| (i, d))).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(i, _)| i);
         match self.progress.place {
             MainPlace::StartRoom => {
                 let (accepted, door_changed, has_letter) = (self.progress.quest_accepted, self.progress.door_changed, self.progress.has_letter);

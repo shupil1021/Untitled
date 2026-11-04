@@ -3,11 +3,16 @@
 //! 다시 내보낸다). 씬 프레임워크(Scene/Frame/SceneManager)는 scenes/mod.rs 에 있다.
 
 mod fs;
+mod stage;
+mod keybinds;
+pub mod playlog;
 mod progress;
 mod save;
 mod settings;
 
 pub use fs::*;
+pub use stage::*;
+pub use keybinds::*;
 pub use progress::*;
 pub use save::*;
 pub use settings::*;

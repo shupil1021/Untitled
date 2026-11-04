@@ -71,6 +71,14 @@ impl DesktopScene {
         self.write_save(settings);
     }
 
+    // 게임 폴더(AppData 의 test)의 파일들에 지금 진행을 반영한다 — 바뀐 게 있을 때만 열려 있는 탐색기를 새로고침한다.
+    pub(super) fn sync_game_files(&mut self, settings: &Rc<RefCell<Settings>>) {
+        let now = clock::local_unix_now() + self.fs.clock_offset_secs;
+        if crate::gamefiles::sync_game_files(&mut self.fs, now) {
+            self.refresh_explorer_if_open(settings);
+        }
+    }
+
     pub(super) fn refresh_mail_if_open(&mut self, settings: &Rc<RefCell<Settings>>) {
         if let Some(mail_id) = self.fs.find_by_name("Mail")
             && self.wm.is_open(mail_id)
@@ -211,6 +219,17 @@ impl DesktopScene {
             // 문 게임에서 편지를 우편함에 넣음 — 같은 내용의 편지 메일이 도착한다(시트 오른쪽 표).
             DeskAction::LetterSent => self.deliver_mail(MailId::Letter, settings),
             DeskAction::DeliverMail(id) => self.deliver_mail(id, settings),
+            // 날짜 및 시간 조정 창에서 가상 시계를 바꿈 — 저장해 둬서 다시 켜도 이어진다.
+            // 메모장이 고친 글을 저장한다 — 게임 폴더의 파일이면 이제 "플레이어가 고친 파일"이라 게임이 덮어쓰지 않는다.
+            DeskAction::SaveText(file, text) => {
+                if self.fs.save_text(file, text) {
+                    self.write_save(settings);
+                }
+            }
+            DeskAction::SetClockOffset(secs) => {
+                self.fs.clock_offset_secs = secs;
+                self.write_save(settings);
+            }
             // 미니게임 메일/첨부 다시 받기 — 사라진 첨부가 있으면 새로 만들고, 열려 있는 메일/탐색기를 갱신한다.
             DeskAction::ResendMini(kind) => {
                 let changed = self.fs.resend_mini_mails(kind);
@@ -227,10 +246,12 @@ impl DesktopScene {
             // 창 안 게임의 진행 상황이 바뀌었다 — fs 에 기록하고 즉시 저장해서 창을 닫았다 다시 열어도 이어진다.
             DeskAction::SaveDoors(p) => {
                 self.fs.doors_progress = p;
+                self.sync_game_files(settings);
                 self.write_save(settings);
             }
             DeskAction::SaveMaze(p) => {
                 self.fs.maze_progress = p;
+                self.sync_game_files(settings);
                 self.write_save(settings);
             }
             // 설치 마법사 진행바가 다 찬 순간 한 번 온다 — 설치 완료를 기록하고
@@ -248,6 +269,7 @@ impl DesktopScene {
             }
             DeskAction::SaveMini(kind, p) => {
                 self.fs.minis[kind.index()] = p;
+                self.sync_game_files(settings);
                 self.write_save(settings);
             }
             DeskAction::InstallComplete(None) => {
@@ -256,6 +278,7 @@ impl DesktopScene {
                     // 게임 안 File Explorer 의 AppData\test\ 에 게임 파일(소스/이미지/사운드)이
                     // 생긴다(gamefiles.rs) — 열려있는 탐색기가 있으면 바로 보이게 새로고침.
                     crate::gamefiles::install_into(&mut self.fs);
+                    self.sync_game_files(settings); // 설치 시각과 진행 파일을 채운다
                     self.refresh_explorer_if_open(settings);
                     self.add_desktop_icon(GAME_FILE_NAME, FileKind::Game);
                 }

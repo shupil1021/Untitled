@@ -113,7 +113,7 @@ const PREVIEW_SCALE: f32 = 0.8;
 const PREVIEW_LINES: usize = 2;
 // Windows 자체의 IME 조합창(현대식 팝업 스타일이라 우리 CRT 픽셀아트 화면과
 // 안 어울린다)을 아예 안 보이게 화면 밖으로 치워두는 좌표.
-const OFFSCREEN: i32 = -10000;
+pub(super) const OFFSCREEN: i32 = -10000;
 // 메일 본문에 입력할 수 있는 최대 글자 수 — 다국어 입력을 감안해 글자(char) 단위로
 // 세지, 바이트 단위로 세지 않는다(한/일 문자는 UTF-8 상 3바이트라 바이트 기준으로
 // 재면 실제로 입력 가능한 분량이 언어마다 달라져 버린다).
@@ -158,23 +158,8 @@ pub struct MailApp {
     sent_wrapped_key: (usize, i32),
     tree_w: f32,       // 왼쪽 폴더 트리 폭 — 구분선을 드래그하면 바뀐다
     divider_drag: bool, // 지금 그 구분선을 드래그하는 중인지
-    // Backspace 를 꾹 누르고 있으면 빠르게 반복 삭제되게 하는 데 쓴다 — 계속
-    // 눌려있는 시간(초)을 직접 재서(OS 자동反복 이벤트는 안 씀) 처음 REPEAT_DELAY
-    // 초까지는 한 번만, 그 뒤로는 REPEAT_INTERVAL 마다 하나씩 더 지운다.
-    backspace_hold: f32,
-    backspace_fired: u32, // 지금 이 hold 동안 이미 처리한 삭제 횟수(중복 처리 방지)
-    // 지금 이어지는 한 번의 누름(키를 떼기 전까지)이 IME 조합 중에 시작됐으면
-    // true — 사람이 키를 누르고 있는 몇 프레임 사이에 IME 가 조합을 끝내버려도
-    // (그래서 그 뒤 프레임엔 composing 이 false 로 보여도), 같은 한 번의 누름
-    // 안에서는 계속 IME 가 이미 처리한 것으로 치고 우리가 또 지우지 않는다.
-    backspace_owned_by_ime: bool,
-    // 지금 이어지는 조합(composition) 세션 동안, IME 가 화면에 보여준
-    // 조합 문자열이 바뀔 때마다(글자가 늘어나거나 다른 모양으로 바뀔 때마다)
-    // 그 스냅샷을 순서대로 쌓아둔다 — "ㅎ" → "호" → "화" 처럼. Backspace 를
-    // 눌렀을 때 "한 단계 전엔 뭐였는지"를 (IME 내부 동작이 그 사이 뭘 했든
-    // 상관없이) 이 기록에서 그대로 꺼내 쓴다(draw_new_compose 참고) — 조합이
-    // 끝나면(커밋되거나 완전히 취소되면) 비운다.
-    composition_history: Vec<String>,
+    // 글자 입력 상태(Backspace 꾹 누르기 반복, IME 조합 중 Backspace 기록) — 메모장과 같이 쓰는 text_edit::EditState.
+    edit: EditState,
     settings: Rc<RefCell<Settings>>,
 }
 
@@ -218,10 +203,7 @@ impl MailApp {
             sent_wrapped_key: (usize::MAX, i32::MIN),
             tree_w: FOLDER_TREE_W_DEFAULT,
             divider_drag: false,
-            backspace_hold: 0.0,
-            backspace_fired: 0,
-            backspace_owned_by_ime: false,
-            composition_history: Vec::new(),
+            edit: EditState::default(),
             settings,
         }
     }
@@ -470,4 +452,6 @@ mod sent;
 
 pub use content::{mail_from, mail_subject};
 use compose::NewMailState;
+use super::text_edit::EditState;
+
 use content::seed_messages;

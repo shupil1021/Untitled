@@ -1,6 +1,6 @@
 //! 메인 게임(DoorsGameApp)의 진행/장면 이동/상호작용 테스트.
 
-use crate::apps::game3d::player::aim_dist;
+use crate::apps::game3d::player::aim_score;
 use super::world::build_room;
 use super::*;
 
@@ -251,11 +251,11 @@ fn the_bathroom_runs_from_the_knights_request_to_the_fragment() {
     assert_eq!(app.sfx_cue, Some(sfx::Cue::QuestStart));
 
     // 호수에 손잡이를 넣기 전엔 변기가 비어 있다(신호는 OS 가 쓴다).
-    crate::signals::set_lake_delivered(false);
+    crate::signals::update(|s| s.lake_delivered = false);
     quiet(&mut app);
     app.interact_spot(Spot::Toilet);
     assert!(!app.progress.hand_out);
-    crate::signals::set_lake_delivered(true);
+    crate::signals::update(|s| s.lake_delivered = true);
     quiet(&mut app);
     app.interact_spot(Spot::Toilet);
     assert!(app.progress.hand_out && step(&app) == MissionStep::Sent, "손이 나오는 것과 손잡이를 받는 것은 따로다");
@@ -280,7 +280,7 @@ fn the_bathroom_runs_from_the_knights_request_to_the_fragment() {
     quiet(&mut app);
     app.interact_spot(Spot::Npc);
     assert_eq!(step(&app), MissionStep::Done);
-    crate::signals::set_lake_delivered(false);
+    crate::signals::update(|s| s.lake_delivered = false);
 }
 
 // 재료 셋 → 소파에게 교환 → 봉투(Mr. POTATO CHIP) → 계단에게 먹임 → 계단이 펼쳐지고 2층이 끝난다.
@@ -403,7 +403,7 @@ fn gates_are_aimable_from_the_front() {
         let front = floor2::gate_front(gate);
         let cam = Camera { pos: [front[0], 1.55, front[2] - 0.2], yaw: 0.0, pitch: 0.0 }; // 문 쪽(-Z)을 본다
         let c = gate.center();
-        assert!(aim_dist(&cam, c).is_some(), "{gate:?}: 문 앞에서 문을 조준할 수 없다");
+        assert!(aim_score(&cam, c).is_some(), "{gate:?}: 문 앞에서 문을 조준할 수 없다");
     }
 }
 
@@ -428,3 +428,83 @@ fn the_scene_is_rebuilt_only_when_its_shape_changes() {
     room.clock += 0.2;
     assert_ne!(room.scene_key(), before, "뇌의 방 창밖 풍경은 시간에 따라 바뀐다");
 }
+
+// 다시 조사하면 나오는 숨은 한 줄들 — 조건을 채우기 전에는 없고, 채우면 한두 줄이 더 붙는다.
+#[test]
+fn hidden_lines_appear_only_after_their_conditions() {
+    let lines_after = |progress: DoorsProgress, f: &dyn Fn(&mut DoorsGameApp)| {
+        let mut app = DoorsGameApp::new(progress);
+        quiet(&mut app);
+        f(&mut app);
+        app.dialogue.entry_count()
+    };
+    // 정글 표지판 — 계단 NPC 와 이야기한 뒤 뒷면 글씨가 두 줄 더 붙는다.
+    let sign = |app: &mut DoorsGameApp| app.interact_jungle(floor2::Target::Sign);
+    let jungle = DoorsProgress { place: MainPlace::Jungle, ..DoorsProgress::default() };
+    assert_eq!(lines_after(jungle.clone(), &sign), 2);
+    assert_eq!(lines_after(DoorsProgress { stair_met: true, ..jungle }, &sign), 4);
+    // 시작방 책상 — 문에게 꽃을 준 뒤 한 줄이 더 붙는다.
+    let desk = |app: &mut DoorsGameApp| app.interact_room(Some(Target::Prop(0)));
+    assert_eq!(lines_after(DoorsProgress::default(), &desk), 1);
+    assert_eq!(lines_after(DoorsProgress { flower_given: true, ..DoorsProgress::default() }, &desk), 2);
+    // 화장실 거울 — 기사의 일을 다 마친 뒤엔 다른 두 줄이 나온다.
+    let mirror = |app: &mut DoorsGameApp| app.interact_spot(Spot::Fixture(2));
+    let bath = |step: MissionStep| {
+        let mut missions = [MissionStep::Start; 3];
+        missions[MiniKind::Finger.index()] = step;
+        DoorsProgress { place: MainPlace::MissionRoom(MiniKind::Finger), errand_accepted: true, missions, ..DoorsProgress::default() }
+    };
+    assert_eq!(lines_after(bath(MissionStep::Start), &mirror), 1);
+    assert_eq!(lines_after(bath(MissionStep::Done), &mirror), 2);
+}
+
+// 2층을 처음 끝내면 대사가 끝난 뒤 엔딩 카드가 뜨고 "계속됩니다" 메일이 가며, 키로 닫는다. 다시 와도 또 뜨지 않는다.
+#[test]
+fn finishing_floor_two_shows_the_end_card_once() {
+    let progress = DoorsProgress { place: MainPlace::StairHall, chip_fed: true, ..DoorsProgress::default() };
+    let mut app = DoorsGameApp::new(progress);
+    quiet(&mut app);
+    app.unfold = 1.0;
+    app.interact_spot(Spot::StairStep);
+    assert!(app.progress.floor2_done && app.pending_end_card);
+    // 대사가 아직 떠 있는 동안은 카드가 안 뜬다.
+    app.update_end_card(0.1);
+    assert!(app.end_card.is_none() && app.pending_mail.is_none());
+    quiet(&mut app); // 대사가 끝났다
+    app.update_end_card(0.1);
+    assert_eq!(app.end_card, Some(0.0));
+    assert_eq!(app.pending_mail, Some(MailId::End2F));
+    // 막 떴을 때는 키로 닫히지 않고, 충분히 지난 뒤에 닫힌다.
+    assert!(!app.dismiss_end_card(true));
+    app.update_end_card(END_CARD_MIN_SECS);
+    assert!(!app.dismiss_end_card(false), "키를 안 눌렀으면 그대로");
+    assert!(app.dismiss_end_card(true));
+    assert!(app.end_card.is_none());
+    // 두 번째로 계단 첫 칸을 조사해도 카드가 또 뜨지 않는다.
+    quiet(&mut app);
+    app.pending_mail = None;
+    app.interact_spot(Spot::StairStep);
+    quiet(&mut app);
+    app.update_end_card(0.1);
+    assert!(app.end_card.is_none() && app.pending_mail.is_none());
+}
+
+// 플레이어가 고친 game.ini 에 문이 한마디 하지만, 같은 고침에는 한 번만이고 진행은 바뀌지 않는다.
+#[test]
+fn the_door_comments_on_an_edited_ini_once() {
+    use crate::gamefiles::{IniEdit, IniMood};
+    let mut app = DoorsGameApp::new(DoorsProgress::default());
+    quiet(&mut app);
+    let before = app.progress.clone();
+    assert!(app.ini_reaction(IniEdit::None).is_none());
+    let lines = app.ini_reaction(IniEdit::FakeFlowers).expect("가짜 꽃에는 문이 말한다");
+    assert_eq!(lines.len(), 4);
+    assert!(app.ini_reaction(IniEdit::FakeFlowers).is_none(), "같은 고침에는 한 번만");
+    assert!(app.ini_reaction(IniEdit::Mood(IniMood::Hopeful)).is_some(), "다른 고침에는 또 말한다");
+    assert!(app.ini_reaction(IniEdit::UnknownMood).is_some());
+    // 원래대로 되돌리면(None) 다음에 또 고쳤을 때 다시 말한다.
+    assert!(app.ini_reaction(IniEdit::None).is_none());
+    assert!(app.ini_reaction(IniEdit::UnknownMood).is_some());
+    assert_eq!(app.progress, before, "문은 속지 않는다 — 진행은 그대로다");
+}
+

@@ -158,9 +158,9 @@ pub mod mail {
     // 세 번째 메일 — 씨앗을 심은 뒤 오는 힌트(시트의 "메일 가이딩").
     pub const HINT_MAIL_SUBJECT: S = S { en: "hmm...", ko: "음...", ja: "うーん..." };
     pub const HINT_MAIL_BODY: S = S {
-        en: "Hmm... maybe I could turn the clock on the desktop forward, physically?",
-        ko: "음... 바탕화면에서 물리적으로 시간을 돌려도 괜찮지 않을까?",
-        ja: "うーん... デスクトップの時計を、物理的に進めてみてもいいんじゃないかな?",
+        en: "Hmm... maybe I could turn the clock on the desktop forward, physically?\nYour PC's own clock works, or click the clock here and open Date and Time.\nOnce the flower blooms, set the clock back. The flower will stay.",
+        ko: "음... 바탕화면에서 물리적으로 시간을 돌려도 괜찮지 않을까?\n진짜 PC 시계를 돌려도 되고, 여기 시계를 눌러서 '날짜 및 시간'을 열어도 돼.\n꽃이 핀 뒤에는 시계를 원래대로 돌려놔. 꽃은 그대로 남아 있을 테니까.",
+        ja: "うーん... デスクトップの時計を、物理的に進めてみてもいいんじゃないかな?\n本物のPCの時計でも、ここの時計を押して「日付と時刻」を開いてもいいよ。\n花が咲いたら時計を元に戻してね。花はそのまま残るから。",
     };
 
     // 네 번째 메일 — 꽃을 보낸 뒤 꽃 사진이 첨부돼 온다.
@@ -240,6 +240,13 @@ pub mod mail {
     pub const FINGER_HINT_MAIL_SUBJECT: S = S { en: "A word of advice", ko: "조언 한마디", ja: "ひとこと助言" };
 
     // Mr. POTATO CHIP 을 받았을 때(MAIN C-2).
+    // 2층 엔딩 카드와 함께 오는 메일 — 아래층은 아직 준비 중이라는 안내.
+    pub const END2F_MAIL_SUBJECT: S = S { en: "To be continued", ko: "계속됩니다", ja: "つづく" };
+    pub const END2F_MAIL_BODY: S = S {
+        en: "Thank you for coming all this way.\nThe floors below aren't ready yet. Please come back later.",
+        ko: "여기까지 와 줘서 고마워.\n이 아래는 아직 준비 중이야. 나중에 다시 와 줘.",
+        ja: "ここまで来てくれてありがとう。\nこの下はまだ準備中。またあとで来てね。",
+    };
     pub const MEAL_MAIL_SUBJECT: S = S { en: "Mealtime", ko: "식사 준비", ja: "食事の支度" };
     pub const MEAL_MAIL_BODY: S = S {
         en: "The stairs are waiting. This time, bring something to eat.",
@@ -296,6 +303,7 @@ pub mod boot {
 // scenes/lobby.rs — 시작 화면(New Start/Continue/Settings/Quit 메뉴).
 pub mod lobby {
     use super::S;
+    pub const RESTORE_ERASED: S = S { en: "Undo Erase", ko: "삭제 취소", ja: "削除を取り消す" };
     pub const NEW_START: S = S { en: "New Start", ko: "새로 시작", ja: "最初から" };
     pub const CONTINUE: S = S { en: "Continue", ko: "이어하기", ja: "続ける" };
     pub const QUIT: S = S { en: "Quit", ko: "종료", ja: "終了" };
@@ -319,6 +327,34 @@ pub mod desktop {
     pub const NEW_MAIL: S = S { en: "New Mail", ko: "새 메일", ja: "新着メール" };
     pub const DATE_TIME: S = S { en: "Date and Time", ko: "날짜 및 시간", ja: "日付と時刻" };
     pub const DOWNLOAD_COMPLETE: S = S { en: "Download Complete", ko: "다운로드 완료", ja: "ダウンロード完了" };
+    // 저장에 실패했을 때의 알림(save.rs) — 보통은 폴더 쓰기 권한 문제다.
+    // PC 시계가 크게 바뀐 걸 알아챘을 때의 안내(서브 게임의 "시간이 1년은 필요하다").
+    pub const CLOCK_NOTICE: S = S { en: "System Clock", ko: "시스템 시계", ja: "システム時計" };
+    pub const CLOCK_AHEAD_LINE1: S = S { en: "The clock moved far ahead.", ko: "시계가 많이 앞으로 갔어요.", ja: "時計が大きく進みました。" };
+    pub const CLOCK_AHEAD_LINE2: S = S { en: "Check the flower in test2.", ko: "test2 에서 꽃을 확인해 보세요.", ja: "test2で花を確認して。" };
+    pub const CLOCK_BACK_LINE1: S = S { en: "The flower has bloomed.", ko: "꽃이 피었어요.", ja: "花が咲きました。" };
+    pub const CLOCK_BACK_LINE2: S = S { en: "You can set the clock back.", ko: "시계를 원래대로 돌려도 돼요.", ja: "時計を元に戻して大丈夫。" };
+    pub const SAVE_FAILED: S = S { en: "Save Failed", ko: "저장 실패", ja: "保存失敗" };
+    pub const SAVE_FAILED_LINE1: S = S { en: "Couldn't save your progress.", ko: "진행을 저장하지 못했어요.", ja: "進行を保存できません。" };
+    pub const SAVE_FAILED_LINE2: S = S { en: "Check the folder permissions.", ko: "폴더 쓰기 권한을 확인하세요.", ja: "書き込み権限を確認して。" };
+}
+
+// apps/datetime.rs — 날짜 및 시간 조정 창(시계를 눌러서 연다). 서브 게임의 "시간이 1년은 필요하다"를 PC 시계를
+// 건드리지 않고도 풀 수 있는 가상 시계다.
+pub mod datetime {
+    use super::S;
+    pub const TITLE: S = S { en: "Adjust Date and Time", ko: "날짜 및 시간 조정", ja: "日付と時刻の調整" };
+    pub const GAME_CLOCK: S = S { en: "Game clock", ko: "게임 시계", ja: "ゲーム時計" };
+    pub const PC_CLOCK: S = S { en: "PC clock", ko: "PC 시계", ja: "PCの時計" };
+    pub const OFFSET_DAYS: S = S { en: "Offset: {n} days", ko: "차이: {n}일", ja: "差: {n}日" };
+    pub const RESET: S = S { en: "Reset", ko: "되돌리기", ja: "リセット" };
+    pub const NOTE: S = S {
+        en: "The flower in test2 grows by the game clock.",
+        ko: "test2 의 꽃은 게임 시계로 자라요.",
+        ja: "test2の花はゲーム時計で育ちます。",
+    };
+    // 바탕화면 시계 팝업의 버튼.
+    pub const ADJUST_BUTTON: S = S { en: "Adjust date/time...", ko: "날짜/시간 조정...", ja: "日付/時刻の調整..." };
 }
 
 // apps/settings.rs — 설정 창.
@@ -341,6 +377,19 @@ pub mod settings {
     pub const WEATHERING: S = S { en: "Weathering", ko: "레트로 질감", ja: "レトロ感" };
     pub const MUTE_ALL: S = S { en: "Mute All", ko: "전체 음소거", ja: "すべてミュート" };
     pub const APPEARANCE: S = S { en: "Appearance", ko: "화면", ja: "外観" };
+    pub const READABILITY: S = S { en: "Readability", ko: "읽기 편하게", ja: "読みやすさ" };
+    pub const LARGE_TEXT: S = S { en: "Large game text", ko: "게임 안 큰 글자", ja: "ゲーム内の大きな文字" };
+    pub const READING_MODE: S = S { en: "Reading mode (clearer text)", ko: "읽기 모드 (글자를 또렷하게)", ja: "読書モード(文字をはっきり)" };
+    pub const LOCAL_LOG: S = S { en: "Local play log (stays on this PC)", ko: "플레이 기록 (이 PC 안에만 남음)", ja: "プレイ記録(このPC内のみ)" };
+    pub const CONTROLS: S = S { en: "Controls", ko: "조작 키", ja: "操作キー" };
+    pub const KEY_FORWARD: S = S { en: "Forward", ko: "앞으로", ja: "前進" };
+    pub const KEY_BACK: S = S { en: "Back", ko: "뒤로", ja: "後退" };
+    pub const KEY_LEFT: S = S { en: "Left", ko: "왼쪽", ja: "左" };
+    pub const KEY_RIGHT: S = S { en: "Right", ko: "오른쪽", ja: "右" };
+    pub const KEY_INTERACT: S = S { en: "Interact", ko: "조사하기", ja: "調べる" };
+    pub const KEY_SPRINT: S = S { en: "Run", ko: "달리기", ja: "走る" };
+    pub const PRESS_A_KEY: S = S { en: "Press a key...", ko: "키를 누르세요...", ja: "キーを押して..." };
+    pub const RESET_KEYS: S = S { en: "Reset keys", ko: "기본 키로", ja: "初期設定に戻す" };
     pub const SMOOTH_SCROLL: S = S { en: "Smooth scroll", ko: "부드러운 스크롤", ja: "スムーズスクロール" };
     pub const LANGUAGE: S = S { en: "Language", ko: "언어", ja: "言語" };
     pub const BACKGROUND_COLOR: S = S { en: "Background color", ko: "배경색", ja: "背景色" };
@@ -474,4 +523,40 @@ pub mod minigame {
         ko: "옆의 호수에 손잡이를 넣어 보자.",
         ja: "隣の湖にレバーを入れてみよう。",
     };
+}
+
+#[cfg(test)]
+mod tests {
+    // 이 파일의 모든 일본어(`ja:`) 문구에 쓰인 한자가 폰트 아틀라스(gfx::KANJI_CHARSET)에 있어야 화면에 보인다.
+    // 새 일본어 문구를 넣었는데 한자가 빠져 있으면 여기서 어떤 글자인지 알려준다.
+    #[test]
+    fn every_japanese_kanji_is_in_the_font_atlas() {
+        let src = include_str!("strings.rs");
+        let needle = ["ja", ": \""].concat();
+        let mut missing = std::collections::BTreeSet::new();
+        let mut rest = src;
+        while let Some(i) = rest.find(&needle) {
+            let body = &rest[i + needle.len()..];
+            let mut esc = false;
+            let mut end = body.len();
+            for (j, c) in body.char_indices() {
+                if esc {
+                    esc = false;
+                } else if c == '\\' {
+                    esc = true;
+                } else if c == '"' {
+                    end = j;
+                    break;
+                }
+            }
+            for c in body[..end].chars() {
+                let plain = c.is_ascii() || ('\u{3000}'..='\u{30FF}').contains(&c) || ('\u{FF00}'..='\u{FFEF}').contains(&c) || c == '—' || c == '「' || c == '」';
+                if !plain && !crate::render::gfx::KANJI_CHARSET.contains(c) {
+                    missing.insert(c);
+                }
+            }
+            rest = &body[end..];
+        }
+        assert!(missing.is_empty(), "폰트 아틀라스에 없는 한자: {}", missing.into_iter().collect::<String>());
+    }
 }

@@ -173,12 +173,19 @@ impl MiniGameApp {
         for ob in seen {
             let dz = (ob.at - round.dist).max(0.0);
             let scale = 1.0 / (1.0 + dz / 8.0);
-            let x = cx + (ob.lane as f32 - 1.0) * LANE_W * scale;
+            let x = cx + (ob.pos - 1.0) * LANE_W * scale;
             let ybase = HORIZON + span * scale;
             match ob.kind {
                 lane::ObstacleKind::Car => {
                     let (w, h) = (66.0 * scale, 38.0 * scale);
-                    fill(r, o, x - w / 2.0, ybase - h, w, h, [0.2, 0.45, 0.85, 1.0]);
+                    // 가로지르는 차는 주황색이고 가는 쪽 앞에서 깜빡인다.
+                    let body = if ob.cross.is_some() { [0.95, 0.55, 0.1, 1.0] } else { [0.2, 0.45, 0.85, 1.0] };
+                    if let Some(dir) = ob.cross
+                        && (self.clock * 8.0) as i32 % 2 == 0
+                    {
+                        fill(r, o, x + dir * w * 0.62 - w * 0.1, ybase - h * 0.7, w * 0.2, h * 0.3, [1.0, 0.95, 0.3, 1.0]);
+                    }
+                    fill(r, o, x - w / 2.0, ybase - h, w, h, body);
                     fill(r, o, x - w * 0.36, ybase - h * 1.0, w * 0.72, h * 0.4, [0.55, 0.75, 0.95, 1.0]);
                     fill(r, o, x - w * 0.42, ybase - h * 0.2, w * 0.2, h * 0.2, [0.95, 0.2, 0.2, 1.0]);
                     fill(r, o, x + w * 0.22, ybase - h * 0.2, w * 0.2, h * 0.2, [0.95, 0.2, 0.2, 1.0]);

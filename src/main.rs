@@ -13,7 +13,7 @@ use crackhead::render::crt::{viewport_4x3, warp, Crt};
 use crackhead::foundation;
 use crackhead::foundation::{Settings, FPS_OPTS, RES_OPTS};
 use crackhead::render::gfx::{Assets, Renderer, VIRTUAL_H as VH, VIRTUAL_W as VW};
-use crackhead::scenes::{lobby::LobbyScene, Frame, Input, SceneManager};
+use crackhead::scenes::{lobby::LobbyScene, Frame, FrameClock, Input, SceneManager};
 use crackhead::ui::draw_cursor;
 
 // 가상 해상도. 씬/UI 는 항상 이 좌표계(640x480)에서 그린다.
@@ -34,8 +34,7 @@ struct Stage {
     // 큐에 들어와 있던 이동 이벤트 하나를 버리는 용도(안 그러면 시점이 한 번 확 튄다).
     mouse_look: bool,
     look_skip: bool,
-    start_time: f64,
-    last_time: f64,
+    clock: FrameClock,
 }
 
 impl Stage {
@@ -68,7 +67,6 @@ impl Stage {
         let crt = Crt::new(ctx.as_mut(), w, h);
         let assets = Assets::load(ctx.as_mut());
         let scenes = SceneManager::new(Box::new(LobbyScene::new()));
-        let now = date::now();
         Stage {
             ctx,
             renderer,
@@ -80,8 +78,7 @@ impl Stage {
             crt_res: res_idx,
             mouse_look: false,
             look_skip: false,
-            start_time: now,
-            last_time: now,
+            clock: FrameClock::new(),
         }
     }
 
@@ -101,16 +98,14 @@ impl EventHandler for Stage {
     fn update(&mut self) {}
 
     fn draw(&mut self) {
-        let now = date::now();
+        // 프레임 시간은 단조 시계로 잰다(FrameClock) — PC 시스템 시간을 돌려도 dt 가 튀지 않는다.
         // 프레임이 한 번 크게 끊기면(창 포커스 복귀, 첫 프레임, OS 가 잠깐 시간을
         // 안 준 경우 등) dt 가 순간적으로 아주 커질 수 있어서 500ms 로 상한을
         // 둔다 — 그래도 Backspace 꾹 누르기 반복 삭제처럼 "dt 누적치"를 그대로
         // 반복 횟수로 바꾸는 로직은 이 상한만으론 부족해서(500ms 도 반복
         // 간격보다 훨씬 크다) mail.rs 쪽에 따로 더 촘촘한 상한을 뒀다
         // (BACKSPACE_MAX_DT_PER_FRAME 참고).
-        let dt = ((now - self.last_time) as f32).min(0.5);
-        self.last_time = now;
-        let elapsed = (now - self.start_time) as f32;
+        let (dt, elapsed) = self.clock.tick();
 
         // 설정 해상도가 바뀌면 오프스크린 렌더 타깃을 다시 만든다.
         let res_idx = self.settings.borrow().res_idx;
@@ -120,6 +115,12 @@ impl EventHandler for Stage {
             self.crt_res = res_idx;
         }
 
+        {
+            let s = self.settings.borrow();
+            crackhead::apps::set_game_language(s.language);
+            crackhead::apps::set_game_keys(s.keys.resolved());
+            crackhead::apps::set_game_text_scale(if s.large_text { 1.35 } else { 1.0 });
+        }
         self.renderer.begin(VW as f32, VH as f32);
         let (quit, cursor, show_cursor) = {
             let mut frame = Frame {
@@ -162,7 +163,8 @@ impl EventHandler for Stage {
 
         let (ca_amount, crt_intensity) = {
             let s = self.settings.borrow();
-            (s.chromatic_aberration, s.crt_intensity)
+            // 읽기 모드 — 색수차를 끄고 스캔라인/비네팅을 줄여 글자를 또렷하게 한다(곡률은 마우스 좌표와 묶여 그대로).
+            if s.reading_mode { (0.0, s.crt_intensity.min(0.35)) } else { (s.chromatic_aberration, s.crt_intensity) }
         };
         self.crt.present(self.ctx.as_mut(), elapsed, ca_amount, crt_intensity);
         self.ctx.commit_frame();
@@ -177,7 +179,7 @@ impl EventHandler for Stage {
         if target_fps > 0 {
             // 0 = "Unlimited" — 제한 없이 그대로 둔다.
             let target_dt = 1.0 / target_fps as f64;
-            let frame_elapsed = date::now() - now;
+            let frame_elapsed = self.clock.since_last_tick();
             if frame_elapsed < target_dt {
                 std::thread::sleep(std::time::Duration::from_secs_f64(target_dt - frame_elapsed));
             }

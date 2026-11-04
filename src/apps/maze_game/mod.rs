@@ -15,7 +15,7 @@
 mod hub;
 mod maze;
 
-use miniquad::{KeyCode, RenderingBackend};
+use miniquad::RenderingBackend;
 
 use crate::foundation::{MazeProgress, MAZE_KEYS};
 use crate::random::Rng;
@@ -24,8 +24,9 @@ use crate::render::mesh3d::{Box3D, Camera};
 
 use super::game3d::dialogue::{Dialogue, Entry};
 use super::game3d::ena::{ena_time, overshoot};
+use super::game3d::i18n;
 use super::game3d::item;
-use super::game3d::player::{aim_dist, Player};
+use super::game3d::player::{aim_score, Player};
 use super::game3d::sprite;
 use super::game3d::{is_on_screen, Fade, MouseLook, RenderSlot, View};
 use super::{App, AppAction, WinInput};
@@ -108,7 +109,12 @@ pub struct MazeGameApp {
 }
 
 fn new_maze(kind: MazeKind) -> (Vec<Box3D>, Place, Player) {
-    let maze = Maze::generate(&mut Rng::from_time());
+    // 미로마다 크기와 색이 다르다 — 물뿌리개 미로가 0번, 열쇠 미로가 1~3번.
+    let stage = match kind {
+        MazeKind::Round1 => 0,
+        MazeKind::Key(i) => i + 1,
+    };
+    let maze = Maze::generate(&mut Rng::from_time(), &maze::style_for(stage));
     let player = Player::at(maze.start, maze.start_yaw);
     (maze.boxes, Place::Maze { kind, goal: maze.goal }, player)
 }
@@ -303,7 +309,7 @@ impl MazeGameApp {
             Target::Key(i) => {
                 p.keys[i] = true;
                 self.rope_since = Some(self.clock);
-                self.dialogue.start(vec![Self::line(&format!("열쇠 {}번을 얻었다.", i + 1)), Self::line("위에서 밧줄이 내려왔다.")]);
+                self.dialogue.start(vec![Self::line(&i18n::fmt("열쇠 {}번을 얻었다.", &[&(i + 1).to_string()])), Self::line("위에서 밧줄이 내려왔다.")]);
             }
             Target::Rope => {
                 self.dialogue.start(vec![Self::line("밧줄을 타고 올라갔다...")]);
@@ -312,7 +318,7 @@ impl MazeGameApp {
             Target::Pot => {
                 if p.seed && !p.planted {
                     p.planted = true;
-                    p.planted_at = Some(miniquad::date::now());
+                    p.planted_at = Some(crate::signals::effective_now());
                     self.pending_notify = Some(Notify::SeedPlanted);
                     self.dialogue.start(vec![Self::line("화분에 씨앗을 심었다."), Self::line("시간이 1년은 필요할 것 같다...")]);
                 } else if p.planted {
@@ -333,7 +339,7 @@ impl MazeGameApp {
                     p.locker_checked = true; // 문 3개가 열린다
                     self.dialogue.start(vec![Self::line("잠겨 있다. 열쇠 3개가 필요할 것 같다."), Self::line("어디선가 문이 열리는 소리가 들렸다.")]);
                 } else {
-                    self.dialogue.start(vec![Self::line(&format!("열쇠가 부족하다. ({got}/{KEYS_NEEDED})"))]);
+                    self.dialogue.start(vec![Self::line(&i18n::fmt("열쇠가 부족하다. ({}/{})", &[&got.to_string(), &KEYS_NEEDED.to_string()]))]);
                 }
             }
             Target::Flower => {
@@ -388,9 +394,13 @@ impl MazeGameApp {
             self.dialogue.handle_input(win, in_view);
             return;
         }
-        if win.input.pressed(KeyCode::E)
+        if super::game3d::keys::pressed(win.input, crate::foundation::Action::Interact)
             && let Some(target) = self.aimed
         {
+            // 조사한 물건 쪽으로 카메라가 부드럽게 돌아선다(장소가 바뀌면 플레이어가 새로 만들어져서 포커스도 사라진다).
+            if let Some(center) = self.items().iter().find(|it| it.target == target).map(|it| it.center) {
+                self.player.focus_on(center);
+            }
             self.interact(target);
         }
     }
@@ -402,12 +412,14 @@ impl App for MazeGameApp {
     }
 
     fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, _assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
-        let view = View::fit(area);
+        let mut view = View::fit(area);
         let in_view = view.rect.contains(win.mouse.0, win.mouse.1);
 
         self.handle_input(win, in_view);
         self.look.request();
         self.dialogue.tick(win.dt);
+        self.player.update_focus(win.dt, self.dialogue.active());
+        view.zoom = self.player.zoom();
         self.clock += win.dt;
         if let Some(a) = &mut self.can_anim {
             *a += win.dt;
@@ -435,7 +447,7 @@ impl App for MazeGameApp {
             }
         }
 
-        self.bloom_if_due(miniquad::date::now());
+        self.bloom_if_due(crate::signals::effective_now());
 
         let items = self.items();
         // 벽 + 물건 + 장식(막지 않는 상자)을 한 목록에 모아 충돌과 그리기에 같이 쓴다(프레임당 한 번만 만든다).
@@ -450,7 +462,7 @@ impl App for MazeGameApp {
             self.reveal_locker(&cam);
             self.aimed = items
                 .iter()
-                .filter_map(|it| aim_dist(&cam, it.center).map(|d| (it, d)))
+                .filter_map(|it| aim_score(&cam, it.center).map(|d| (it, d)))
                 .min_by(|a, b| a.1.total_cmp(&b.1))
                 .map(|(it, _)| it.target);
         }
@@ -464,6 +476,12 @@ impl App for MazeGameApp {
             && let Some(item) = items.iter().find(|it| it.target == target)
         {
             view.draw_prompt(r, &cam, item.center, item.label);
+        }
+        if !frozen {
+            // 가까이 있는 조사 대상에 작은 표식(지금 조준 중인 것은 안내 문구가 대신한다).
+            for it in items.iter().filter(|it| Some(it.target) != self.aimed) {
+                view.draw_marker(r, &cam, it.center, win.time);
+            }
         }
         if !self.look.captured() && !frozen {
             view.draw_capture_hint(r);
@@ -513,7 +531,7 @@ impl MazeGameApp {
             lines.push("물뿌리개".to_string());
         }
         if keys > 0 {
-            lines.push(format!("열쇠 {keys}/{KEYS_NEEDED}"));
+            lines.push(i18n::fmt("열쇠 {}/{}", &[&keys.to_string(), &KEYS_NEEDED.to_string()]));
         }
         if p.seed && !p.planted {
             lines.push("씨앗".to_string());
@@ -522,7 +540,7 @@ impl MazeGameApp {
             lines.push("보리지꽃".to_string());
         }
         for (i, line) in lines.iter().enumerate() {
-            r.text(view.px(10.0), view.py(10.0 + i as f32 * 20.0), line, 0.8 * view.s, [0.75, 0.8, 1.0, 1.0]);
+            r.text(view.px(10.0), view.py(10.0 + i as f32 * 20.0 * super::game3d::text_scale()), &i18n::tr(line), 0.8 * view.s * super::game3d::text_scale(), [0.75, 0.8, 1.0, 1.0]);
         }
     }
 }

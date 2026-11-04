@@ -8,7 +8,9 @@
 pub mod boxes;
 pub mod dialogue;
 pub mod ena;
+pub mod i18n;
 pub mod item;
+pub mod keys;
 pub mod player;
 pub mod sprite;
 
@@ -17,7 +19,7 @@ use std::cell::RefCell;
 use miniquad::{KeyCode, RenderingBackend, TextureId};
 
 use crate::render::gfx::{Rect, Renderer};
-use crate::render::mesh3d::{v_dot, v_sub, Box3D, Camera, Mesh3D, MeshObject};
+use crate::render::mesh3d::{v_dot, v_len, v_sub, Box3D, Camera, Mesh3D, MeshObject};
 
 use super::WinInput;
 use player::Player;
@@ -74,13 +76,21 @@ impl Drop for RenderSlot {
 pub struct View {
     pub rect: Rect,
     pub s: f32,
+    // 확대 정도(0 = 기본 시야) — 멀리 있는 대상과 상호작용할 때 카메라가 살짝 당겨지는 연출(Player::zoom). 시야각(FOV)을 1/(1+zoom) 로
+    // 좁히는 것이라 안내 문구/표식/스프라이트 투영도 같은 값을 써야 화면과 맞는다.
+    pub zoom: f32,
 }
 
 impl View {
     pub fn fit(area: Rect) -> View {
         let s = (area.w / VIEW_W).min(area.h / VIEW_H);
         let (w, h) = (VIEW_W * s, VIEW_H * s);
-        View { rect: Rect::new(area.x + (area.w - w) / 2.0, area.y + (area.h - h) / 2.0, w, h), s }
+        View { rect: Rect::new(area.x + (area.w - w) / 2.0, area.y + (area.h - h) / 2.0, w, h), s, zoom: 0.0 }
+    }
+
+    // 지금 세로 시야각 — 확대(zoom)할수록 좁아진다.
+    pub fn fov(&self) -> f32 {
+        fov_for_zoom(self.zoom)
     }
 
     pub fn px(&self, x: f32) -> f32 {
@@ -94,7 +104,7 @@ impl View {
     // 3D 장면을 그려서 창에 붙이고(남는 곳은 검은 띠) 조준선까지 그린다.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_scene(&self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, area: Rect, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D]) {
-        let tex = render_scene(ctx, slot, clear, cam, boxes);
+        let tex = render_scene(ctx, slot, clear, cam, boxes, self.fov());
         r.rect(area.x, area.y, area.w, area.h, [0.0, 0.0, 0.0, 1.0]);
         // 오프스크린 텍스처는 위아래가 뒤집혀 있어 v 를 뒤집어 붙인다(crt.rs 와 같은 이유).
         r.sprite_uv(tex, self.rect.x, self.rect.y, self.rect.w, self.rect.h, 0.0, 1.0, 1.0, 0.0, [1.0, 1.0, 1.0, 1.0]);
@@ -105,7 +115,7 @@ impl View {
     // 가운데 조준선 없이(레이싱처럼 조준이 없는 화면) 상자와 임의 메시(MeshObject)를 같이 그린다.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_scene_meshes(&self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, area: Rect, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D], meshes: &[MeshObject]) {
-        let tex = render_scene_meshes(ctx, slot, clear, cam, boxes, meshes);
+        let tex = render_scene_meshes(ctx, slot, clear, cam, boxes, meshes, self.fov());
         r.rect(area.x, area.y, area.w, area.h, [0.0, 0.0, 0.0, 1.0]);
         r.sprite_uv(tex, self.rect.x, self.rect.y, self.rect.w, self.rect.h, 0.0, 1.0, 1.0, 0.0, [1.0, 1.0, 1.0, 1.0]);
     }
@@ -119,52 +129,108 @@ impl View {
     }
 
     // 월드 위치 옆에 "[E] ..." 같은 상호작용 안내를 띄운다(카메라 뒤면 안 그림).
-    pub fn draw_prompt(&self, r: &mut Renderer, cam: &Camera, pos: [f32; 3], label: &str) {
-        let Some((sx, sy)) = world_to_view(cam, pos) else { return };
+    // 화면 전체를 덮는 엔딩 카드 — alpha(0~1)만큼 어둡게 덮고 가운데에 제목/부제를, 다 나타나면 아래에 닫는 방법을 쓴다.
+    pub fn draw_end_card(&self, r: &mut Renderer, alpha: f32, title: &str, sub: &str, hint: &str, time: f32) {
         let s = self.s;
-        let tw = r.text_width(label, 0.7 * s);
-        r.rect(self.px(sx + 10.0), self.py(sy - 10.0), tw + 8.0 * s, 16.0 * s, [0.0, 0.0, 0.0, 0.6]);
-        r.text(self.px(sx + 14.0), self.py(sy - 8.0), label, 0.7 * s, [0.6, 0.9, 1.0, 1.0]);
+        let a = alpha.clamp(0.0, 1.0);
+        r.rect(self.rect.x, self.rect.y, self.rect.w, self.rect.h, [0.0, 0.0, 0.0, 0.88 * a]);
+        if a < 0.5 {
+            return;
+        }
+        let text_a = ((a - 0.5) * 2.0).clamp(0.0, 1.0);
+        let cx = self.px(VIEW_W / 2.0);
+        let w = r.text_width(title, 2.2 * s);
+        r.text(cx - w / 2.0, self.py(VIEW_H * 0.34), title, 2.2 * s, [1.0, 1.0, 1.0, text_a]);
+        let w = r.text_width(sub, 1.0 * s);
+        r.text(cx - w / 2.0, self.py(VIEW_H * 0.5), sub, 1.0 * s, [0.8, 0.85, 1.0, text_a]);
+        if a >= 1.0 && (time * 2.0).sin() > -0.2 {
+            let w = r.text_width(hint, 0.8 * s);
+            r.text(cx - w / 2.0, self.py(VIEW_H * 0.78), hint, 0.8 * s, [0.65, 0.65, 0.7, 1.0]);
+        }
+    }
+
+    // 조사할 수 있는 물건이 가까이(MARKER_DIST 안) 있으면 그 위에 작은 "!" 표식을 띄운다 — 조준선을 맞추기 전에도 어디에
+    // 뭔가 있는지 알 수 있고, 가까이 갈수록 또렷해진다. 지금 조준 중인 물건은 안내 문구가 대신하므로 호출부에서 뺀다.
+    pub fn draw_marker(&self, r: &mut Renderer, cam: &Camera, pos: [f32; 3], time: f32) {
+        let dist = v_len(v_sub(pos, cam.pos));
+        if dist > MARKER_DIST {
+            return;
+        }
+        let Some((sx, sy)) = world_to_view(cam, pos, self.fov()) else { return };
+        let near = 1.0 - dist / MARKER_DIST;
+        let alpha = (0.3 + 0.5 * near) * (0.85 + 0.15 * (time * 3.0).sin());
+        r.text(self.px(sx - 3.0), self.py(sy - 9.0), "!", 0.9 * self.s * text_scale(), [0.6, 0.9, 1.0, alpha]);
+    }
+
+    pub fn draw_prompt(&self, r: &mut Renderer, cam: &Camera, pos: [f32; 3], label: &str) {
+        let Some((sx, sy)) = world_to_view(cam, pos, self.fov()) else { return };
+        let s = self.s;
+        let label = keys::localize_key_hint(&i18n::tr(label));
+        let k = text_scale();
+        let tw = r.text_width(&label, 0.7 * s * k);
+        r.rect(self.px(sx + 10.0), self.py(sy - 10.0), tw + 8.0 * s, 16.0 * s * k, [0.0, 0.0, 0.0, 0.6]);
+        r.text(self.px(sx + 14.0), self.py(sy - 8.0), &label, 0.7 * s * k, [0.6, 0.9, 1.0, 1.0]);
     }
 
     // 화면 아래 가운데의 "클릭해서 시점 조작" 안내.
     pub fn draw_capture_hint(&self, r: &mut Renderer) {
         let s = self.s;
-        let hint = "클릭해서 시점 조작 (Esc: 해제)";
-        let tw = r.text_width(hint, 0.7 * s);
+        // "Shift" 는 지금 달리기 키 이름으로 바꿔 보여 준다.
+        let hint = i18n::tr_static("클릭해서 시점 조작 (Esc: 해제 / Shift: 달리기)").replace("Shift", &crate::foundation::key_label(keys::code(crate::foundation::Action::Sprint)));
+        let k = text_scale();
+        let tw = r.text_width(&hint, 0.7 * s * k);
         let cx = self.px(VIEW_W / 2.0);
-        r.rect(cx - tw / 2.0 - 6.0 * s, self.py(VIEW_H - 30.0), tw + 12.0 * s, 20.0 * s, [0.0, 0.0, 0.0, 0.6]);
-        r.text(cx - tw / 2.0, self.py(VIEW_H - 27.0), hint, 0.7 * s, [0.9, 0.9, 0.9, 1.0]);
+        r.rect(cx - tw / 2.0 - 6.0 * s, self.py(VIEW_H - 30.0 * k), tw + 12.0 * s, 20.0 * s * k, [0.0, 0.0, 0.0, 0.6]);
+        r.text(cx - tw / 2.0, self.py(VIEW_H - 27.0 * k), &hint, 0.7 * s * k, [0.9, 0.9, 0.9, 1.0]);
     }
 }
 
 // 상자와 함께 임의 삼각형 메시(MeshObject)도 그리는 버전 — 길처럼 상자로는 이음매 없이 만들기 어려운 곡면용.
-fn render_scene_meshes(ctx: &mut dyn RenderingBackend, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D], meshes: &[MeshObject]) -> TextureId {
+fn render_scene_meshes(ctx: &mut dyn RenderingBackend, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D], meshes: &[MeshObject], fov: f32) -> TextureId {
     POOL.with(|pool| {
         let mut pool = pool.borrow_mut();
         let mesh = pool.targets[slot.0].get_or_insert_with(|| Mesh3D::new(ctx, VIEW_W as u32, VIEW_H as u32));
-        mesh.render_ex(ctx, clear, cam, boxes, meshes, FOV_Y);
+        mesh.render_ex(ctx, clear, cam, boxes, meshes, fov);
         mesh.color_texture()
     })
 }
 
-fn render_scene(ctx: &mut dyn RenderingBackend, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D]) -> TextureId {
+fn render_scene(ctx: &mut dyn RenderingBackend, slot: &RenderSlot, clear: [f32; 4], cam: &Camera, boxes: &[Box3D], fov: f32) -> TextureId {
     POOL.with(|pool| {
         let mut pool = pool.borrow_mut();
         let mesh = pool.targets[slot.0].get_or_insert_with(|| Mesh3D::new(ctx, VIEW_W as u32, VIEW_H as u32));
-        mesh.render(ctx, clear, cam, boxes, FOV_Y);
+        mesh.render(ctx, clear, cam, boxes, fov);
         mesh.color_texture()
     })
 }
 
 // 월드 좌표 → VIEW_W x VIEW_H 기준 화면 좌표. 카메라 뒤면 None.
-fn world_to_view(cam: &Camera, p: [f32; 3]) -> Option<(f32, f32)> {
+// 게임 안 글자(안내/표식/HUD) 크기 배율 — 설정의 "큰 글자". main 이 프레임마다 알려 준다.
+static TEXT_SCALE_BITS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3f80_0000); // 1.0
+
+pub fn set_text_scale(k: f32) {
+    TEXT_SCALE_BITS.store(k.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn text_scale() -> f32 {
+    f32::from_bits(TEXT_SCALE_BITS.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+// 이 거리(m) 안의 조사 대상에 "!" 표식을 띄운다.
+pub const MARKER_DIST: f32 = 4.5;
+
+// 확대(zoom)에 따른 세로 시야각 — zoom 0 이면 기본 시야(FOV_Y).
+pub fn fov_for_zoom(zoom: f32) -> f32 {
+    FOV_Y / (1.0 + zoom.max(0.0))
+}
+
+fn world_to_view(cam: &Camera, p: [f32; 3], fov: f32) -> Option<(f32, f32)> {
     let rel = v_sub(p, cam.pos);
     let depth = v_dot(rel, cam.forward());
     if depth <= 0.05 {
         return None;
     }
-    let half_h = (FOV_Y / 2.0).tan();
+    let half_h = (fov / 2.0).tan();
     let half_w = half_h * (VIEW_W / VIEW_H);
     let ndc_x = v_dot(rel, cam.right()) / (depth * half_w);
     let ndc_y = v_dot(rel, cam.up()) / (depth * half_h);
@@ -175,7 +241,7 @@ fn world_to_view(cam: &Camera, p: [f32; 3]) -> Option<(f32, f32)> {
 // 등 뒤에서 뭔가 나타나게 할 때, 플레이어가 그 순간을 못 보게 하려고 쓴다.
 pub fn is_on_screen(cam: &Camera, p: [f32; 3]) -> bool {
     const MARGIN: f32 = 80.0;
-    world_to_view(cam, p).is_some_and(|(x, y)| (-MARGIN..=VIEW_W + MARGIN).contains(&x) && (-MARGIN..=VIEW_H + MARGIN).contains(&y))
+    world_to_view(cam, p, FOV_Y).is_some_and(|(x, y)| (-MARGIN..=VIEW_W + MARGIN).contains(&x) && (-MARGIN..=VIEW_H + MARGIN).contains(&y))
 }
 
 // 장면이 확 바뀌는 곳(미로 ↔ 방)에서 쓰는 페이드 — 화면이 검게 어두워졌다가(Out) 그 순간 장면을
@@ -332,4 +398,17 @@ mod tests {
         assert_eq!(switched, 1);
         assert!(!f.active());
     }
+
+    // 확대할수록 시야각이 좁아지고, 0 이면 기본 시야와 같다.
+    #[test]
+    fn zoom_narrows_the_field_of_view() {
+        assert_eq!(fov_for_zoom(0.0), FOV_Y);
+        assert!(fov_for_zoom(0.3) < FOV_Y && fov_for_zoom(0.3) > fov_for_zoom(0.6));
+        assert_eq!(fov_for_zoom(-1.0), FOV_Y, "음수는 기본 시야");
+        let mut v = View::fit(Rect::new(0.0, 0.0, VIEW_W, VIEW_H));
+        assert_eq!(v.fov(), FOV_Y);
+        v.zoom = 0.3;
+        assert!((v.fov() - FOV_Y / 1.3).abs() < 1e-6);
+    }
 }
+

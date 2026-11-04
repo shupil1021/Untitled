@@ -137,8 +137,12 @@ pub fn build_scene(done: [bool; 3], exchanged: bool) -> Vec<Box3D> {
         let angle = i as f32 / 44.0 * std::f32::consts::TAU;
         let dist = rng.range(30.0, 46.0);
         let (x, z) = (angle.cos() * dist, angle.sin() * dist);
+        let skipped = z > 22.0; // 언덕 모델이 가리는 쪽은 건물을 안 세운다(난수 순서는 그대로).
         let (w, h) = (rng.range(2.5, 5.5), rng.range(10.0, 34.0));
         let tone = rng.range(0.16, 0.3);
+        if skipped {
+            continue;
+        }
         boxes.push(deco([x, h / 2.0, z], [w, h / 2.0, w], [tone, tone + 0.03, tone + 0.07, 1.0]));
         if rng.next() > 0.45 {
             let ly = rng.range(3.0, h - 1.0);
@@ -178,9 +182,7 @@ pub fn build_scene(done: [bool; 3], exchanged: bool) -> Vec<Box3D> {
     boxes.push(solid([SOFA[0], 0.85, SOFA[2] + 0.5], [seat_hw, 0.45, 0.1], [0.4, 0.2, 0.25, 1.0], false));
     boxes.push(solid([SOFA[0] - seat_hw - 0.1, 0.5, SOFA[2]], [0.12, 0.5, 0.55], [0.3, 0.15, 0.18, 1.0], false));
     boxes.push(solid([SOFA[0] + seat_hw + 0.1, 0.5, SOFA[2]], [0.12, 0.5, 0.55], [0.3, 0.15, 0.18, 1.0], false));
-    boxes.push(deco([SOFA[0] - 0.35, 0.95, SOFA[2] + 0.39], [0.1, 0.12, 0.03], [0.05, 0.03, 0.03, 1.0]));
-    boxes.push(deco([SOFA[0] + 0.35, 0.95, SOFA[2] + 0.39], [0.1, 0.12, 0.03], [0.05, 0.03, 0.03, 1.0]));
-    boxes.push(deco([SOFA[0], 0.65, SOFA[2] + 0.39], [0.3, 0.05, 0.03], [0.05, 0.03, 0.03, 1.0]));
+    tv_rabbit(&mut boxes);
     boxes.push(solid([SOFA[0] + 2.4, 0.9, SOFA[2] + 0.3], [0.05, 0.9, 0.05], [0.25, 0.22, 0.2, 1.0], false));
     boxes.push(deco([SOFA[0] + 2.4, 1.9, SOFA[2] + 0.3], [0.3, 0.2, 0.3], [0.95, 0.85, 0.5, 1.0]));
     // 표지판 — 기둥 하나에 판때기 하나.
@@ -189,13 +191,49 @@ pub fn build_scene(done: [bool; 3], exchanged: bool) -> Vec<Box3D> {
     boxes
 }
 
+// 소파에 앉은 NPC — 에나 식으로 각지고 밝은 색의 이상한 나라 토끼(조끼+회중시계), 머리는 TV 다. 얼굴은 TV 화면에 뜬다.
+fn tv_rabbit(boxes: &mut Vec<Box3D>) {
+    let (x, z) = (SOFA[0], SOFA[2] + 0.05);
+    let fur = [0.96, 0.93, 0.85, 1.0];
+    let pink = [0.95, 0.55, 0.7, 1.0];
+    let vest = [0.85, 0.15, 0.2, 1.0];
+    // 몸통과 다리(앉은 자세), 팔
+    boxes.push(deco([x, 0.95, z], [0.3, 0.35, 0.2], fur));
+    boxes.push(deco([x, 0.95, z - 0.21], [0.24, 0.3, 0.02], vest));
+    boxes.push(deco([x - 0.15, 0.68, z - 0.3], [0.1, 0.08, 0.3], fur));
+    boxes.push(deco([x + 0.15, 0.68, z - 0.3], [0.1, 0.08, 0.3], fur));
+    boxes.push(deco([x - 0.4, 0.95, z - 0.05], [0.07, 0.3, 0.09], fur));
+    boxes.push(deco([x + 0.4, 0.95, z - 0.05], [0.07, 0.3, 0.09], fur));
+    // 회중시계
+    boxes.push(deco([x + 0.12, 0.85, z - 0.23], [0.05, 0.05, 0.015], [0.95, 0.8, 0.25, 1.0]));
+    // 머리 — TV 상자, 화면, 얼굴(눈 둘 + 입), 안테나
+    let hy = 1.55;
+    boxes.push(deco([x, hy, z], [0.4, 0.3, 0.25], [0.28, 0.3, 0.38, 1.0]));
+    boxes.push(deco([x, hy, z - 0.255], [0.32, 0.23, 0.01], [0.55, 0.9, 0.95, 1.0]));
+    boxes.push(deco([x - 0.12, hy + 0.06, z - 0.27], [0.05, 0.07, 0.01], [0.05, 0.08, 0.12, 1.0]));
+    boxes.push(deco([x + 0.12, hy + 0.06, z - 0.27], [0.05, 0.07, 0.01], [0.05, 0.08, 0.12, 1.0]));
+    boxes.push(deco([x, hy - 0.1, z - 0.27], [0.14, 0.025, 0.01], [0.05, 0.08, 0.12, 1.0]));
+    boxes.push(deco([x - 0.2, hy - 0.15, z - 0.27], [0.03, 0.03, 0.01], pink));
+    boxes.push(deco([x + 0.2, hy - 0.15, z - 0.27], [0.03, 0.03, 0.01], pink));
+    // 긴 귀(안쪽은 분홍)
+    for s in [-1.0f32, 1.0] {
+        boxes.push(deco([x + s * 0.22, hy + 0.72, z], [0.08, 0.42, 0.05], fur));
+        boxes.push(deco([x + s * 0.22, hy + 0.72, z - 0.055], [0.04, 0.34, 0.01], pink));
+    }
+    // 안테나
+    boxes.push(deco([x - 0.1, hy + 0.34, z], [0.012, 0.05, 0.012], [0.6, 0.6, 0.65, 1.0]));
+    boxes.push(deco([x + 0.1, hy + 0.34, z], [0.012, 0.05, 0.012], [0.6, 0.6, 0.65, 1.0]));
+}
+
 // 안 보이는 벽 — 충돌에만 쓴다(그리지 않는다). 그 너머로 도시 배경이 보인다.
 pub fn barriers() -> Vec<Box3D> {
     let l = WALK_LIMIT;
     let t = 0.5;
     let h = 4.0;
     let wall = |c: [f32; 3], half: [f32; 3]| solid(c, half, [0.0; 4], false);
+    let tree = super::furniture::TREE_ORIGIN;
     vec![
+        wall([tree[0], 1.5, tree[2]], [0.3, 1.5, 0.3]), // 모델 나무의 줄기
         wall([0.0, h, -l - t], [l + 1.0, h, t]),
         wall([0.0, h, l + t], [l + 1.0, h, t]),
         wall([-l - t, h, 0.0], [t, h, l + 1.0]),
@@ -210,7 +248,7 @@ pub fn items(envelope: bool) -> Vec<Item<Target>> {
         .map(|g| Item::new(Target::Gate(g), g.center(), [0.6, 1.1, 0.06], g.color(), g.label()))
         .collect();
     items.push(Item::marker(Target::Sign, SIGN_POS, [0.45, 0.25, 0.1], "[E] Sign"));
-    items.push(Item::marker(Target::Sofa, SOFA_POS, [1.5, 0.9, 0.8], "[E] Sofa"));
+    items.push(Item::marker(Target::Sofa, SOFA_POS, [1.5, 0.9, 0.8], "[E] Rabbit"));
     if envelope {
         items.push(Item::new(Target::Envelope, ENVELOPE_POS, [0.22, 0.03, 0.15], [0.96, 0.93, 0.8, 1.0], "[E] Envelope"));
     }

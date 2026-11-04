@@ -168,10 +168,20 @@ fn bathroom(step: MissionStep, hand_out: bool) -> Room {
         boxes.push(deco([socket[0], socket[1], socket[2] + 0.01], [0.06, 0.06, 0.02], [0.05, 0.05, 0.07, 1.0]));
     }
     if hand_out && step < MissionStep::Received {
-        // 변기 속에서 올라온 손이 손잡이를 내밀고 있다.
-        boxes.push(deco([-1.0, 0.95, -4.98], [0.06, 0.32, 0.06], [0.95, 0.85, 0.75, 1.0]));
-        boxes.push(deco([-1.0, 1.32, -4.98], [0.14, 0.08, 0.07], [0.95, 0.85, 0.75, 1.0]));
-        boxes.push(deco([-1.0, 1.42, -4.98], [0.2, 0.03, 0.03], [0.82, 0.84, 0.9, 1.0]));
+        // 변기 속에서 올라온 여자의 손 — 가는 팔목, 손바닥, 손가락 넷과 엄지(빨간 손톱), 팔찌. 손잡이를 내밀고 있다.
+        let skin = [0.96, 0.83, 0.74, 1.0];
+        let nail = [0.8, 0.08, 0.2, 1.0];
+        boxes.push(deco([-1.0, 0.95, -4.98], [0.045, 0.32, 0.045], skin));
+        boxes.push(deco([-1.0, 1.22, -4.98], [0.052, 0.015, 0.052], [0.9, 0.78, 0.3, 1.0]));
+        boxes.push(deco([-1.0, 1.36, -4.98], [0.11, 0.1, 0.035], skin));
+        for k in 0..4 {
+            let fx = -1.0 - 0.075 + 0.05 * k as f32;
+            let len = if k == 1 || k == 2 { 0.12 } else { 0.1 };
+            boxes.push(deco([fx, 1.46 + len, -4.98], [0.014, len, 0.014], skin));
+            boxes.push(deco([fx, 1.46 + 2.0 * len, -4.98], [0.014, 0.012, 0.016], nail));
+        }
+        boxes.push(deco([-1.0 + 0.13, 1.4, -4.98], [0.05, 0.014, 0.014], skin));
+        boxes.push(deco([-1.0 - 0.1, 1.4, -4.99], [0.2, 0.03, 0.03], [0.82, 0.84, 0.9, 1.0]));
     }
     if step == MissionStep::Revealed {
         // 물 위에 떠오른 소환 조각
@@ -214,10 +224,23 @@ pub fn stair_hall(fed: bool, unfold: f32) -> Room {
         let squash = if fed { 1.0 - smooth(unfold) } else { 1.0 };
         let h = 0.5 + 0.9 * squash;
         boxes.push(block([0.0, h, pit_z - 0.6], [1.7 * (0.6 + 0.4 * squash), h, 0.7], [0.32, 0.28, 0.4, 1.0]));
-        boxes.push(deco([-0.5, h * 1.6, pit_z + 0.12], [0.16, 0.16, 0.04], [0.95, 0.95, 0.8, 1.0]));
-        boxes.push(deco([0.5, h * 1.6, pit_z + 0.12], [0.16, 0.16, 0.04], [0.95, 0.95, 0.8, 1.0]));
+        // 컵헤드 풍 얼굴 — 눈은 하얀 틈이 난 검은 파이 눈, 입은 계단 칸들을 이어 만든 빨간 입술.
+        let fz = pit_z + 0.12;
+        for sx in [-0.5f32, 0.5] {
+            boxes.push(deco([sx, h * 1.6, fz], [0.17, 0.2, 0.04], [0.04, 0.03, 0.05, 1.0]));
+            boxes.push(deco([sx + 0.05 * sx.signum(), h * 1.6 + 0.04, fz + 0.01], [0.06, 0.09, 0.02], [0.97, 0.97, 0.92, 1.0]));
+            boxes.push(deco([sx, h * 1.6 + 0.3, fz], [0.2, 0.03, 0.04], [0.04, 0.03, 0.05, 1.0]));
+        }
         let mouth = if fed { 0.18 } else { 0.07 };
-        boxes.push(deco([0.0, h * 0.8, pit_z + 0.12], [0.6, mouth, 0.04], [0.05, 0.0, 0.02, 1.0]));
+        let my = h * 0.8;
+        boxes.push(deco([0.0, my, fz], [0.6, mouth, 0.04], [0.12, 0.0, 0.04, 1.0]));
+        boxes.push(deco([0.0, my + mouth * 0.7, fz + 0.01], [0.56, mouth * 0.3, 0.02], [0.97, 0.97, 0.92, 1.0]));
+        for k in 0..6 {
+            let x = -0.55 + 0.22 * k as f32;
+            let rise = 0.04 * k as f32;
+            boxes.push(deco([x, my + mouth + 0.05 + rise, fz + 0.02], [0.11, 0.05, 0.03], [0.82, 0.1, 0.15, 1.0]));
+            boxes.push(deco([x, my - mouth - 0.05 - 0.04 * (5 - k) as f32, fz + 0.02], [0.11, 0.05, 0.03], [0.9, 0.14, 0.2, 1.0]));
+        }
         if !fed {
             items.push(Item::marker(Spot::Npc, [0.0, h * 1.2, pit_z + 0.1], [1.5, 1.0, 0.6], "[E] Stairs"));
         }

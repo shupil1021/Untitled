@@ -1,6 +1,7 @@
 //! 바탕화면 위의 UI 조각들 — 작업표시줄, 시작 메뉴, 우클릭 메뉴, 시계/와이파이 팝업, 우측 하단 알림(토스트), 삭제 확인창.
 
-use super::clock::civil_date;
+use super::clock::{civil_date, hour_minute, local_unix_now};
+use crate::strings::datetime;
 use super::*;
 
 impl DesktopScene {
@@ -154,9 +155,7 @@ impl DesktopScene {
         // 시계 — 그냥 표시용(클릭해도 아무 일 없음).
         let ck = self.clock_rect();
         sunken(r, ck.x, ck.y, ck.w, ck.h);
-        let unix = miniquad::date::now() as u64 + 9 * 3600; // KST
-        let hh = (unix / 3600) % 24;
-        let mm = (unix / 60) % 60;
+        let (hh, mm) = hour_minute(local_unix_now() + self.fs.clock_offset_secs);
         let clock = format!("{:02}:{:02}", hh, mm);
         // 세로 중앙 정렬 — 예전엔 ck.y 를 그대로 써서(위쪽 정렬) 글자가 박스 위아래로
         // 삐져나와 보였다. 다른 타임바 요소들(창 버튼 제목 등)과 같은 요령으로 맞춘다.
@@ -262,6 +261,12 @@ impl DesktopScene {
     // 시스템 메시지가 새로 생기면(지금은 메일 도착) 우측 하단(작업표시줄 바로 위,
     // 와이파이/시계 트레이 근처)에 잠깐 떴다가 TOAST_DURATION 뒤 저절로 사라지는
     // 알림. 누르면 바로 Mail 을 열고 닫힌다.
+    // 알림을 우측 하단에 띄운다(이미 떠 있던 알림은 대체한다).
+    pub(super) fn show_notice(&mut self, toast: Toast) {
+        self.toast = Some(toast);
+        self.toast_timer = TOAST_DURATION;
+    }
+
     pub(super) fn update_toast(&mut self, f: &mut Frame, work: Rect, lang: Language) {
         let Some(Toast { title, line1: from, line2: subject, opens_mail }) = self.toast.clone() else { return };
         let Rect { x, y, w, h } = Self::toast_rect();
@@ -283,7 +288,7 @@ impl DesktopScene {
 
     // 시계를 누르면 그 위에 뜨는 날짜 팝업 자리 — 오른쪽 끝을 시계에 맞춘다.
     pub(super) fn clock_popup_rect(&self) -> Rect {
-        let (w, h) = (150.0, 50.0);
+        let (w, h) = (150.0, 76.0);
         let ck = self.clock_rect();
         Rect::new((ck.x + ck.w - w).max(4.0), SCREEN_H - TASKBAR_H - h, w, h)
     }
@@ -293,9 +298,35 @@ impl DesktopScene {
         raised(r, pr.x, pr.y, pr.w, pr.h);
         r.rect(pr.x, pr.y, pr.w, 20.0, DARK_GRAY);
         r.text(pr.x + 6.0, pr.y + 2.0, t(lang, s::DATE_TIME), 0.85, WHITE);
-        // 진짜 컴퓨터의 시스템 시간(KST) — 시계와 같은 값. 서브 게임의 "시간이 1년은 필요하다"가 이걸 본다.
-        let (y, mo, d) = civil_date(miniquad::date::now() as i64 + 9 * 3600);
+        // 진짜 컴퓨터의 시스템 시간(이 PC 의 시간대) — 시계와 같은 값. 서브 게임의 "시간이 1년은 필요하다"가 이걸 본다.
+        // (가상 시계를 맞췄으면 그 차이가 더해진 값 — 서브 게임의 꽃도 이 시간을 본다.)
+        let (y, mo, d) = civil_date(local_unix_now() + self.fs.clock_offset_secs);
         r.text(pr.x + 8.0, pr.y + 26.0, &format!("{y:04}-{mo:02}-{d:02}"), 0.95, BLACK);
+        let b = self.clock_popup_button_rect();
+        raised(r, b.x, b.y, b.w, b.h);
+        r.text_clipped(b.x + 4.0, b.y + 4.0, t(lang, datetime::ADJUST_BUTTON), 0.75, BLACK, b.w - 8.0);
+    }
+
+    // 팝업 안의 "날짜/시간 조정" 버튼 자리.
+    pub(super) fn clock_popup_button_rect(&self) -> Rect {
+        let pr = self.clock_popup_rect();
+        Rect::new(pr.x + 6.0, pr.y + 46.0, pr.w - 12.0, 22.0)
+    }
+
+    // 가상 시계 창을 연다(이미 열려 있으면 앞으로).
+    pub(super) fn open_datetime(&mut self, settings: &Rc<RefCell<Settings>>, work: Rect) {
+        let lang = settings.borrow().language;
+        let op = Opened {
+            app: Box::new(DateTimeApp::new(self.fs.clock_offset_secs, settings.clone())),
+            title: t(lang, datetime::TITLE).to_string(),
+            size: (320.0, 220.0),
+            maximized: false,
+            resizable: false,
+            maximizable: false,
+            movable: true,
+            min_size: (150.0, 90.0),
+        };
+        self.wm.open(op, Some(DATETIME_WIN), work);
     }
 
     // 와이파이 아이콘을 누르면 뜨는 연결 정보(상태/SSID/IP) 팝업.

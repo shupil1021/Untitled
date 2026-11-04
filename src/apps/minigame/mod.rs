@@ -18,7 +18,7 @@ use std::rc::Rc;
 
 use miniquad::{KeyCode, RenderingBackend};
 
-use crate::foundation::{Language, MailId, MiniKind, MiniProgress, Settings};
+use crate::foundation::{Action, Language, MailId, MiniKind, MiniProgress, Settings};
 use crate::random::Rng;
 use crate::render::gfx::{Assets, Color, Rect, Renderer};
 use crate::strings::{minigame as s, t};
@@ -50,6 +50,47 @@ pub enum Outcome {
     Running,
     Won,
     Lost,
+}
+
+// 설치하면 AppData\<게임 이름>\ 에 생기는 README 와 설정 파일의 내용 — (README, 설정). 숫자는 게임 코드의 상수에서 그대로
+// 가져와서, 게임을 고쳐도 이 파일들이 옛 규칙을 말하지 않는다(예전엔 같은 숫자를 문자열로 따로 적어 뒀다).
+pub fn rules_text(kind: MiniKind) -> (String, String) {
+    match kind {
+        MiniKind::Eye => (
+            format!(
+                "SHY_EYE\n\n- WASD / arrow keys: move\n- {} lives, survive {:.0} seconds\n- No attacks. Just don't be seen.\n",
+                eye::LIVES,
+                eye::GOAL_SECS
+            ),
+            format!("[shy_eye]\nlives={}\nduration={:.0}\ninvuln_after_hit={:.1}\nbackground_eye=closed_when_cleared\n", eye::LIVES, eye::GOAL_SECS, eye::INVULN_SECS),
+        ),
+        MiniKind::Brain => (
+            format!(
+                "BRAIN_DRIVE\n\n- A / D / arrows: change lane\n- S / down: brake\n- {:.0}m in {:.0} seconds, {} crashes and you stop\n",
+                lane::GOAL_M,
+                lane::LIMIT_SECS,
+                lane::MAX_CRASHES
+            ),
+            format!(
+                "[brain_drive]\nlanes={}\ngoal_m={:.0}\nlimit_s={:.0}\nspeed={:.0}\nbrake_speed={:.0}\ncrash_stop_s={:.0}\nmax_crashes={}\nsign_destination=home\n",
+                lane::LANES,
+                lane::GOAL_M,
+                lane::LIMIT_SECS,
+                lane::BASE_SPEED,
+                lane::BRAKE_SPEED,
+                lane::CRASH_STOP_SECS,
+                lane::MAX_CRASHES
+            ),
+        ),
+        MiniKind::Finger => (
+            format!(
+                "PACK\n\n- Space / button: pack the box when it touches the line\n- {} boxes, {} or more to pass\n- Holding the button counts once.\n",
+                pack::WORK_N,
+                pack::PASS_AT
+            ),
+            format!("[pack]\nboxes={}\npass={}\nwindow_s={:.2}\npractice_rounds={}\n", pack::WORK_N, pack::PASS_AT, pack::WINDOW, pack::PRACTICE_N),
+        ),
+    }
 }
 
 pub fn new_app(kind: MiniKind, progress: MiniProgress, settings: Rc<RefCell<Settings>>) -> Box<dyn App> {
@@ -125,8 +166,10 @@ impl MiniGameApp {
             return Controls::default();
         }
         let i = win.input;
-        let (left, right) = (i.is_down(KeyCode::A) || i.is_down(KeyCode::Left), i.is_down(KeyCode::D) || i.is_down(KeyCode::Right));
-        let (up, down) = (i.is_down(KeyCode::W) || i.is_down(KeyCode::Up), i.is_down(KeyCode::S) || i.is_down(KeyCode::Down));
+        // 이동 키는 설정에서 다시 지정한 키(와 방향키)를 따른다.
+        let key = |action| super::game3d::keys::down(i, action);
+        let (left, right) = (key(Action::Left), key(Action::Right));
+        let (up, down) = (key(Action::Forward), key(Action::Back));
         let axis = |neg: bool, pos: bool| (pos as i32 - neg as i32) as f32;
         let clicked_button = win.mouse_clicked && pack_button.contains(win.mouse.0, win.mouse.1);
         Controls {
@@ -199,11 +242,13 @@ impl App for MiniGameApp {
                     match out {
                         Outcome::Running => {}
                         Outcome::Won => {
+                            crate::foundation::playlog::event(self.settings.borrow().local_log, "mini_clear", serde_json::json!({ "kind": name }));
                             self.progress.cleared = true;
                             self.stage = Stage::Cleared;
                             self.stage_t = 0.0;
                         }
                         Outcome::Lost => {
+                            crate::foundation::playlog::event(self.settings.borrow().local_log, "mini_fail", serde_json::json!({ "kind": name }));
                             self.stage = Stage::Failed;
                             self.stage_t = 0.0;
                             self.show_hint = !self.hint_shown;
@@ -293,4 +338,18 @@ mod tests {
             assert!(kind.setup_name().starts_with(kind.app_name()) && kind.exe_name().starts_with(kind.app_name()));
         }
     }
+
+    // AppData 의 설정 파일은 게임 코드의 상수와 같은 숫자를 말한다.
+    #[test]
+    fn the_rules_files_quote_the_real_constants() {
+        let (readme, cfg) = rules_text(MiniKind::Brain);
+        assert!(cfg.contains(&format!("limit_s={:.0}", lane::LIMIT_SECS)) && cfg.contains(&format!("max_crashes={}", lane::MAX_CRASHES)));
+        assert!(readme.contains(&format!("{} crashes", lane::MAX_CRASHES)));
+        let (readme, cfg) = rules_text(MiniKind::Finger);
+        assert!(cfg.contains(&format!("pass={}", pack::PASS_AT)) && cfg.contains(&format!("window_s={:.2}", pack::WINDOW)));
+        assert!(readme.contains(&format!("{} boxes", pack::WORK_N)));
+        let (readme, cfg) = rules_text(MiniKind::Eye);
+        assert!(cfg.contains(&format!("lives={}", eye::LIVES)) && readme.contains(&format!("{} lives", eye::LIVES)));
+    }
 }
+

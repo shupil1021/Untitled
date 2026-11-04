@@ -3,9 +3,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use miniquad::RenderingBackend;
+use miniquad::{KeyCode, RenderingBackend};
 
-use crate::foundation::{Language, Settings, BG_COLORS, FPS_OPTS, RES_OPTS, TABS};
+use crate::foundation::{key_label, Action, Language, Settings, BG_COLORS, BINDABLE, FPS_OPTS, RES_OPTS, TABS};
 use crate::render::gfx::{Assets, Rect, Renderer, CELL_H};
 use crate::strings::{common, settings as s, t};
 use crate::ui::*;
@@ -50,6 +50,7 @@ pub struct SettingsApp {
     interface_scroll: f32, // Interface 탭 전체 스크롤(Graphics 탭과 같은 구조)
     interface_scroll_disp: f32,
     interface_sb_drag: bool,
+    rebinding: Option<Action>, // Interface 탭: 지금 새 키를 기다리는 동작(없으면 None)
     has_data: bool, // Erase All Memory 버튼 활성화 여부 — 지울 저장 데이터가 있을 때만 눌리게 한다
 }
 
@@ -92,6 +93,7 @@ impl SettingsApp {
             interface_scroll: 0.0,
             interface_scroll_disp: 0.0,
             interface_sb_drag: false,
+            rebinding: None,
             has_data,
         }
     }
@@ -408,7 +410,11 @@ impl App for SettingsApp {
                 let appearance_content_h = CHECK_ROW_H + header_h + lang_list_h + SWATCH_LABEL_H + SWATCH_ROW_H;
                 let appearance_box_h = BOX_TOP_INSET + appearance_content_h + BOX_BOTTOM_PAD;
                 let erase_h = 24.0;
-                let total_h = BOX_TOP_MARGIN + appearance_box_h + GAP + erase_h;
+                // 읽기 편하게(체크 3개) / 조작 키(6줄 + 기본 키로 버튼) 그룹박스.
+                const KEY_ROW_H: f32 = 26.0;
+                let readability_h = BOX_TOP_INSET + CHECK_ROW_H * 3.0 + BOX_BOTTOM_PAD;
+                let controls_h = BOX_TOP_INSET + KEY_ROW_H * Action::ALL.len() as f32 + 32.0 + BOX_BOTTOM_PAD;
+                let total_h = BOX_TOP_MARGIN + appearance_box_h + GAP + readability_h + GAP + controls_h + GAP + erase_h;
                 let max_scroll = (total_h - viewport_h).max(0.0);
                 self.interface_scroll = self.interface_scroll.clamp(0.0, max_scroll);
                 ease_scroll(&mut self.interface_scroll_disp, self.interface_scroll, win.dt, s.smooth_scroll);
@@ -483,7 +489,58 @@ impl App for SettingsApp {
                 // 띄울 수 있다(DesktopScene::erase_confirm 참고). 지울 저장 데이터
                 // 자체가 없으면(has_data == false, 예: 로비에서 Continue 가 비활성인
                 // 상태) 버튼을 눌러도 아무 일도 안 일어나게 회색으로 비활성 표시한다.
-                let erase_y = box_y + appearance_box_h + GAP;
+                // ---- 읽기 편하게 ----
+                let read_y = box_y + appearance_box_h + GAP;
+                if visible(read_y, readability_h) {
+                    group_box(r, cx, read_y, list_w + BOX_PAD * 2.0, readability_h, t(lang, s::READABILITY));
+                    let mut ry = read_y + BOX_TOP_INSET;
+                    checkbox(r, bx, ry + 5.0, t(lang, s::LARGE_TEXT), &mut s.large_text, win);
+                    ry += CHECK_ROW_H;
+                    checkbox(r, bx, ry + 5.0, t(lang, s::READING_MODE), &mut s.reading_mode, win);
+                    ry += CHECK_ROW_H;
+                    checkbox(r, bx, ry + 5.0, t(lang, s::LOCAL_LOG), &mut s.local_log, win);
+                }
+
+                // ---- 조작 키 ----
+                let ctl_y = read_y + readability_h + GAP;
+                if visible(ctl_y, controls_h) {
+                    group_box(r, cx, ctl_y, list_w + BOX_PAD * 2.0, controls_h, t(lang, s::CONTROLS));
+                    // 새 키를 기다리는 중이면 이번 프레임에 눌린 키를 받는다(Esc 는 취소).
+                    if let Some(action) = self.rebinding {
+                        if win.input.pressed(KeyCode::Escape) {
+                            self.rebinding = None;
+                        } else if let Some(&(_, key)) = BINDABLE.iter().find(|(_, k)| win.input.pressed(*k)) {
+                            s.keys.set(action, key);
+                            self.rebinding = None;
+                            crate::foundation::save_settings(&s);
+                        }
+                    }
+                    let mut ky = ctl_y + BOX_TOP_INSET;
+                    for action in Action::ALL {
+                        let name = match action {
+                            Action::Forward => s::KEY_FORWARD,
+                            Action::Back => s::KEY_BACK,
+                            Action::Left => s::KEY_LEFT,
+                            Action::Right => s::KEY_RIGHT,
+                            Action::Interact => s::KEY_INTERACT,
+                            Action::Sprint => s::KEY_SPRINT,
+                        };
+                        label(r, bx, ky + 4.0, t(lang, name), BLACK);
+                        let shown = if self.rebinding == Some(action) { t(lang, s::PRESS_A_KEY).to_string() } else { key_label(s.keys.key(action)) };
+                        if button(r, bx + 120.0, ky, (list_w - 120.0).max(90.0), 22.0, &shown, win) && self.rebinding.is_none() {
+                            self.rebinding = Some(action);
+                        }
+                        ky += KEY_ROW_H;
+                    }
+                    let reset_label = t(lang, s::RESET_KEYS);
+                    if button(r, bx, ky + 4.0, r.text_width(reset_label, 1.0) + 20.0, 24.0, reset_label, win) {
+                        s.keys.reset();
+                        self.rebinding = None;
+                        crate::foundation::save_settings(&s);
+                    }
+                }
+
+                let erase_y = ctl_y + controls_h + GAP;
                 let erase_label = t(lang, s::ERASE_ALL_MEMORY);
                 let btn_w = r.text_width(erase_label, 1.0) + 20.0;
                 if visible(erase_y, erase_h) {

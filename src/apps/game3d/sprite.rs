@@ -5,7 +5,7 @@
 use crate::render::gfx::Renderer;
 use crate::render::mesh3d::{v_dot, v_len, v_scale, v_sub, Box3D, Camera};
 
-use super::{View, FOV_Y, VIEW_H};
+use super::{View, VIEW_H};
 
 pub struct Sprite {
     rows: &'static [&'static str],
@@ -74,12 +74,12 @@ impl View {
         if occluders.iter().any(|b| b.ray_intersect(cam.pos, dir).is_some_and(|t| t < dist - 0.05)) {
             return;
         }
-        let focal = VIEW_H / (2.0 * (FOV_Y / 2.0).tan());
+        let focal = VIEW_H / (2.0 * (self.fov() / 2.0).tan());
         let n_rows = sprite.rows.len() as f32;
         let pixel = (world_h / n_rows) * focal / depth; // VIEW 기준 한 칸의 크기
         let n_cols = sprite.rows[0].chars().count() as f32;
         // 아래 가운데 → 화면 좌표(오른쪽/위 성분으로 투영).
-        let half_h = (FOV_Y / 2.0).tan();
+        let half_h = (self.fov() / 2.0).tan();
         let half_w = half_h * (super::VIEW_W / VIEW_H);
         let ndc_x = v_dot(to, cam.right()) / (depth * half_w);
         let ndc_y = v_dot(to, cam.up()) / (depth * half_h);

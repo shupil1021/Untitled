@@ -150,3 +150,79 @@ impl SceneManager {
         }
     }
 }
+
+// 프레임 시간 — 시스템(벽시계) 시간이 아니라 단조 시계(Instant)로 잰다. 이 게임은 플레이어가 PC 의 시스템 시간을
+// 1년 앞으로(또는 뒤로) 돌리는 퍼즐이 있어서, 벽시계로 dt 를 재면 시계를 돌리는 순간 dt 가 -1년/+1년이 돼
+// 시간이 거꾸로 가거나(타이머, 중력, 타자기 효과가 망가진다) 프레임 대기가 1년 동안 멈춘다.
+pub struct FrameClock {
+    start: std::time::Instant,
+    last: std::time::Instant,
+}
+
+// 한 프레임에 흘렀다고 칠 수 있는 최대 시간 — 창 포커스 복귀 같은 큰 끊김이 한 번에 반영되지 않게.
+const MAX_FRAME_DT: f32 = 0.5;
+
+impl FrameClock {
+    pub fn new() -> FrameClock {
+        FrameClock::starting_at(std::time::Instant::now())
+    }
+
+    fn starting_at(now: std::time::Instant) -> FrameClock {
+        FrameClock { start: now, last: now }
+    }
+
+    // (이번 프레임 dt, 시작부터의 경과 시간).
+    pub fn tick(&mut self) -> (f32, f32) {
+        self.tick_at(std::time::Instant::now())
+    }
+
+    fn tick_at(&mut self, now: std::time::Instant) -> (f32, f32) {
+        let dt = now.saturating_duration_since(self.last).as_secs_f32().clamp(0.0, MAX_FRAME_DT);
+        self.last = self.last.max(now);
+        (dt, now.saturating_duration_since(self.start).as_secs_f32())
+    }
+
+    // 이 프레임이 시작한 뒤 흐른 시간(초) — 목표 FPS 를 맞추려고 남는 시간을 재울 때 쓴다.
+    pub fn since_last_tick(&self) -> f64 {
+        self.last.elapsed().as_secs_f64()
+    }
+}
+
+impl Default for FrameClock {
+    fn default() -> Self {
+        FrameClock::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn dt_is_the_gap_between_ticks_and_never_negative_or_huge() {
+        let t0 = Instant::now();
+        let mut c = FrameClock::starting_at(t0);
+        let (dt, elapsed) = c.tick_at(t0 + Duration::from_millis(16));
+        assert!((dt - 0.016).abs() < 1e-4 && (elapsed - 0.016).abs() < 1e-4);
+        // 큰 끊김(포커스 복귀 등)은 0.5초로 자른다.
+        let (dt, _) = c.tick_at(t0 + Duration::from_secs(30));
+        assert_eq!(dt, MAX_FRAME_DT);
+        // 시계가 거꾸로 간 것처럼 이전 시각이 들어와도 dt 는 0 이고 시간이 되감기지 않는다.
+        let (dt, elapsed) = c.tick_at(t0 + Duration::from_secs(10));
+        assert_eq!(dt, 0.0);
+        assert!(elapsed >= 10.0);
+        let (dt, _) = c.tick_at(t0 + Duration::from_secs(30) + Duration::from_millis(16));
+        assert!((dt - 0.016).abs() < 1e-4, "되감김 뒤에도 정상적으로 이어진다: {dt}");
+    }
+
+    // 벽시계가 1년 점프해도 단조 시계는 영향이 없다 — 실제로 Instant 두 개 사이의 간격만 본다.
+    #[test]
+    fn a_real_tick_after_a_short_wait_is_small() {
+        let mut c = FrameClock::new();
+        std::thread::sleep(Duration::from_millis(5));
+        let (dt, elapsed) = c.tick();
+        assert!(dt > 0.0 && dt < MAX_FRAME_DT && elapsed < 5.0);
+    }
+}
+

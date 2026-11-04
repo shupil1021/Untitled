@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::KeyBinds;
+
 use super::*;
 
 // 설정창이 바꾸고, main 이 읽어서 CRT 해상도에 반영.
@@ -103,6 +105,27 @@ pub struct Settings {
     // 계속 불러와진다.
     #[serde(default)]
     pub language: Language,
+    // 접근성 — 글자를 키운다(게임 안 안내/표식/HUD), 읽기 모드(CRT 번짐과 스캔라인을 줄여 글자를 또렷하게),
+    // 조작 키 다시 지정, 로컬 플레이 기록(이 PC 안에만 남는다) 켜기/끄기.
+    #[serde(default)]
+    pub large_text: bool,
+    #[serde(default)]
+    pub reading_mode: bool,
+    #[serde(default)]
+    pub keys: KeyBinds,
+    #[serde(default = "default_true")]
+    pub local_log: bool,
+    // 메모장 글자 크기 배율 — Ctrl+휠로 바꾸고(0.5~3배), 파일을 바꿔 열거나 껐다 켜도 이어진다.
+    #[serde(default = "default_one")]
+    pub notepad_scale: f32,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_one() -> f32 {
+    1.0
 }
 
 impl Default for Settings {
@@ -128,6 +151,11 @@ impl Settings {
             bg_color_idx: 0,
             weathering: 0.5, // 기본값 50 — 레트로/아날로그 호러 톤에 맞춰 낡은 느낌이 확실히 배어있게
             language: Language::En, // 기본은 영어로 작동
+            large_text: false,
+            reading_mode: false,
+            keys: KeyBinds::default(),
+            local_log: true,
+            notepad_scale: 1.0,
         }
     }
 }

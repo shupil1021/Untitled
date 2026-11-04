@@ -40,13 +40,14 @@ pub fn preview_start_room() -> (Vec<crate::render::mesh3d::Box3D>, Vec<crate::re
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use miniquad::{KeyCode, RenderingBackend};
+use miniquad::RenderingBackend;
 
 use crate::foundation::{DoorsProgress, MailId, MainPlace, MiniKind, MissionStep, Settings};
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::render::mesh3d::Box3D;
 
 use super::game3d::dialogue::{Dialogue, Entry};
+use super::game3d::i18n;
 use super::game3d::player::Player;
 use super::game3d::{Fade, MouseLook, RenderSlot, View};
 use super::{App, AppAction, WinInput};
@@ -57,6 +58,8 @@ use texts::item_name;
 use world::{Target, DOOR_LIFT, EXIT_POS, HANDLE_POS, PROPS, SPAWN};
 
 const ROOM_CLEAR: [f32; 4] = [0.02, 0.02, 0.03, 1.0];
+const END_CARD_FADE_SECS: f32 = 1.5; // 엔딩 카드가 어둡게 덮이는 데 걸리는 시간
+const END_CARD_MIN_SECS: f32 = 2.0; // 이만큼 지나야 키로 닫을 수 있다(바로 넘겨 버리지 않게)
 const DOOR_OPEN_SECS: f32 = 1.4; // 자물쇠가 풀리고 문이 올라가는 데 걸리는 시간
 const UNFOLD_SECS: f32 = 2.0; // 계단이 몸을 펼치는 데 걸리는 시간
 const FEED_OPTIONS: &str = "[Y] 먹인다   [N] 나중에";
@@ -93,6 +96,7 @@ pub struct DoorsGameApp {
     // 바뀔 때마다 OS 에 저장을 요청해서(saved 와 비교) 창을 닫았다 다시 열어도 이어진다.
     progress: DoorsProgress,
     saved: DoorsProgress,
+    ini_seen: crate::gamefiles::IniEdit, // 고친 game.ini 에 문이 마지막으로 한마디 한 모양 — 같은 고침에는 한 번만 말한다
     letter_notify_pending: bool, // 편지를 넣은 걸 OS 에 아직 못 알렸다(대화가 끝나면 알린다)
     second_mail_sent: bool, // 그 확인을 OS 에 알려서 두 번째 메일을 요청했는지(한 번만)
     pending_mail: Option<MailId>, // 대화가 끝나면 OS 에 도착시켜 달라고 할 메일
@@ -110,6 +114,9 @@ pub struct DoorsGameApp {
     unfold: f32,
     unfold_anim: Option<f32>,
     clock: f32,
+    // 2층을 처음 끝낸 순간의 엔딩 카드 — 대화가 끝나면 pending → 켜지고(end_card = 뜬 뒤 흐른 시간), 아무 키나 누르면 닫힌다.
+    pending_end_card: bool,
+    end_card: Option<f32>,
     was_focused: bool,
     // 정글은 한 번만 만들어 둔다(나무가 많다).
     jungle: Vec<Box3D>,
@@ -157,6 +164,7 @@ impl DoorsGameApp {
             aimed: None,
             dialogue,
             // 이어서 하는 거면 이미 보낸 편지/꽃 위치 확인을 OS 에 다시 한 번 알린다(메일은 중복으로 안 온다).
+            ini_seen: crate::gamefiles::IniEdit::None,
             letter_notify_pending: progress.letter_sent,
             saved: progress.clone(),
             door_lift: if progress.tutorial_done { DOOR_LIFT } else { 0.0 },
@@ -173,6 +181,8 @@ impl DoorsGameApp {
             door_anim: None,
             unfold_anim: None,
             clock: 0.0,
+            pending_end_card: false,
+            end_card: None,
             was_focused: true,
             jungle,
             barriers,
@@ -204,7 +214,33 @@ impl DoorsGameApp {
         self.progress.chip_taken && !self.progress.chip_fed
     }
 
+    // 엔딩 카드 — 계단 엔딩 대화가 끝나면 뜨고(그때 "계속됩니다" 메일도 같이 간다), 어느 정도 지난 뒤 아무 키나 클릭으로 닫는다.
+    fn update_end_card(&mut self, dt: f32) {
+        if self.pending_end_card && !self.dialogue.active() {
+            self.pending_end_card = false;
+            self.end_card = Some(0.0);
+            self.pending_mail = Some(MailId::End2F);
+        } else if let Some(t) = self.end_card.as_mut() {
+            *t += dt;
+        }
+    }
+
+    // 키/클릭이 눌렸을 때 엔딩 카드를 닫는다 — 닫았으면 true.
+    fn dismiss_end_card(&mut self, pressed: bool) -> bool {
+        match self.end_card {
+            Some(t) if pressed && t >= END_CARD_MIN_SECS => {
+                self.end_card = None;
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn handle_input(&mut self, win: &WinInput, in_view: bool) {
+        if self.end_card.is_some() {
+            self.dismiss_end_card(win.input.any_key_pressed() || (win.mouse_clicked && in_view));
+            return;
+        }
         if self.look.update(win, in_view) || self.fade.active() {
             return;
         }
@@ -214,7 +250,14 @@ impl DoorsGameApp {
             }
             return;
         }
-        if win.input.pressed(KeyCode::E) {
+        if super::game3d::keys::pressed(win.input, crate::foundation::Action::Interact) {
+            // 조사한 대상 쪽으로 카메라가 부드럽게 돌아선다(대화가 떠 있는 동안에도 계속 돈다). 장소가 바뀌면 플레이어가 새로 만들어져서
+            // 이 포커스는 자연히 사라지므로, 상호작용 처리보다 먼저 건다.
+            if let (Some(aim), Some(scene)) = (self.aimed, self.scene.clone())
+                && let Some((pos, _)) = self.aim_info(aim, &scene)
+            {
+                self.player.focus_on(pos);
+            }
             match self.aimed {
                 Some(Aim::Room(t)) => self.interact_room(Some(t)),
                 Some(Aim::Jungle(t)) => self.interact_jungle(t),
@@ -301,19 +344,24 @@ impl App for DoorsGameApp {
     }
 
     fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, _assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
-        let view = View::fit(area);
+        let mut view = View::fit(area);
         let in_view = view.rect.contains(win.mouse.0, win.mouse.1);
         // 다른 창이 앞에 있는 동안은 게임 시간이 멈춘다 — 한 번에 한 게임만 진행한다.
         let dt = if win.focused { win.dt } else { 0.0 };
 
         // 편지 메일을 읽고 이 창으로 돌아왔으면 문이 달라지고, 꽃이 내려받아졌으면 꽃이 들어온다.
-        self.notice_mail_read(crate::signals::letter_mail_read(), win.focused);
-        self.receive_flower(crate::signals::flower_downloaded(), win.focused);
-        self.receive_ingredient(MiniKind::ALL.map(|k| crate::signals::reward_downloaded(k.index())), win.focused);
+        let os = crate::signals::current();
+        self.notice_mail_read(os.letter_mail_read, win.focused);
+        self.receive_flower(os.flower_downloaded, win.focused);
+        self.receive_ingredient(os.reward_downloaded, win.focused);
         self.handle_input(win, in_view);
         self.look.request();
         self.dialogue.tick(dt);
+        self.update_end_card(dt);
         self.advance_scene(dt);
+        // 상호작용한 대상 쪽으로 카메라를 부드럽게 돌리고, 대상이 멀면 대화가 떠 있는 동안 살짝 확대한다.
+        self.player.update_focus(dt, self.dialogue.active());
+        view.zoom = self.player.zoom();
         self.remember_pose_on_blur(win.focused);
 
         // 지금 장소의 장면 — 바뀐 게 없으면 지난 프레임 것을 그대로 쓴다.
@@ -326,7 +374,7 @@ impl App for DoorsGameApp {
         self.sfx.update(self.sfx_cue.take(), dt, self.settings.as_ref());
 
         // 대화창이 떠 있는 동안은 이동·시점·조준을 멈춘다.
-        let frozen = self.dialogue.active() || self.fade.active() || self.door_anim.is_some() || self.unfold_anim.is_some();
+        let frozen = self.dialogue.active() || self.fade.active() || self.door_anim.is_some() || self.unfold_anim.is_some() || self.end_card.is_some() || self.pending_end_card;
         if !frozen {
             self.look.apply(&mut self.player, win);
             self.player.update(win.input, win.focused, win.dt, &scene.collide);
@@ -340,20 +388,21 @@ impl App for DoorsGameApp {
             view.draw_scene_meshes_aimed(ctx, r, area, &self.slot, scene.clear, &cam, &scene.shown, &scene.meshes);
         }
 
+        let mut aimed_pos: Option<[f32; 3]> = None;
         if let Some(aim) = self.aimed
             && !frozen
         {
-            let found = match aim {
-                Aim::Room(Target::Door) if self.progress.tutorial_done => Some((EXIT_POS, "[E] Go out".to_string())),
-                Aim::Room(Target::Door) => Some((HANDLE_POS, "[E] Examine".to_string())),
-                Aim::Room(Target::Prop(i)) => Some((PROPS[i].center, format!("[E] Examine {}", PROPS[i].name))),
-                Aim::Room(Target::Letter) => Some((Target::Letter.pos(), "[E] Take letter".to_string())),
-                Aim::Room(Target::Mailbox) => Some((Target::Mailbox.pos(), "[E] Mailbox".to_string())),
-                Aim::Jungle(t) => scene.jungle_items.iter().find(|it| it.target == t).map(|it| (it.center, it.label.to_string())),
-                Aim::Spot(s) => scene.room_items.iter().find(|it| it.target == s).map(|it| (it.center, it.label.to_string())),
-            };
-            if let Some((pos, label)) = found {
+            if let Some((pos, label)) = self.aim_info(aim, &scene) {
+                aimed_pos = Some(pos);
                 view.draw_prompt(r, &cam, pos, &label);
+            }
+        }
+        if !frozen {
+            // 조사할 수 있는 물건에는 가까이 가면 작은 표식이 보인다(지금 조준 중인 것은 안내 문구가 대신한다).
+            for pos in self.marker_points(&scene) {
+                if aimed_pos.is_none_or(|a| (a[0] - pos[0]).abs() + (a[1] - pos[1]).abs() + (a[2] - pos[2]).abs() > 0.01) {
+                    view.draw_marker(r, &cam, pos, win.time);
+                }
             }
         }
         if !self.look.captured() && !frozen {
@@ -362,6 +411,16 @@ impl App for DoorsGameApp {
         self.draw_inventory(r, &view);
         self.fade.draw(r, &view);
         self.dialogue.draw(r, view.rect.x, view.rect.y, view.s, win.time);
+        if let Some(t) = self.end_card {
+            view.draw_end_card(
+                r,
+                t / END_CARD_FADE_SECS,
+                &i18n::tr("2층 끝"),
+                &i18n::tr("이 아래는 아직 준비 중이에요."),
+                &i18n::tr("아무 키나 눌러 닫기"),
+                win.time,
+            );
+        }
 
         // 편지를 넣은 걸(대화가 끝난 뒤) OS 에 알린다 — 같은 내용의 메일이 도착한다.
         if self.letter_notify_pending && !self.dialogue.active() {
@@ -387,6 +446,11 @@ impl App for DoorsGameApp {
         }
         // 진행 상황이 바뀌었으면 OS 에 저장을 요청한다.
         if self.progress != self.saved {
+            if cfg!(debug_assertions) {
+                for msg in self.progress.invariant_violations() {
+                    eprintln!("[doors] 진행 상태가 이야기 순서와 어긋남: {msg}");
+                }
+            }
             self.saved = self.progress.clone();
             return AppAction::SaveDoors(self.saved.clone());
         }
@@ -395,6 +459,39 @@ impl App for DoorsGameApp {
 }
 
 impl DoorsGameApp {
+    // 조준한 대상의 자리와 안내 문구 — 안내 표시와 상호작용 때의 카메라 포커싱이 같이 쓴다.
+    fn aim_info(&self, aim: Aim, scene: &Scene) -> Option<([f32; 3], String)> {
+        match aim {
+            Aim::Room(Target::Door) if self.progress.tutorial_done => Some((EXIT_POS, "[E] Go out".to_string())),
+            Aim::Room(Target::Door) => Some((HANDLE_POS, "[E] Examine".to_string())),
+            Aim::Room(Target::Prop(i)) => Some((PROPS[i].center, i18n::fmt("[E] Examine {}", &[PROPS[i].name]))),
+            Aim::Room(Target::Letter) => Some((Target::Letter.pos(), "[E] Take letter".to_string())),
+            Aim::Room(Target::Mailbox) => Some((Target::Mailbox.pos(), "[E] Mailbox".to_string())),
+            Aim::Jungle(t) => scene.jungle_items.iter().find(|it| it.target == t).map(|it| (it.center, it.label.to_string())),
+            Aim::Spot(s) => scene.room_items.iter().find(|it| it.target == s).map(|it| (it.center, it.label.to_string())),
+        }
+    }
+
+    // 지금 장소에서 조사할 수 있는 것들의 자리(표식을 띄울 곳) — compute_aim 이 후보로 치는 것과 같다.
+    fn marker_points(&self, scene: &Scene) -> Vec<[f32; 3]> {
+        let p = &self.progress;
+        match p.place {
+            MainPlace::StartRoom => {
+                let mut v: Vec<[f32; 3]> = PROPS.iter().map(|pr| pr.center).collect();
+                v.push(Target::Mailbox.pos());
+                if !p.quest_accepted || p.door_changed {
+                    v.push(if p.tutorial_done { EXIT_POS } else { HANDLE_POS });
+                }
+                if p.quest_accepted && !p.has_letter {
+                    v.push(Target::Letter.pos());
+                }
+                v
+            }
+            MainPlace::Jungle => scene.jungle_items.iter().map(|it| it.center).collect(),
+            MainPlace::MissionRoom(_) | MainPlace::StairHall => scene.room_items.iter().map(|it| it.center).collect(),
+        }
+    }
+
     // 왼쪽 위에 가진 것들을 한 줄씩.
     fn draw_inventory(&self, r: &mut Renderer, view: &View) {
         let p = &self.progress;
@@ -412,8 +509,16 @@ impl DoorsGameApp {
         if self.has_chip() {
             lines.push("Mr. POTATO CHIP");
         }
+        // 소파의 의뢰를 받은 뒤 교환하기 전까지는 재료를 몇 개 모았는지 맨 위에 보여 준다(눈 + 소환 조각 둘 = 3개).
+        let mut row = 0.0;
+        if p.errand_accepted && !p.exchanged {
+            let total = MiniKind::ALL.len().to_string();
+            let text = i18n::fmt("재료 {}/{}", &[&self.ingredients().to_string(), &total]);
+            r.text(view.px(10.0), view.py(10.0), &text, 0.8 * view.s * super::game3d::text_scale(), [1.0, 0.9, 0.5, 1.0]);
+            row = 1.0;
+        }
         for (i, line) in lines.iter().enumerate() {
-            r.text(view.px(10.0), view.py(10.0 + i as f32 * 20.0), line, 0.8 * view.s, [0.75, 0.8, 1.0, 1.0]);
+            r.text(view.px(10.0), view.py(10.0 + (i as f32 + row) * 20.0 * super::game3d::text_scale()), &i18n::tr(line), 0.8 * view.s * super::game3d::text_scale(), [0.75, 0.8, 1.0, 1.0]);
         }
     }
 }

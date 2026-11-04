@@ -17,7 +17,10 @@ pub const SPEED: f32 = (LINE_X - SPAWN_X) / TRAVEL; // 상자가 컨베이어를
 pub const WINDOW: f32 = 0.25; // 판정선을 지나는 시점 앞뒤로 이만큼(초) 안에 입력하면 성공(시트: ±0.25초) — 화면의 밝은 판정 구간과 같다
 const MISFIRE: f32 = 0.6; // 판정 구간 밖이어도 이 안에서 누르면 가장 가까운 상자가 실패
 pub const TRAVEL: f32 = 2.0; // 상자가 나타나서 판정선에 닿기까지(초)
-const GAP: f32 = 1.1; // 상자 간격(초)
+const GAP: f32 = 1.1; // 상자 간격(초) — 연습과 본 작업의 앞 네 개
+// 본 작업의 상자 간격(초) — 앞 네 개는 연습처럼 일정하게 시작하고, 그 뒤로 빨라졌다 늦어졌다 하는 정해진 박자다
+// (매번 같으니 외울 수 있다). 가장 좁은 간격(0.8초)도 판정 구간(±0.25초)이 겹치지 않는다.
+pub const WORK_GAPS: [f32; WORK_N - 1] = [1.1, 1.1, 1.1, 0.8, 1.4, 0.9, 1.1, 0.8, 0.8, 1.4, 1.0];
 const FIRST_AT: f32 = 1.6;
 const TAIL: f32 = 0.9; // 마지막 상자가 지나간 뒤 결과를 보여주기까지
 
@@ -42,13 +45,20 @@ pub struct PackRound {
     pub flash: f32, // 방금 눌렀을 때 판정선이 번쩍이는 시간
 }
 
-fn lineup(n: usize) -> Vec<Crate> {
-    (0..n).map(|i| Crate { arrive: FIRST_AT + GAP * i as f32, result: None }).collect()
+// 첫 상자가 FIRST_AT 에 오고, 그 뒤로는 gaps 만큼씩 떨어져 온다.
+fn lineup(gaps: &[f32]) -> Vec<Crate> {
+    let mut at = FIRST_AT;
+    let mut out = vec![Crate { arrive: at, result: None }];
+    for g in gaps {
+        at += g;
+        out.push(Crate { arrive: at, result: None });
+    }
+    out
 }
 
 impl PackRound {
     pub fn new() -> PackRound {
-        PackRound { phase: Phase::Practice, t: 0.0, crates: lineup(PRACTICE_N), flash: 0.0 }
+        PackRound { phase: Phase::Practice, t: 0.0, crates: lineup(&[GAP; PRACTICE_N - 1]), flash: 0.0 }
     }
 
     pub fn hits(&self) -> usize {
@@ -90,7 +100,7 @@ impl PackRound {
                 if c.act {
                     self.phase = Phase::Work;
                     self.t = 0.0;
-                    self.crates = lineup(WORK_N);
+                    self.crates = lineup(&WORK_GAPS);
                 }
                 Outcome::Running
             }
@@ -122,7 +132,7 @@ mod tests {
         assert_eq!(r.phase, Phase::Ready);
         r.step(0.01, &press());
         assert_eq!(r.phase, Phase::Work);
-        let mut presses: Vec<f32> = offsets.iter().enumerate().filter_map(|(i, o)| o.map(|d| FIRST_AT + GAP * i as f32 + d)).collect();
+        let mut presses: Vec<f32> = offsets.iter().enumerate().filter_map(|(i, o)| o.map(|d| r.crates[i].arrive + d)).collect();
         presses.reverse();
         let mut out = Outcome::Running;
         for _ in 0..100_000 {
@@ -200,5 +210,47 @@ mod tests {
         assert_eq!(r.phase, Phase::Work);
         assert_eq!(r.hits(), 0);
         assert_eq!(r.crates.len(), WORK_N);
+    }
+
+    #[test]
+    fn the_work_chart_is_uneven_but_every_window_stands_alone() {
+        let r = {
+            let mut r = PackRound::new();
+            while r.phase == Phase::Practice {
+                r.step(0.01, &Controls::default());
+            }
+            r.step(0.01, &press());
+            r
+        };
+        let gaps: Vec<f32> = r.crates.windows(2).map(|w| w[1].arrive - w[0].arrive).collect();
+        assert_eq!(gaps.len(), WORK_N - 1);
+        assert!(gaps.iter().any(|g| (g - GAP).abs() > 0.2), "박자가 일정하지 않다");
+        assert!(gaps.iter().all(|&g| g > WINDOW * 2.0 + 0.2), "판정 구간이 서로 겹치면 안 된다: {gaps:?}");
+        // 앞 네 개는 연습처럼 일정하다.
+        assert!(gaps[..3].iter().all(|g| (g - GAP).abs() < 1e-4));
+    }
+
+    // 박자를 모르고 일정한 간격(1.1초)으로만 누르면 불규칙한 뒷부분에서 놓쳐 합격 못 한다.
+    #[test]
+    fn a_metronome_press_fails_the_uneven_chart() {
+        let mut r = PackRound::new();
+        while r.phase == Phase::Practice {
+            r.step(0.01, &Controls::default());
+        }
+        r.step(0.01, &press());
+        let mut next = FIRST_AT;
+        let mut out = Outcome::Running;
+        for _ in 0..100_000 {
+            let act = r.t >= next;
+            if act {
+                next += GAP;
+            }
+            out = r.step(0.005, &Controls { act, ..Controls::default() });
+            if r.phase == Phase::Done {
+                out = r.step(0.005, &Controls::default());
+                break;
+            }
+        }
+        assert!(matches!(out, Outcome::Lost), "hits={}", r.hits());
     }
 }

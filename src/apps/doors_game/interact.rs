@@ -5,6 +5,7 @@ use crate::foundation::{MailId, MainPlace, MiniKind, MissionStep};
 
 use super::floor2::{self, Gate};
 use crate::apps::game3d::dialogue::Entry;
+use crate::apps::game3d::i18n;
 use super::rooms::Spot;
 use super::sfx::Cue;
 use super::texts::{door_name, gate_of, item_name, mission_text};
@@ -59,8 +60,36 @@ impl DoorsGameApp {
         false
     }
 
+    // 고친 game.ini 에 대한 문의 반응 — 같은 고침에 이미 말했으면 None. 진행은 절대 바꾸지 않는다(문은 속지 않는다).
+    pub(super) fn ini_reaction(&mut self, edit: crate::gamefiles::IniEdit) -> Option<Vec<Entry>> {
+        use crate::gamefiles::IniEdit;
+        if edit == self.ini_seen {
+            return None;
+        }
+        self.ini_seen = edit;
+        let voice = Self::line("문고리에서 낮은 목소리가 들려왔다.");
+        match edit {
+            IniEdit::None => None,
+            IniEdit::FakeFlowers => Some(vec![
+                voice,
+                Self::line("설정 파일에 방에 꽃이 있다고 적혀 있네."),
+                Self::line("...냄새가 안 나. 가짜야."),
+                Self::line("진짜 꽃이 필요해."),
+            ]),
+            IniEdit::Mood(m) => Some(vec![voice, Self::line(&i18n::fmt("설정 파일에 내 기분이 '{}'(이)라고 적혀 있네.", &[m.word()])), Self::line("내 기분은 내가 정해.")]),
+            IniEdit::UnknownMood => Some(vec![voice, Self::line("설정 파일에 모르는 말이 적혀 있네."), Self::line("나는 그런 기분이 아니야.")]),
+        }
+    }
+
     // E — 시작방에서 조준 중인 대상을 조사한다.
     pub(super) fn interact_room(&mut self, target: Option<Target>) {
+        // 플레이어가 AppData 의 game.ini 를 고쳐 놨으면 문이 먼저 한마디 한다(같은 고침에는 한 번만 — 그다음 E 부터 평소대로).
+        if target == Some(Target::Door)
+            && let Some(lines) = self.ini_reaction(crate::signals::current().ini_edit)
+        {
+            self.dialogue.start(lines);
+            return;
+        }
         match target {
             // 자물쇠가 풀린 문 — 열린 문간의 빛 속으로 걸어 나간다(MAIN B-0).
             Some(Target::Door) if self.progress.tutorial_done => {
@@ -97,6 +126,10 @@ impl DoorsGameApp {
             // 방에 꽃이 없다는 걸 깨닫는다.
             Some(Target::Prop(i)) => {
                 let mut lines = vec![Self::line(PROPS[i].text)];
+                // 문에게 꽃을 준 뒤 책상 서랍을 다시 보면 숨은 한 줄이 있다.
+                if i == 0 && self.progress.flower_given {
+                    lines.push(Self::line("서랍 안쪽에 아주 작게 '고마워'라고 긁혀 있다."));
+                }
                 if self.progress.quest_accepted && self.progress.door_changed && !self.progress.flower_absence_checked {
                     self.progress.flower_absence_checked = true;
                     lines.push(Self::line("방에는 꽃이 없는 것 같다..."));
@@ -109,7 +142,7 @@ impl DoorsGameApp {
             Some(Target::Letter) => {
                 self.progress.has_letter = true;
                 let mut lines = vec![Self::line("편지를 집어 들었다.")];
-                lines.extend(crate::strings::mail::LETTER_MAIL_BODY.ko.split('\n').map(Self::line));
+                lines.extend(crate::strings::t(crate::apps::game3d::i18n::language(), crate::strings::mail::LETTER_MAIL_BODY).split('\n').map(Self::line));
                 self.dialogue.start(lines);
             }
             // 우편함 — 편지를 넣으면 OS 로 같은 내용의 메일이 가고, 게임은 메일을 읽고 돌아올 때까지 멈춘다.
@@ -132,7 +165,13 @@ impl DoorsGameApp {
     pub(super) fn interact_jungle(&mut self, target: floor2::Target) {
         match target {
             floor2::Target::Sign => {
-                self.dialogue.start(vec![Self::line("낡은 표지판이다. 글씨가 거의 지워졌다."), Self::line("'어디로든 문'이라고 쓰여 있다.")]);
+                let mut lines = vec![Self::line("낡은 표지판이다. 글씨가 거의 지워졌다."), Self::line("'어디로든 문'이라고 쓰여 있다.")];
+                // 계단과 이야기를 나눈 뒤 다시 보면 뒷면의 글씨가 눈에 들어온다(숨은 한 줄).
+                if self.progress.stair_met {
+                    lines.push(Self::line("뒷면에도 지워진 글씨가 있다."));
+                    lines.push(Self::line("'...나가는 문은 하나뿐이었다.'"));
+                }
+                self.dialogue.start(lines);
             }
             floor2::Target::Gate(Gate::Back) => {
                 self.dialogue.start(vec![Self::line("방금 나온 문이다. 안쪽으로 낡은 방이 보인다."), Self::line("문 안으로 되돌아간다...")]);
@@ -173,12 +212,12 @@ impl DoorsGameApp {
     pub(super) fn talk_sofa(&mut self) {
         let p = &self.progress;
         if p.chip_taken {
-            self.dialogue.start(vec![Self::line("소파가 기지개를 켠다."), Self::line("맛있게 먹여 줘.")]);
+            self.dialogue.start(vec![Self::line("TV 토끼가 기지개를 켠다."), Self::line("맛있게 먹여 줘.")]);
         } else if p.exchanged {
             self.dialogue.start(vec![Self::line("소파 위의 봉투를 가져가.")]);
         } else if !p.errand_accepted {
             if !p.stair_met {
-                self.dialogue.start(vec![Self::line("소파가 눈을 가늘게 뜬다."), Self::line("계단 쪽에서 왔어? 아직 아무 얘기도 못 들은 얼굴인데.")]);
+                self.dialogue.start(vec![Self::line("TV 토끼 화면의 눈이 가늘어진다."), Self::line("계단 쪽에서 왔어? 아직 아무 얘기도 못 들은 얼굴인데.")]);
             } else {
                 self.ask = Some(Ask::Errand);
                 self.dialogue.start(vec![
@@ -199,7 +238,7 @@ impl DoorsGameApp {
             let mut lines = vec![Self::line("아직 모자라.")];
             for kind in MiniKind::ALL {
                 if !self.progress.missions[kind.index()].has_material(kind) {
-                    lines.push(Self::line(&format!("{}이 필요해. {}으로 가 봐.", item_name(kind), door_name(kind))));
+                    lines.push(Self::line(&i18n::fmt("{}이 필요해. {}으로 가 봐.", &[item_name(kind), door_name(kind)])));
                 }
             }
             self.dialogue.start(lines);
@@ -360,6 +399,8 @@ impl DoorsGameApp {
                 let lines: &[&str] = match n {
                     0 => &["낡은 욕조다.", "물이 오래 고여 있던 자국이 남아 있다."],
                     1 => &["세면대의 수도꼭지에서 물이 한 방울씩 떨어진다."],
+                    // 기사의 일을 다 마친 뒤에는 거울이 달라진다(숨은 한 줄).
+                    _ if step >= MissionStep::Done => &["거울 속의 내가 이번에는 정확히 같이 움직였다.", "...그게 더 이상했다."],
                     _ => &["거울 속의 내가 잠깐 한 박자 늦게 움직인 것 같다."],
                 };
                 self.dialogue.start(Self::lines(lines));
@@ -385,7 +426,7 @@ impl DoorsGameApp {
     // 변기 — 진행에 따라 하는 일이 달라진다(H-3 ~ H-7).
     fn use_toilet(&mut self, step: MissionStep) {
         let i = MiniKind::Finger.index();
-        let lake = crate::signals::lake_delivered();
+        let lake = crate::signals::current().lake_delivered;
         match step {
             MissionStep::Start | MissionStep::Talked => {
                 self.dialogue.start(vec![Self::line("변기의 물 내리는 손잡이 자리가 비어 있다."), Self::line("먼저 기사와 이야기해 보자.")]);
@@ -463,6 +504,7 @@ impl DoorsGameApp {
             Spot::StairStep => {
                 if !self.progress.floor2_done {
                     self.progress.floor2_done = true;
+                    self.pending_end_card = true; // 대사가 끝나면 엔딩 카드가 뜬다
                     self.dialogue.start(vec![Self::line("계단: 잘 먹었습니다. 이제 내려가세요."), Self::line("계단이 아래층으로 길게 이어져 있다.")]);
                 } else {
                     self.dialogue.start(vec![Self::line("계단 아래에서 희미한 소리가 올라온다..."), Self::line("아직 내려갈 준비가 되지 않았다.")]);

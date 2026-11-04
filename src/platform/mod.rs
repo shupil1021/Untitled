@@ -1,5 +1,5 @@
 //! 운영체제 전용 기능을 감싼 모듈 묶음 — IME 조합 상태(ime), Media Foundation/WASAPI
-//! 영상·오디오 재생(video), WebView2 로 실제 웹페이지를 캡처하는 창(webview).
+//! 영상·오디오 재생(video), WebView2 로 실제 웹페이지를 캡처하는 창(webview), 이 PC 의 시간대(timezone).
 //!
 //! 세 모듈 모두 Windows 에서만 진짜 구현이 있다. macOS/Linux 에서는 같은 공개
 //! 인터페이스를 가진 `*_stub.rs` 가 대신 컴파일돼서, 영상/오디오/Official Site/IME
@@ -10,6 +10,12 @@ pub mod ime;
 #[cfg(not(windows))]
 #[path = "ime_stub.rs"]
 pub mod ime;
+
+#[cfg(windows)]
+pub mod timezone;
+#[cfg(not(windows))]
+#[path = "timezone_stub.rs"]
+pub mod timezone;
 
 #[cfg(windows)]
 pub mod video;

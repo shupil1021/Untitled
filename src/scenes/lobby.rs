@@ -20,7 +20,6 @@ const GLITCH_GAP_MAX: f32 = 3.6; // 글리치 사이 최대 대기(초)
 
 // 메뉴 항목은 로직에서 매칭 키로도 쓰이므로 영어 원문을 그대로 식별자로 남겨두고,
 // 화면 표시용 문구만 menu_label() 에서 언어별로 따로 골라 돌려준다.
-const MENU_ITEMS: [&str; 4] = ["New Start", "Continue", "Settings", "Quit"];
 const MENU_ROW_H: f32 = 30.0;
 const MENU_START_Y: f32 = 300.0;
 
@@ -28,6 +27,7 @@ fn menu_label(lang: Language, key: &'static str) -> &'static str {
     match key {
         "New Start" => t(lang, s::NEW_START),
         "Continue" => t(lang, s::CONTINUE),
+        "Restore" => t(lang, s::RESTORE_ERASED),
         "Settings" => t(lang, settings::TITLE),
         "Quit" => t(lang, s::QUIT),
         _ => key,
@@ -46,6 +46,7 @@ pub struct LobbyScene {
     rng: Rng,
     glitch_timer: f32,      // 다음 글리치까지 남은 시간
     glitch_active: f32,     // 지금 글리치가 진행 중이면 남은 지속시간(> 0)
+    has_erased: bool,       // 방금 지운 진행을 되돌릴 수 있는지 — 지금 진행 파일이 없을 때 "Restore" 가 메뉴에 나온다
     has_save: bool,         // Continue 버튼 활성화 여부 — 저장된 진행 상태가 있는지
     settings_app: Option<SettingsApp>, // Settings 클릭 시 뜨는 오버레이 패널
     quit_confirm: bool, // Quit 을 눌렀을 때 뜨는 확인창 — 화면을 더 어둡고 불안정하게 만든다
@@ -69,6 +70,7 @@ impl LobbyScene {
             rng,
             glitch_timer,
             glitch_active: 0.0,
+            has_erased: crate::foundation::has_erased(),
             has_save: crate::foundation::load().is_some(),
             settings_app: None,
             quit_confirm: false,
@@ -140,8 +142,19 @@ impl LobbyScene {
         Rect::new(320.0 - tw / 2.0 - 10.0, y - 3.0, tw + 20.0, CELL_H + 4.0)
     }
 
+    // 메뉴 항목 — 방금 지운 진행을 되돌릴 수 있고 지금 이어할 진행이 없을 때만 "Restore" 가 Settings 앞에 낀다.
+    fn menu_items(&self) -> Vec<&'static str> {
+        let mut items = vec!["New Start", "Continue"];
+        if self.has_erased && !self.has_save {
+            items.push("Restore");
+        }
+        items.push("Settings");
+        items.push("Quit");
+        items
+    }
+
     fn draw_menu(&mut self, r: &mut Renderer, mouse: (f32, f32), lang: Language) {
-        for (i, &key) in MENU_ITEMS.iter().enumerate() {
+        for (i, &key) in self.menu_items().iter().enumerate() {
             let label = menu_label(lang, key);
             let enabled = key != "Continue" || self.has_save;
             let rect = Self::menu_rect(r, i, label);
@@ -285,6 +298,7 @@ impl LobbyScene {
                 // 덮어쓰면 방금 고른 언어까지 같이 초기화돼버리는 문제가 있었다.
                 crate::foundation::delete();
                 self.has_save = false;
+                self.has_erased = crate::foundation::has_erased(); // 방금 지운 진행을 메뉴에서 되돌릴 수 있다
                 self.settings_app = None;
             }
             _ => {}
@@ -332,7 +346,7 @@ impl Scene for LobbyScene {
         }
 
         if f.input.mouse_clicked {
-            for (i, &key) in MENU_ITEMS.iter().enumerate() {
+            for (i, &key) in self.menu_items().iter().enumerate() {
                 let label = menu_label(lang, key);
                 let enabled = key != "Continue" || self.has_save;
                 if !enabled {
@@ -350,6 +364,13 @@ impl Scene for LobbyScene {
                         // 설정이 New Start 를 누르는 순간 English 로 되돌아가버렸다.
                         crate::foundation::delete();
                         return Transition::Switch(Box::new(BootScene::new()));
+                    }
+                    // 방금 지운 진행을 되돌린다 — 되돌리면 Continue 가 다시 켜진다.
+                    "Restore" => {
+                        if crate::foundation::restore_erased() {
+                            self.has_save = crate::foundation::load().is_some();
+                            self.has_erased = crate::foundation::has_erased();
+                        }
                     }
                     "Continue" => {
                         // 저장된 상태는 DesktopScene::new() 가 알아서 다시 읽어오므로

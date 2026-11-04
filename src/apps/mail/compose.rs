@@ -1,6 +1,7 @@
 //! "Write Mail" 탭 — 받는 사람/제목/본문 입력 상태, 글자 편집(커서 위치 삽입/삭제, Backspace 꾹 누르기 반복), IME 조합 처리,
 //! 첨부 고르기, 보내기 버튼.
 
+use crate::apps::text_edit::insert_char_at;
 use super::*;
 
 // "Write Mail" 탭에서 직접 입력하는 세 필드 중 지금 타이핑이 어디로 들어가는지.
@@ -36,47 +37,6 @@ impl NewMailState {
     pub(super) fn new() -> NewMailState {
         NewMailState { to: String::new(), subject: String::new(), body: String::new(), active: ComposeField::To, cursor: 0, attachments: Vec::new(), picker_open: false }
     }
-}
-
-// "Write Mail" 필드 텍스트 편집 — cursor(글자 인덱스)가 가리키는 자리에 끼워
-// 넣거나 그 앞 글자를 지운다. 문자열은 바이트 인덱스라 char_indices 로 몇 번째
-// 글자가 몇 번째 바이트에서 시작하는지 먼저 찾는다(한/일 문자는 여러 바이트라
-// 그냥 cursor 를 바이트 인덱스로 쓰면 글자 중간을 끊어버릴 수 있다).
-pub(super) fn insert_char_at(s: &mut String, cursor: &mut usize, c: char, max_chars: usize) {
-    if s.chars().count() >= max_chars {
-        return;
-    }
-    let byte_idx = s.char_indices().nth(*cursor).map(|(b, _)| b).unwrap_or(s.len());
-    s.insert(byte_idx, c);
-    *cursor += 1;
-}
-
-pub(super) fn backspace_at(s: &mut String, cursor: &mut usize) {
-    if *cursor == 0 {
-        return;
-    }
-    let byte_idx = s.char_indices().nth(*cursor - 1).map(|(b, _)| b).unwrap_or(0);
-    s.remove(byte_idx);
-    *cursor -= 1;
-}
-
-// Backspace 를 꾹 누르고 있을 때 지금까지 몇 번 지워졌어야 하는지 — 누른 순간
-// 한 번(즉시), REPEAT_DELAY 초까지 그대로 있으면 그 뒤로 REPEAT_INTERVAL 마다
-// 하나씩 더. hold 는 지금 이 키가 계속 눌려있던 시간(초).
-pub(super) const BACKSPACE_REPEAT_DELAY: f32 = 0.3;
-pub(super) const BACKSPACE_REPEAT_INTERVAL: f32 = 0.035;
-// 한 프레임에 hold 누적치를 이보다 많이는 안 늘린다 — main.rs 의 전역 dt
-// 상한(500ms)만으론 이 반복 판정 기준으로 여전히 너무 커서, 큰 프레임 끊김이
-// 한 번 있으면 그 한 프레임에 반복 삭제가 몰아서 발생할 수 있었다.
-pub(super) const BACKSPACE_MAX_DT_PER_FRAME: f32 = 0.02;
-pub(super) fn backspace_repeats_due(hold: f32) -> u32 {
-    if hold <= 0.0 {
-        return 0;
-    }
-    if hold < BACKSPACE_REPEAT_DELAY {
-        return 1;
-    }
-    2 + ((hold - BACKSPACE_REPEAT_DELAY) / BACKSPACE_REPEAT_INTERVAL) as u32
 }
 
 impl MailApp {
@@ -196,95 +156,19 @@ impl MailApp {
         }
         if win.focused && !self.new_mail.picker_open {
             let NewMailState { to, subject, body, cursor, active, .. } = &mut self.new_mail;
-            let max_len_of = |f: ComposeField| if f == ComposeField::Body { COMPOSE_MAX_CHARS } else { 200 };
-            for &c in &win.input.typed {
-                if c.is_control() {
-                    continue;
-                }
+            let max_len = if *active == ComposeField::Body { COMPOSE_MAX_CHARS } else { 200 };
+            // 확정된 글자 입력, IME 조합 중 Backspace, Backspace 꾹 누르기 반복은 메모장과 같이 쓰는 text_edit::EditState 가 맡는다.
+            {
                 let field: &mut String = match *active {
                     ComposeField::To => &mut *to,
                     ComposeField::Subject => &mut *subject,
                     ComposeField::Body => &mut *body,
                 };
-                insert_char_at(field, cursor, c, max_len_of(*active));
-                if *active == ComposeField::Body {
+                if self.edit.edit(field, cursor, max_len, win, false) && *active == ComposeField::Body {
                     body_cursor_moved = true;
                 }
-            }
-            // 결합 전 자모 여러 개(예: "ㄲ" 이전의 "ㄱㄱ")를 조합 중일 때 Backspace
-            // 한 번 = Windows/한글 IME 가 자모 전체를 한 번에 지워버리는 문제 — IME
-            // 내부 동작을 계산/가로채서 맞추려던 시도들은 전부 실패했다(경위는
-            // README). 대신 이 조합 세션 동안 IME 가 실제로 보여준 화면을 우리가
-            // 직접 기록해뒀다가(composition_history) "한 단계 전 기록"을 그대로
-            // 꺼내 쓴다 — 계산이 아니라 조회라 틀릴 여지가 없다. 조합 버퍼에 다시
-            // 넣는 건 안 먹히므로, 조합을 취소하고(`ime::cancel_composition`) 그
-            // 값을 평범한 확정 문자로 직접 밀어넣는다. 짧게 한 번 누른 경우만
-            // 처리한다(`pressed()` — 꾹 누르는 건 원래도 문제없었다).
-            let cur_composition = crate::platform::ime::composition_preview().unwrap_or_default();
-            if win.input.pressed(KeyCode::Backspace) && !self.composition_history.is_empty() {
-                let target =
-                    if self.composition_history.len() >= 2 { self.composition_history[self.composition_history.len() - 2].clone() } else { String::new() };
-                crate::platform::ime::cancel_composition();
-                if !target.is_empty() {
-                    let field: &mut String = match *active {
-                        ComposeField::To => &mut *to,
-                        ComposeField::Subject => &mut *subject,
-                        ComposeField::Body => &mut *body,
-                    };
-                    for ch in target.chars() {
-                        insert_char_at(field, cursor, ch, max_len_of(*active));
-                    }
-                    if *active == ComposeField::Body {
-                        body_cursor_moved = true;
-                    }
-                }
-                // 취소했으니 이 조합 세션은 끝났다 — 기록도 같이 비운다.
-                self.composition_history.clear();
-            } else if cur_composition.is_empty() {
-                self.composition_history.clear();
-            } else if self.composition_history.last() != Some(&cur_composition) {
-                self.composition_history.push(cur_composition.clone());
             }
             let composing = crate::platform::ime::composition_preview().is_some_and(|p| !p.is_empty());
-            let key_down = win.input.is_down(KeyCode::Backspace);
-            if !key_down {
-                self.backspace_hold = 0.0;
-                self.backspace_fired = 0;
-                self.backspace_owned_by_ime = false;
-            } else if composing {
-                self.backspace_owned_by_ime = true;
-                self.backspace_hold = 0.0;
-                self.backspace_fired = 0;
-            } else if self.backspace_owned_by_ime {
-                // 조합 중에 시작된 같은 누름이 이어지는 중 — 아직 키를 안 뗐으니
-                // 계속 IME 몫으로 치고 우리는 손 안 댄다.
-            } else {
-                // win.dt 자체엔 500ms 상한(main.rs) 이 있지만, 그건 여기 기준으론
-                // 여전히 너무 크다 — "누적된 hold 시간 → 반복 횟수" 로 바로
-                // 환산하는 로직이라, 큰 dt 하나가 그대로 "그동안 계속 눌려있던
-                // 것"으로 오인되면 한 프레임에 반복 삭제가 몰아서 발생한다(짧게
-                // 한 번 눌렀는데 여러 글자가 지워지던 버그). 그래서 여기 한
-                // 프레임에 반영하는 dt 는 반복 간격(BACKSPACE_REPEAT_INTERVAL)
-                // 보다도 작게 별도로 한 번 더 눌러서, 큰 프레임 끊김이 있어도
-                // 절대 한 프레임에 여러 번 반복 판정이 몰리지 않게 한다.
-                self.backspace_hold += win.dt.min(BACKSPACE_MAX_DT_PER_FRAME);
-            }
-            let due = backspace_repeats_due(self.backspace_hold);
-            let fire_count = due.saturating_sub(self.backspace_fired).min(6);
-            if fire_count > 0 {
-                self.backspace_fired = due;
-                let field: &mut String = match *active {
-                    ComposeField::To => &mut *to,
-                    ComposeField::Subject => &mut *subject,
-                    ComposeField::Body => &mut *body,
-                };
-                for _ in 0..fire_count {
-                    backspace_at(field, cursor);
-                }
-                if *active == ComposeField::Body {
-                    body_cursor_moved = true;
-                }
-            }
             if !composing && win.input.pressed(KeyCode::Left) {
                 *cursor = cursor.saturating_sub(1);
                 if *active == ComposeField::Body {

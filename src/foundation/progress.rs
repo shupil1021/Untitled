@@ -48,6 +48,38 @@ pub struct DoorsProgress {
     pub pose: Option<[f32; 4]>,      // 창이 뒤로 가기 직전 서 있던 자리(x, y, z, yaw) — 이어서 할 때 거기서 시작
 }
 
+impl DoorsProgress {
+    // 이 진행 상태가 이야기 순서와 어긋나는 곳(앞 단계 없이 뒤 단계가 켜진 것)을 찾는다 — 불리언이 많아서
+    // 조합이 엉킬 수 있으니, 저장 파일이 깨졌거나 새 분기를 만들다 실수했을 때 알아채기 위한 점검이다.
+    // 게임 동작은 바꾸지 않는다(개발 빌드에서 저장할 때 경고만 찍는다).
+    pub fn invariant_violations(&self) -> Vec<&'static str> {
+        let mut bad = Vec::new();
+        // "뒤 단계(later)가 켜져 있으면 앞 단계(earlier)도 켜져 있어야 한다".
+        let mut need = |later: bool, earlier: bool, msg: &'static str| {
+            if later && !earlier {
+                bad.push(msg);
+            }
+        };
+        need(self.has_letter, self.quest_accepted, "편지를 집었는데 부탁을 수락하지 않았다");
+        need(self.letter_sent, self.has_letter, "편지를 넣었는데 집지 않았다");
+        need(self.door_changed, self.letter_sent, "문이 달라졌는데 편지를 넣지 않았다");
+        need(self.flower_absence_checked, self.door_changed, "꽃이 없다고 확인했는데 문이 달라지지 않았다");
+        need(self.flower_given, self.flower_received, "꽃을 줬는데 받지 않았다");
+        need(self.tutorial_done, self.flower_given, "튜토리얼이 끝났는데 꽃을 주지 않았다");
+        need(self.place != MainPlace::StartRoom, self.tutorial_done, "시작방을 나갔는데 튜토리얼이 안 끝났다");
+        need(self.jungle_visited, self.tutorial_done, "정글에 나왔는데 튜토리얼이 안 끝났다");
+        need(self.stair_met, self.jungle_visited, "계단을 만났는데 정글에 나온 적이 없다");
+        need(self.errand_accepted, self.jungle_visited, "의뢰를 받았는데 정글에 나온 적이 없다");
+        need(self.missions.iter().any(|&m| m > MissionStep::Start), self.errand_accepted, "미션이 진행 중인데 의뢰를 받지 않았다");
+        need(self.exchanged, self.errand_accepted, "교환했는데 의뢰를 받지 않았다");
+        need(self.exchanged, MiniKind::ALL.iter().all(|&k| self.missions[k.index()].has_material(k)), "교환했는데 재료 셋이 다 없다");
+        need(self.chip_taken, self.exchanged, "봉투를 열었는데 교환하지 않았다");
+        need(self.chip_fed, self.chip_taken, "계단에게 먹였는데 봉투를 열지 않았다");
+        need(self.floor2_done, self.chip_fed, "2층을 끝냈는데 계단에게 먹이지 않았다");
+        bad
+    }
+}
+
 // 2층 미션 하나의 진행 단계.
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub enum MissionStep {
@@ -216,6 +248,7 @@ pub enum MailId {
     EyeHint,    // 각 미니게임을 처음 실패한 뒤 한 번 오는 힌트 메일
     BrainHint,
     FingerHint,
+    End2F, // "계속됩니다" — 2층을 끝내고(계단 아래로 이어지는 길) 엔딩 카드가 뜰 때 도착
     Meal, // "식사 준비" — 소파 NPC 에게서 Mr. POTATO CHIP 을 받으면 도착(MAIN C-2)
 }
 // File Explorer 의 "AppData" 탭 = 이 이름의 폴더 노드의 내용(탭 이름도 같은 문자열).
@@ -228,3 +261,51 @@ pub const GAME_FILE_NAME: &str = "test.exe";
 pub const GAME_FOLDER_NAME: &str = "test";
 pub const SUB_GAME_NAME: &str = "test2.exe";
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_fresh_game_and_a_full_playthrough_are_consistent() {
+        assert!(DoorsProgress::default().invariant_violations().is_empty());
+        let done = DoorsProgress {
+            quest_accepted: true,
+            has_letter: true,
+            letter_sent: true,
+            door_changed: true,
+            flower_absence_checked: true,
+            flower_received: true,
+            flower_given: true,
+            tutorial_done: true,
+            place: MainPlace::StairHall,
+            jungle_visited: true,
+            stair_met: true,
+            errand_accepted: true,
+            missions: [MissionStep::Done, MissionStep::Done, MissionStep::Done],
+            exchanged: true,
+            chip_taken: true,
+            chip_fed: true,
+            floor2_done: true,
+            ..DoorsProgress::default()
+        };
+        assert!(done.invariant_violations().is_empty(), "{:?}", done.invariant_violations());
+    }
+
+    #[test]
+    fn out_of_order_flags_are_reported() {
+        let skipped = DoorsProgress { chip_fed: true, ..DoorsProgress::default() };
+        assert_eq!(skipped.invariant_violations(), vec!["계단에게 먹였는데 봉투를 열지 않았다"]);
+        let early = DoorsProgress { exchanged: true, errand_accepted: true, ..DoorsProgress::default() };
+        let v = early.invariant_violations();
+        assert!(v.contains(&"교환했는데 재료 셋이 다 없다"), "{v:?}");
+    }
+
+    #[test]
+    fn material_rules_match_the_mission_kinds() {
+        // 눈은 받는 순간, 레이싱/리듬은 소환 조각을 얻은 순간부터 교환 재료다.
+        assert!(MissionStep::Received.has_material(MiniKind::Eye));
+        assert!(!MissionStep::Received.has_material(MiniKind::Brain));
+        assert!(MissionStep::Fragment.has_material(MiniKind::Finger));
+    }
+}

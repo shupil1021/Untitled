@@ -4,8 +4,13 @@
 //! FileKind 에 해당하는 경우라면 open() 의 match 에 한 줄만 더하면 된다.
 
 mod credits;
+mod datetime;
 mod doors_game;
 mod game3d;
+// 창 안 3D 게임 대사의 번역 언어를 main 이 프레임마다 알려 준다.
+pub use game3d::i18n::set_language as set_game_language;
+pub use game3d::keys::set as set_game_keys;
+pub use game3d::set_text_scale as set_game_text_scale;
 mod game_installer;
 mod explorer;
 mod image_viewer;
@@ -13,6 +18,7 @@ mod mail;
 mod maze_game;
 pub mod minigame;
 mod notepad;
+mod text_edit;
 mod official_site;
 mod password;
 mod recycle_bin;
@@ -22,6 +28,7 @@ mod video_player;
 mod widgets;
 
 pub use credits::CreditsApp;
+pub use datetime::DateTimeApp;
 pub use doors_game::{preview_start_room, DoorsGameApp};
 pub use game_installer::GameInstallerApp;
 pub use explorer::{ExplorerApp, ExplorerLocation};
@@ -95,6 +102,8 @@ pub enum AppAction {
     SaveMini(MiniKind, MiniProgress),
     // 게임 안에서 한 일 때문에 이 메일이 도착해야 한다는 요청(이미 도착했으면 아무 일도 없다).
     DeliverMail(MailId),
+    SaveText(FileId, String), // 메모장 — 고친 글을 이 파일에 저장해 달라는 요청(자동 저장)
+    SetClockOffset(i64), // 날짜 및 시간 조정 창 — 가상 시계 차이(초)를 이 값으로 바꾸고 저장해 달라는 요청
     ResendMini(MiniKind), // 미션 NPC/기계의 "다시 받기" — 그 미니게임의 안내 메일과 첨부를 다시 받을 수 있게 한다
 }
 
@@ -114,6 +123,10 @@ pub trait App {
     // 하는 데 쓴다. 트레잇 기본 메서드로는(Self: Sized 필요) dyn App 을 통해 못 불러서
     // 앱마다 직접 구현해야 한다 — 본문은 항상 `{ self }` 하나뿐.
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    // 창이 닫히기 직전에 불린다 — 아직 저장 안 된 글이 있으면 (파일, 내용)을 돌려줘서 마지막으로 저장하게 한다(메모장).
+    fn flush_text(&mut self) -> Option<(FileId, String)> {
+        None
+    }
     // 지금 파일을 드래그해 옮기는 중이면 그 미리보기(고스트) 정보를 돌려준다 — 대부분의
     // 앱은 해당 없어서 기본값은 None. File Explorer 처럼 창 밖으로도 삐져나가야 하는
     // 드래그가 있는 앱만 오버라이드한다. update() 안에서 그리지 않고 굳이 이렇게 밖으로
@@ -181,7 +194,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
     let name = display_name(lang, &raw_name).into_owned();
     match &node.kind {
         FileKind::Txt(text) => Opened {
-            app: Box::new(NotepadApp::new(text.clone(), settings.clone())),
+            app: Box::new(NotepadApp::new(id, text.clone(), settings.clone())),
             title: name,
             size: (320.0, 240.0),
             maximized: false,
@@ -318,7 +331,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
         // 메일로 받은 "test Setup.exe" — 설치 마법사. 이미 설치됐으면 곧장 "이미
         // 설치됨" 페이지로 연다. 대화상자라 크기 고정.
         FileKind::GameSetup => Opened {
-            app: Box::new(GameInstallerApp::new(None, fs.game_installed, settings.clone())),
+            app: Box::new(GameInstallerApp::new(None, fs.game_installed, false, settings.clone())),
             title: name,
             size: (360.0, 220.0),
             maximized: false,
@@ -329,7 +342,7 @@ pub fn open(fs: &FileSystem, id: FileId, settings: &Rc<RefCell<Settings>>) -> Op
         },
         // 미니게임 설치 파일(SHY_EYE Setup.exe 등) — 같은 설치 마법사를 그 게임 이름으로 연다.
         FileKind::MiniSetup(kind) => Opened {
-            app: Box::new(GameInstallerApp::new(Some(*kind), fs.mini_installed[kind.index()], settings.clone())),
+            app: Box::new(GameInstallerApp::new(Some(*kind), fs.mini_installed[kind.index()], fs.mini_installed.iter().any(|&b| b), settings.clone())),
             title: name,
             size: (360.0, 220.0),
             maximized: false,
@@ -408,12 +421,13 @@ fn explorer_tabs(fs: &FileSystem, self_id: FileId) -> ExplorerTabs {
     });
     let desktop = folder_items(fs, &fs.desktop.iter().copied().filter(|&fid| fid != self_id).collect::<Vec<_>>());
     // (예전에 있던 Videos/Images 가상 탭은 없앴다 — 사진/영상은 그 파일이 있는 폴더에서 연다.)
-    vec![
-        ("Downloads".to_string(), downloads, None, None),
-        ("Desktop".to_string(), desktop, None, None),
-        // AppData 폴더 노드의 내용 — 설치한 게임의 폴더가 여기 생긴다(gamefiles.rs).
-        (APPDATA_NAME.to_string(), appdata, None, None),
-    ]
+    let mut tabs = vec![("Downloads".to_string(), downloads, None, None), ("Desktop".to_string(), desktop, None, None)];
+    // AppData 폴더 노드의 내용 — 설치한 게임의 폴더가 여기 생긴다(gamefiles.rs). 아직 아무것도 설치하지 않았으면 빈 탭을 보여
+    // 주지 않는다(게임을 설치하는 순간 이 탭이 새로 나타난다).
+    if !appdata.is_empty() {
+        tabs.push((APPDATA_NAME.to_string(), appdata, None, None));
+    }
+    tabs
 }
 
 // 폴더(folder_id)를 새 창 대신 이미 열려있는 File Explorer(explorer_id) 창 "안에서"
@@ -430,7 +444,7 @@ pub fn explorer_app_for_folder(
 ) -> Box<dyn App> {
     let mut tabs = explorer_tabs(fs, explorer_id);
     let in_category = |tabs: &ExplorerTabs, id: FileId| tabs.iter().position(|(_, items, ..)| items.iter().any(|(fid, ..)| *fid == id));
-    // 폴더 안의 폴더(AppData	estssets 처럼)면 고정 카테고리에 바로 나오는 맨 위 조상까지
+    // 폴더 안의 폴더(AppData\test\assets 처럼)면 고정 카테고리에 바로 나오는 맨 위 조상까지
     // 거슬러 올라가서, 조상들을 전부 트리에 끼워 넣는다 — 안 그러면 한 칸 들어갈 때마다
     // 방금 지나온 폴더 탭이 사라져서 "밖으로 튕겨나간" 것처럼 보인다. chain 은 깊은 쪽부터.
     let mut chain = vec![folder_id];
@@ -531,4 +545,17 @@ mod tests {
             }
         }
     }
+
+    // AppData 탭은 뭔가 설치된 뒤에야 나타난다(빈 탭을 미리 보여 주지 않는다).
+    #[test]
+    fn the_appdata_tab_appears_only_after_something_is_installed() {
+        let mut fs = FileSystem::new();
+        fs.ensure_appdata();
+        let explorer = fs.find_by_name(crate::foundation::MY_COMPUTER_NAME).unwrap();
+        let names = |fs: &FileSystem| explorer_tabs(fs, explorer).into_iter().map(|t| t.0).collect::<Vec<_>>();
+        assert_eq!(names(&fs), vec!["Downloads", "Desktop"]);
+        crate::gamefiles::install_into(&mut fs);
+        assert_eq!(names(&fs), vec!["Downloads", "Desktop", "AppData"]);
+    }
 }
+

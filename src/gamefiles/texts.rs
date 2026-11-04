@@ -107,6 +107,23 @@ impl Door {\r\n\
     }\r\n\
 }\r\n";
 
+pub(super) const SRC_LEVEL2: &str = "\
+// level2.rs -- a jungle, in the middle of a city. nobody asked for it.\r\n\
+// doors stand in the road. they do not lead anywhere in particular.\r\n\
+\r\n\
+pub const MATERIALS: [&str; 3] = [\r\n\
+    \"bloodshot eye\",\r\n\
+    \"summon fragment (racing)\",\r\n\
+    \"summon fragment (rhythm)\",\r\n\
+];\r\n\
+\r\n\
+pub fn stairs_accept(item: &Item) -> bool {\r\n\
+    // manners matter. it only eats things with a Mr. in front.\r\n\
+    item.name.starts_with(\"Mr. \")\r\n\
+}\r\n\
+\r\n\
+// TODO: what do the fragments summon? nobody wrote it down.\r\n";
+
 pub(super) const SRC_MAZE: &str = "\
 // maze.rs -- the other game, hidden inside this one.\r\n\
 // 3 keys. 3 doors. a rope comes down once you have the key.\r\n\

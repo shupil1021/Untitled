@@ -22,6 +22,7 @@ use crate::ui::*;
 use super::{App, AppAction, WinInput};
 
 const INSTALL_DURATION: f32 = 2.6; // 진행바가 다 차는 데 걸리는 시간(초) — 가짜 설치라 적당히 짧게
+const QUICK_DURATION: f32 = 1.4; // 이미 다른 미니게임을 설치해 본 뒤의 설치 — 같은 절차를 반복시키지 않고 짧게 끝낸다
 const FINISH_HOLD: f32 = 0.6; // 진행바가 100% 를 찍은 뒤 "Done." 을 잠깐 보여주는 시간(초)
 const BTN_W: f32 = 74.0;
 const BTN_H: f32 = 24.0;
@@ -40,6 +41,8 @@ enum Page {
 pub struct GameInstallerApp {
     // 어느 게임의 설치 마법사인지 — None 이면 메인 게임(test), Some 이면 그 미니게임. 문구 속의 게임 이름에 쓴다.
     kind: Option<MiniKind>,
+    // 두 번째부터의 미니게임 설치 — Welcome/Finish 클릭 없이 진행바만 돌고 저절로 닫힌다.
+    quick: bool,
     page: Page,
     elapsed: f32,
     progress: f32,
@@ -52,10 +55,19 @@ pub struct GameInstallerApp {
 impl GameInstallerApp {
     // already_installed 면(fs.game_installed 가 이미 true) Welcome 부터 다시 태우지
     // 않고 바로 AlreadyInstalled 페이지로 연다.
-    pub(super) fn new(kind: Option<MiniKind>, already_installed: bool, settings: Rc<RefCell<Settings>>) -> GameInstallerApp {
+    // quick 이면 처음 보는 설치가 아니라서(다른 미니게임을 이미 설치했다) 마법사 페이지를 건너뛴다.
+    pub(super) fn new(kind: Option<MiniKind>, already_installed: bool, quick: bool, settings: Rc<RefCell<Settings>>) -> GameInstallerApp {
+        let quick = quick && !already_installed;
         GameInstallerApp {
             kind,
-            page: if already_installed { Page::AlreadyInstalled } else { Page::Welcome },
+            quick,
+            page: if already_installed {
+                Page::AlreadyInstalled
+            } else if quick {
+                Page::Installing
+            } else {
+                Page::Welcome
+            },
             elapsed: 0.0,
             progress: 0.0,
             finish_hold: 0.0,
@@ -184,7 +196,7 @@ impl App for GameInstallerApp {
 
                 if !done {
                     self.elapsed += win.dt;
-                    let t_frac = (self.elapsed / INSTALL_DURATION).min(1.0);
+                    let t_frac = (self.elapsed / if self.quick { QUICK_DURATION } else { INSTALL_DURATION }).min(1.0);
                     self.progress = self.load_curve.sample(t_frac);
                 } else {
                     if !self.sent_complete {
@@ -196,6 +208,10 @@ impl App for GameInstallerApp {
                     }
                     self.finish_hold += win.dt;
                     if self.finish_hold >= FINISH_HOLD {
+                        // 설치 완료는 진행바가 찼던 앞 프레임에 이미 보냈으니 여기서 닫아도 된다.
+                        if self.quick {
+                            return AppAction::Close;
+                        }
                         self.page = Page::Finish;
                     }
                 }
