@@ -40,13 +40,35 @@ jobs:
       - name: Rename
         shell: bash
         run: cp "target/release/${{ matrix.bin }}" "${{ matrix.artifact }}"
-      - name: Smoke test (macOS) — 10초 동안 켜 두고 죽는지 본다
+      - name: Make BlackOut.app (macOS) — 맥에서 더블클릭으로 열리는 앱 번들 + 임시(ad-hoc) 서명
         if: runner.os == 'macOS'
         run: |
-          RUST_BACKTRACE=1 ./"${{ matrix.artifact }}" > smoke.log 2>&1 &
-          pid=$!
-          sleep 10
-          if kill -0 $pid 2>/dev/null; then echo "still running after 10s"; kill $pid; cat smoke.log; else code=0; wait $pid || code=$?; echo "EXITED with $code"; cat smoke.log; exit 1; fi
+          mkdir -p BlackOut.app/Contents/MacOS
+          cp "${{ matrix.artifact }}" BlackOut.app/Contents/MacOS/BlackOut
+          chmod +x BlackOut.app/Contents/MacOS/BlackOut
+          cat > BlackOut.app/Contents/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>BlackOut</string>
+            <key>CFBundleDisplayName</key><string>BlackOut</string>
+            <key>CFBundleIdentifier</key><string>com.shupil1021.blackout</string>
+            <key>CFBundleExecutable</key><string>BlackOut</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>CFBundleShortVersionString</key><string>${{ inputs.version }}</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          PLIST
+          codesign --force --deep --sign - BlackOut.app
+          codesign --verify --verbose BlackOut.app
+          tar -cf BlackOut-macos.tar BlackOut.app
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: BlackOut-macos.tar
+          path: BlackOut-macos.tar
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
@@ -66,8 +88,9 @@ jobs:
           merge-multiple: true
       - name: Zip executables only
         run: |
-          chmod +x bin/Untitled-linux bin/Untitled-macos
-          cd bin && zip "../Untitled-v${{ inputs.version }}.zip" Untitled-windows.exe Untitled-linux Untitled-macos
+          chmod +x bin/Untitled-linux
+          cd bin && tar -xf BlackOut-macos.tar
+          zip -r -y "../Untitled-v${{ inputs.version }}.zip" Untitled-windows.exe Untitled-linux BlackOut.app
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}

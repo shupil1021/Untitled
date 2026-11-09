@@ -36,7 +36,19 @@ const SAVE_NAME: &str = "palaceos_save.json";
 const SETTINGS_NAME: &str = "palaceos_settings.json";
 
 fn exe_dir() -> Option<PathBuf> {
-    std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf))
+    std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).map(outside_app_bundle)
+}
+
+// macOS 앱 번들(Foo.app/Contents/MacOS) 안에 파일을 쓰면 서명이 깨져 "손상된 앱"이 되므로, 번들이 들어 있는 폴더로 본다.
+fn outside_app_bundle(dir: PathBuf) -> PathBuf {
+    let mut parts = dir.ancestors();
+    if dir.ends_with("Contents/MacOS")
+        && let Some(app) = parts.nth(2).filter(|a| a.extension().is_some_and(|e| e == "app"))
+        && let Some(outer) = app.parent()
+    {
+        return outer.to_path_buf();
+    }
+    dir
 }
 
 // exe 폴더에 못 쓸 때 쓰는 사용자 데이터 폴더(Windows: %LOCALAPPDATA%\PalaceOS).
@@ -44,7 +56,7 @@ fn fallback_dir() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA")
         .or_else(|| std::env::var_os("XDG_DATA_HOME"))
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(if cfg!(target_os = "macos") { "Library/Application Support" } else { ".local/share" })))
         .unwrap_or_else(std::env::temp_dir);
     base.join("PalaceOS")
 }
@@ -306,6 +318,10 @@ mod tests {
     #[test]
     fn fallback_dir_lives_under_an_app_folder() {
         assert!(fallback_dir().ends_with("PalaceOS"));
+        let inside = PathBuf::from("/Users/a/Downloads/BlackOut.app/Contents/MacOS");
+        assert_eq!(outside_app_bundle(inside), PathBuf::from("/Users/a/Downloads"));
+        let plain = PathBuf::from("/Users/a/Downloads/game");
+        assert_eq!(outside_app_bundle(plain.clone()), plain);
     }
 
     #[test]
