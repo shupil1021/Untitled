@@ -32,10 +32,10 @@ impl BootScene {
 
 // BIOS POST 화면에 고정 딜레이로 하나씩 나타나는 줄들 (메모리 테스트 줄은 별도 애니메이션).
 const POST_LINES: &[&str] = &[
-    "Untitled BIOS v4.51PG, An Award Software, Inc.",
+    "BlackOut BIOS v4.51PG, An Award Software, Inc.",
     "Copyright (C) 1996-2026, Award Software Inc.",
     "",
-    "CPU : Untitled Virtual CPU 486DX2-66",
+    "CPU : BlackOut Virtual CPU 486DX2-66",
     "Detecting IDE drives ...",
     "  Primary Master   : PALACE-HD01",
     "  Primary Slave    : None",
@@ -53,15 +53,15 @@ const MEM_TOTAL: u32 = 65536; // 가짜 메모리 테스트 총량(KB)
 const MEM_TEST_DURATION: f32 = 0.6; // 메모리 카운터가 0→MEM_TOTAL 로 올라가는 시간
 const POST_HOLD: f32 = 0.35; // 마지막 POST 줄이 뜬 뒤 잠깐 멈춤
 
-// "Untitled" 피겨렛 로고. (7줄) — LobbyScene 도 같은 로고를 쓰므로 pub(super).
+// "BlackOut" 피겨렛 로고. (7줄) — LobbyScene 도 같은 로고를 쓰므로 pub(super).
 pub(super) const LOGO: [&str; 7] = [
-    r"__  __               __              __       ___                __      ",
-    r"/\ \/\ \             /\ \__    __    /\ \__   /\_ \              /\ \    ",
-    r"\ \ \ \ \     ___    \ \ ,_\  /\_\   \ \ ,_\  \//\ \       __    \_\ \   ",
-    r" \ \ \ \ \  /' _ `\   \ \ \/  \/\ \   \ \ \/    \ \ \    /'__`\  /'_` \  ",
-    r"  \ \ \_\ \ /\ \/\ \   \ \ \_  \ \ \   \ \ \_    \_\ \_ /\  __/ /\ \L\ \ ",
-    r"   \ \_____\\ \_\ \_\   \ \__\  \ \_\   \ \__\   /\____\\ \____\\ \___,_\",
-    r"    \/_____/ \/_/\/_/    \/__/   \/_/    \/__/   \/____/ \/____/ \/__,_ /",
+    r" ____       ___                         __          _____                __      ",
+    r"/\  _`\    /\_ \                       /\ \        /\  __`\             /\ \__   ",
+    r"\ \ \L\ \  \//\ \       __       ___   \ \ \/'\    \ \ \/\ \    __  __  \ \ ,_\  ",
+    r" \ \  _ <'   \ \ \    /'__`\    /'___\  \ \ , <     \ \ \ \ \  /\ \/\ \  \ \ \/  ",
+    r"  \ \ \L\ \   \_\ \_ /\ \L\.\_ /\ \__/   \ \ \`\    \ \ \_\ \ \ \ \_\ \  \ \ \_  ",
+    r"   \ \____/   /\____\ \__/.\_\ \____\   \ \_\ \_\   \ \_____\ \ \____/   \ \__\  ",
+    r"    \/___/    \/____/ \/__/\/_/ \/____/    \/_/\/_/    \/_____/  \/___/     \/__/",
 ];
 pub(super) const LOGO_SCALE: f32 = 0.62;
 

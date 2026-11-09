@@ -1,4 +1,4 @@
-# Untitled
+# BlackOut
 
 Rust + [miniquad](https://github.com/not-fl3/miniquad)로 만든 **가짜 Windows 9x 데스크톱 OS** 위의
 아날로그 호러 / ARG 게임. 화면은 CRT 모니터처럼 곡률·스캔라인·색수차가 입혀져 있다.

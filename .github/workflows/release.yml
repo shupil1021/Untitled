@@ -40,6 +40,13 @@ jobs:
       - name: Rename
         shell: bash
         run: cp "target/release/${{ matrix.bin }}" "${{ matrix.artifact }}"
+      - name: Smoke test (macOS) — 10초 동안 켜 두고 죽는지 본다
+        if: runner.os == 'macOS'
+        run: |
+          ./"${{ matrix.artifact }}" > smoke.log 2>&1 &
+          pid=$!
+          sleep 10
+          if kill -0 $pid 2>/dev/null; then echo "still running after 10s"; kill $pid; cat smoke.log; else wait $pid; echo "EXITED with $?"; cat smoke.log; exit 1; fi
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

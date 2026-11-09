@@ -289,7 +289,7 @@ fn recenter_cursor() {}
 
 fn main() {
     let conf = conf::Conf {
-        window_title: "Untitled".to_owned(),
+        window_title: "BlackOut".to_owned(),
         fullscreen: true,
         high_dpi: true,
         ..Default::default()
