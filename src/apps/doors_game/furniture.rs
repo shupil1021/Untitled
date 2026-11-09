@@ -75,7 +75,7 @@ pub fn jungle_meshes() -> Vec<MeshObject> {
     vec![object(&hills, HILLS_ORIGIN, 0.0, HILLS_SCALE), object(&tree, TREE_ORIGIN, 0.0, TREE_SCALE)]
 }
 
-// 방 껍데기와 문, 책상(서쪽 벽, 서랍이 방 안쪽으로 열려 있다), 책장(동쪽 벽, 열린 면이 방 쪽), 우편함(서쪽 벽, 문이 방 쪽).
+// 방 껍데기와 문, 책상(안쪽 벽, 서랍은 닫혀 있고 문 쪽을 본다), 책장(동쪽 벽, 열린 면이 방 쪽), 우편함(서쪽 벽, 문이 방 쪽).
 // door_lift 는 문이 올라간 높이.
 pub fn room_meshes(door_lift: f32) -> Vec<MeshObject> {
     let [desk, dresser, mailbox, room, door] = models();
@@ -83,7 +83,7 @@ pub fn room_meshes(door_lift: f32) -> Vec<MeshObject> {
     vec![
         object(&room, ROOM_ORIGIN, std::f32::consts::PI, ROOM_SCALE),
         object(&door, door_at, 0.0, ROOM_SCALE),
-        object(&desk, DESK_ORIGIN, std::f32::consts::FRAC_PI_2, FURNITURE_SCALE),
+        object(&desk, DESK_ORIGIN, std::f32::consts::PI, FURNITURE_SCALE),
         object(&dresser, DRESSER_ORIGIN, std::f32::consts::PI, BOOKCASE_SCALE),
         object(&mailbox, MAILBOX_ORIGIN, 0.0, MAILBOX_SCALE),
     ]

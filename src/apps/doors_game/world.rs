@@ -47,23 +47,27 @@ pub struct Prop {
 
 // 벽 쪽에 붙여서 스폰↔문 사이 통로는 비워둔다.
 pub const PROPS: [Prop; 4] = [
-    Prop { name: "Desk", center: [-2.5, 0.4, -1.5], half: [0.33, 0.4, 0.7], color: [0.38, 0.28, 0.18, 1.0], text: "낡은 책상이다. 서랍은 텅 비어 있다.", mesh: true },
-    Prop { name: "Crate", center: [2.3, 0.3, -2.5], half: [0.3, 0.3, 0.3], color: [0.45, 0.35, 0.2, 1.0], text: "먼지 쌓인 나무 상자다. 뚜껑이 못으로 박혀 있다.", mesh: false },
-    Prop { name: "Shelf", center: [2.62, 0.925, 0.5], half: [0.23, 0.925, 0.62], color: [0.3, 0.25, 0.2, 1.0], text: "빈 선반이다. 먼지 자국만 남아 있다.", mesh: true },
-    Prop { name: "Trash", center: [-2.4, 0.15, 1.6], half: [0.4, 0.15, 0.4], color: [0.3, 0.32, 0.22, 1.0], text: "구겨진 종이와 쓰레기가 쌓여 있다.", mesh: false },
+    Prop { name: "Desk", center: [-1.2, 0.4, 1.99], half: [0.7, 0.4, 0.36], color: [0.38, 0.28, 0.18, 1.0], text: "낡은 책상이다. 서랍은 텅 비어 있다.", mesh: true },
+    // 상자는 비스듬히 놓여 있다 — 충돌은 비스듬한 상자를 감싸는 축정렬 상자, 그림은 room_visible 이 그린다.
+    Prop { name: "Crate", center: [-1.9, 0.3, -0.74], half: [0.42, 0.3, 0.42], color: [0.45, 0.35, 0.2, 1.0], text: "먼지 쌓인 나무 상자다. 뚜껑이 못으로 박혀 있다.", mesh: true },
+    Prop { name: "Shelf", center: [2.62, 0.925, -1.4], half: [0.23, 0.925, 0.62], color: [0.3, 0.25, 0.2, 1.0], text: "빈 선반이다. 먼지 자국만 남아 있다.", mesh: true },
+    // 침대는 북쪽(안쪽) 벽 동쪽 모서리에 머리(베개)를 동쪽 벽 쪽으로 — 그림은 room_visible 이 상자들로 그린다.
+    Prop { name: "Bed", center: [1.85, 0.32, 1.85], half: [0.95, 0.32, 0.5], color: [0.3, 0.3, 0.4, 1.0], text: "삐걱거리는 낡은 침대다. 이불에서 먼지 냄새가 난다.", mesh: true },
 ];
 
 // 방 서쪽 벽 쪽의 우편함 — 편지를 넣어 보내는 곳(시트 오른쪽 표의 "우편함").
-pub const MAILBOX_CENTER: [f32; 3] = [-2.6, 0.6, 0.4];
+pub const MAILBOX_CENTER: [f32; 3] = [-2.6, 0.6, -2.2];
 const MAILBOX_HALF: [f32; 3] = [0.25, 0.6, 0.2];
 const MAILBOX_COLOR: [f32; 4] = [0.3, 0.35, 0.5, 1.0];
-// 가구 모델을 놓는 자리(모델의 바닥 중심) — furniture.rs. 책상 서랍은 책상 윗면 바로 아래에 튀어나와 있다.
-pub const DESK_ORIGIN: [f32; 3] = [-2.24, 0.0, -1.5];
-pub const DRESSER_ORIGIN: [f32; 3] = [2.62, 0.0, 0.5];
+// 가구 모델을 놓는 자리(모델의 바닥 중심) — furniture.rs. 책상은 안쪽(+Z) 벽에 붙어 앞면(서랍, 닫혀 있다)이 문 쪽을 본다.
+pub const DESK_ORIGIN: [f32; 3] = [-1.2, 0.0, 1.99];
+pub const DRESSER_ORIGIN: [f32; 3] = [2.62, 0.0, -1.4];
 pub const MAILBOX_ORIGIN: [f32; 3] = [MAILBOX_CENTER[0], 0.0, MAILBOX_CENTER[2]];
-const DESK_DRAWER: ([f32; 3], [f32; 3]) = ([-1.92, 0.725, -1.5], [0.23, 0.05, 0.49]);
+// 책상 앞의 의자 — 책상 쪽(+Z)을 보고 앉는다. 충돌 상자(CHAIR_*)와 그림(room_visible)이 같은 자리.
+const CHAIR_CENTER: [f32; 3] = [-1.2, 0.45, 1.15];
+const CHAIR_HALF: [f32; 3] = [0.24, 0.45, 0.24];
 // 부탁을 수락하면 책상 위에 나타나는 편지(작고 납작한 흰 상자).
-pub const LETTER_CENTER: [f32; 3] = [-2.5, 0.81, -1.5];
+pub const LETTER_CENTER: [f32; 3] = [-1.2, 0.81, 1.99];
 const LETTER_HALF: [f32; 3] = [0.12, 0.01, 0.09];
 const LETTER_COLOR: [f32; 4] = [0.92, 0.9, 0.78, 1.0];
 
@@ -137,7 +141,33 @@ pub fn room_visible(lift: f32) -> Vec<Box3D> {
     for p in PROPS.iter().filter(|p| !p.mesh) {
         boxes.push(solid(p.center, p.half, p.color, false));
     }
+    boxes.extend(decor_boxes());
     boxes
+}
+
+// 모델이 없는 가구(침대, 의자, 비스듬한 상자)를 상자 몇 개로 그린다 — 충돌은 invisible_colliders 가 따로 한다.
+fn decor_boxes() -> Vec<Box3D> {
+    let wood = [0.33, 0.24, 0.16, 1.0];
+    let blanket = [0.32, 0.36, 0.5, 1.0];
+    let pillow = [0.85, 0.84, 0.8, 1.0];
+    let mut v = vec![
+        solid([1.85, 0.17, 1.85], [0.95, 0.17, 0.5], wood, false),    // 침대 틀
+        solid([1.85, 0.44, 1.85], [0.92, 0.1, 0.47], blanket, false), // 매트리스+이불
+        solid([2.5, 0.58, 1.85], [0.27, 0.06, 0.36], pillow, false),  // 베개(동쪽 벽 쪽)
+    ];
+    // 의자: 앉는 판, 등받이(책상 반대쪽), 다리 네 개.
+    let [cx, _, cz] = CHAIR_CENTER;
+    v.push(solid([cx, 0.45, cz], [0.22, 0.025, 0.22], wood, false));
+    v.push(solid([cx, 0.75, cz - 0.2], [0.22, 0.3, 0.02], wood, false));
+    for (dx, dz) in [(-0.19, -0.19), (0.19, -0.19), (-0.19, 0.19), (0.19, 0.19)] {
+        v.push(solid([cx + dx, 0.2, cz + dz], [0.02, 0.2, 0.02], wood, false));
+    }
+    // 비스듬히 놓인 나무 상자.
+    let bx = &PROPS[1];
+    let mut b = solid(bx.center, [0.3, 0.3, 0.3], bx.color, false);
+    b.yaw = 0.6;
+    v.push(b);
+    v
 }
 
 // 방 전체(충돌 확인/테스트용) — 숨은 껍데기와 보이는 상자를 합친다.
@@ -150,7 +180,7 @@ pub fn build_room(lift: f32) -> Vec<Box3D> {
 // 모델(메시)로 그리는 가구의 충돌 — 눈에 안 보이는 상자들. 장면의 충돌 목록에만 넣고 그리지는 않는다.
 pub fn invisible_colliders() -> Vec<Box3D> {
     let mut v: Vec<Box3D> = PROPS.iter().filter(|p| p.mesh).map(|p| solid(p.center, p.half, p.color, false)).collect();
-    v.push(solid(DESK_DRAWER.0, DESK_DRAWER.1, FLOOR_COLOR, false));
+    v.push(solid(CHAIR_CENTER, CHAIR_HALF, FLOOR_COLOR, false));
     v.push(solid(MAILBOX_CENTER, MAILBOX_HALF, MAILBOX_COLOR, false));
     v
 }

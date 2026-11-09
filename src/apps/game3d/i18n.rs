@@ -111,7 +111,7 @@ pub static TABLE: &[Row] = &[
     ("책상", "Desk", "机"),
     ("나무 상자", "Crate", "木箱"),
     ("선반", "Shelf", "棚"),
-    ("쓰레기", "Trash", "ごみ"),
+    ("침대", "Bed", "ベッド"),
     // ---- 선택지 / 화면 문구 ----
     ("[Y] 수락   [N] 거부", "[Y] Accept   [N] Refuse", "[Y] 承諾   [N] 拒否"),
     ("[Y] 먹인다   [N] 나중에", "[Y] Feed it   [N] Later", "[Y] 食べさせる   [N] あとで"),
@@ -174,7 +174,7 @@ pub static TABLE: &[Row] = &[
     ("낡은 책상이다. 서랍은 텅 비어 있다.", "An old desk. The drawer is completely empty.", "古い机だ。引き出しは空っぽだ。"),
     ("먼지 쌓인 나무 상자다. 뚜껑이 못으로 박혀 있다.", "A dusty wooden crate. The lid is nailed shut.", "ほこりをかぶった木箱だ。ふたは釘で打ちつけられている。"),
     ("빈 선반이다. 먼지 자국만 남아 있다.", "An empty shelf. Only dust marks remain.", "空の棚だ。ほこりの跡だけが残っている。"),
-    ("구겨진 종이와 쓰레기가 쌓여 있다.", "Crumpled paper and trash are piled up.", "くしゃくしゃの紙とごみが積まれている。"),
+    ("삐걱거리는 낡은 침대다. 이불에서 먼지 냄새가 난다.", "A creaky old bed. The blanket smells of dust.", "きしむ古いベッドだ。ふとんからほこりのにおいがする。"),
     ("열린 문 너머로 환한 빛이 새어 들어온다.", "Bright light spills in through the open door.", "開いたドアの向こうから明るい光がさしこんでくる。"),
     ("그 빛 속으로 걸어 나갔다...", "I walked out into the light...", "その光の中へ歩み出た..."),
     // ---- 정글 ----
