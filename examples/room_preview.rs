@@ -31,7 +31,7 @@ impl EventHandler for Stage {
             ("west_wall", [-0.2, 1.4, -0.5], 1.57, -0.1),
             ("back", [0.0, 1.6, -2.6], std::f32::consts::PI, -0.1),
             ("desk_close", [-1.2, 1.5, 0.0], std::f32::consts::PI, -0.35),
-            ("mailbox_close", [-1.4, 1.1, -0.4], 1.57, 0.0),
+            ("mailbox_close", [-1.0, 1.3, -1.4], 1.107, -0.25),
             ("dresser_close", [1.2, 1.2, 0.5], -1.57, 0.0),
             ("dresser_oblique", [1.4, 1.5, 1.9], -0.9, -0.2),
         ];

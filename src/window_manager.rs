@@ -44,7 +44,7 @@ pub struct Window {
 const SPAWN_FREEZE_S: f32 = 0.35;
 
 enum Drag {
-    Move { off: (f32, f32) },
+    Move { off: (f32, f32), start: (f32, f32) }, // start = 잡은 순간의 마우스 위치(최대화 창을 끌어 내릴 때 기준)
     Resize { left: bool, right: bool, top: bool, bottom: bool },
 }
 
@@ -333,13 +333,31 @@ impl WindowManager {
         }
 
         // 1) 진행 중인 드래그
+        let mut return_early_keep = false;
+        let mut restored_off: Option<(f32, f32)> = None;
         if let Some(drag) = &self.drag {
             if g.down && let Some(w) = self.windows.last_mut() {
                 consumed = true;
                 match *drag {
-                    Drag::Move { off } => {
-                        w.rect.x = (g.mouse.0 - off.0).clamp(work.x - w.rect.w + 60.0, work.x + work.w - 60.0);
-                        w.rect.y = (g.mouse.1 - off.1).clamp(work.y, work.y + work.h - TITLE_H);
+                    Drag::Move { off, start } => {
+                        let mut off = off;
+                        if w.state == WinState::Maximized {
+                            // 최대화된 창의 제목줄을 끌면(조금 움직인 뒤) 원래 크기로 줄어들며 따라온다 — 잡은 곳의 비율은 그대로 유지.
+                            if (g.mouse.0 - start.0).abs().max((g.mouse.1 - start.1).abs()) < 4.0 {
+                                return_early_keep = true;
+                            } else {
+                                let ratio = ((start.0 - w.rect.x) / w.rect.w.max(1.0)).clamp(0.0, 1.0);
+                                let size = restored_size(w.restore, work);
+                                w.state = WinState::Normal;
+                                w.rect = Rect::new(w.rect.x, w.rect.y, size.0, size.1);
+                                off = (ratio * size.0, off.1.min(TITLE_H));
+                                restored_off = Some(off);
+                            }
+                        }
+                        if !return_early_keep {
+                            w.rect.x = (g.mouse.0 - off.0).clamp(work.x - w.rect.w + 60.0, work.x + work.w - 60.0);
+                            w.rect.y = (g.mouse.1 - off.1).clamp(work.y, work.y + work.h - TITLE_H);
+                        }
                     }
                     Drag::Resize { left, right, top, bottom } => {
                         if right {
@@ -361,6 +379,11 @@ impl WindowManager {
                             w.rect.y = ny;
                         }
                     }
+                }
+                if let Some(off) = restored_off
+                    && let Some(Drag::Move { start, .. }) = self.drag
+                {
+                    self.drag = Some(Drag::Move { off, start });
                 }
             } else {
                 self.drag = None;
@@ -400,7 +423,7 @@ impl WindowManager {
                     let (left, right, top, bottom) = edges.unwrap();
                     self.drag = Some(Drag::Resize { left, right, top, bottom });
                 } else if self.windows[idx].movable && title_bar(rect).contains(m0, m1) {
-                    self.drag = Some(Drag::Move { off: (m0 - rect.x, m1 - rect.y) });
+                    self.drag = Some(Drag::Move { off: (m0 - rect.x, m1 - rect.y), start: (m0, m1) });
                 } else if client(rect).contains(m0, m1) {
                     app_click_front = true;
                 }
@@ -428,6 +451,8 @@ impl WindowManager {
                 self.windows[i].title = t;
             }
             if self.windows[i].state == WinState::Minimized {
+                // 최소화된 창은 update 가 안 불리므로, 소리를 내던 앱이 스스로 멈출 수 있게 따로 알려 준다.
+                self.windows[i].app.on_hidden();
                 continue;
             }
             let focused = i == front;
@@ -534,13 +559,24 @@ impl WindowManager {
     fn toggle_max(&mut self, idx: usize, work: Rect) {
         let w = &mut self.windows[idx];
         if w.state == WinState::Maximized {
-            w.rect = w.restore;
+            let (rw, rh) = restored_size(w.restore, work);
+            w.rect = Rect::new(w.restore.x, w.restore.y, rw, rh);
             w.state = WinState::Normal;
         } else {
             w.restore = w.rect;
             w.rect = work;
             w.state = WinState::Maximized;
         }
+    }
+}
+
+// 최대화를 풀 때 돌아갈 크기 — 저장된 "원래 크기"가 작업영역을 거의 꽉 채울 만큼 크면(최대화 상태가 그대로 저장된 경우 등)
+// 줄어들어도 큰 화면 그대로라서, 작업영역의 70% 크기로 대신 돌려보낸다.
+fn restored_size(restore: Rect, work: Rect) -> (f32, f32) {
+    if restore.w >= work.w - 8.0 && restore.h >= work.h - 8.0 {
+        ((work.w * 0.7).round(), (work.h * 0.7).round())
+    } else {
+        (restore.w, restore.h)
     }
 }
 

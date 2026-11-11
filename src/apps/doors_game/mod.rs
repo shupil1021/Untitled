@@ -48,6 +48,7 @@ use crate::render::mesh3d::Box3D;
 
 use super::game3d::dialogue::{Dialogue, Entry};
 use super::game3d::i18n;
+use super::game3d::inventory::{Inventory, ItemInfo as InvItem};
 use super::game3d::player::Player;
 use super::game3d::{Fade, MouseLook, RenderSlot, View};
 use super::{App, AppAction, WinInput};
@@ -122,6 +123,7 @@ pub struct DoorsGameApp {
     jungle: Vec<Box3D>,
     barriers: Vec<Box3D>,
     scene: Option<Rc<Scene>>, // 지금 장소의 장면(바뀔 때만 다시 만든다 — scene.rs)
+    inventory: Inventory,     // 가방(I / Tab)
     bgm: bgm::Bgm,            // 시작 방 배경음악(무한 반복)
     sfx: sfx::Sfx,            // 퀘스트 시작 / 물 내리기 효과음
     sfx_cue: Option<sfx::Cue>, // 이번 프레임에 틀 효과음
@@ -154,6 +156,7 @@ impl DoorsGameApp {
         };
         let (jungle, barriers) = if place == MainPlace::Jungle { (Self::jungle_scene(&progress), floor2::barriers()) } else { (Vec::new(), Vec::new()) };
         DoorsGameApp {
+            inventory: Inventory::default(),
             bgm: bgm::Bgm::default(),
             sfx: sfx::Sfx::default(),
             sfx_cue: None,
@@ -250,6 +253,10 @@ impl DoorsGameApp {
             }
             return;
         }
+        let count = self.inventory_items().len();
+        if self.inventory.handle_input(win.input, count) {
+            return;
+        }
         if super::game3d::keys::pressed(win.input, crate::foundation::Action::Interact) {
             // 조사한 대상 쪽으로 카메라가 부드럽게 돌아선다(대화가 떠 있는 동안에도 계속 돈다). 장소가 바뀌면 플레이어가 새로 만들어져서
             // 이 포커스는 자연히 사라지므로, 상호작용 처리보다 먼저 건다.
@@ -343,6 +350,10 @@ impl App for DoorsGameApp {
         self
     }
 
+    fn on_hidden(&mut self) {
+        self.bgm.stop();
+    }
+
     fn update(&mut self, ctx: &mut dyn RenderingBackend, r: &mut Renderer, _assets: &Assets, area: Rect, win: &WinInput) -> AppAction {
         let mut view = View::fit(area);
         let in_view = view.rect.contains(win.mouse.0, win.mouse.1);
@@ -370,11 +381,12 @@ impl App for DoorsGameApp {
             self.scene = Some(Rc::new(self.build_scene(key)));
         }
         let scene = Rc::clone(self.scene.as_ref().expect("방금 만들었다"));
-        self.bgm.update(self.progress.place == MainPlace::StartRoom, self.settings.as_ref());
+        // 배경음악은 지금 쓰는(맨 앞) 창에서만 — 다른 창이 앞에 있으면 멈춘다.
+        self.bgm.update(self.progress.place == MainPlace::StartRoom && win.focused, self.settings.as_ref());
         self.sfx.update(self.sfx_cue.take(), dt, self.settings.as_ref());
 
         // 대화창이 떠 있는 동안은 이동·시점·조준을 멈춘다.
-        let frozen = self.dialogue.active() || self.fade.active() || self.door_anim.is_some() || self.unfold_anim.is_some() || self.end_card.is_some() || self.pending_end_card;
+        let frozen = self.dialogue.active() || self.fade.active() || self.door_anim.is_some() || self.unfold_anim.is_some() || self.end_card.is_some() || self.pending_end_card || self.inventory.is_open();
         if !frozen {
             self.look.apply(&mut self.player, win);
             self.player.update(win.input, win.focused, win.dt, &scene.collide);
@@ -492,24 +504,37 @@ impl DoorsGameApp {
         }
     }
 
-    // 왼쪽 위에 가진 것들을 한 줄씩.
-    fn draw_inventory(&self, r: &mut Renderer, view: &View) {
+    // 지금 가방에 든 물건들(이름 + 설명).
+    fn inventory_items(&self) -> Vec<InvItem> {
         let p = &self.progress;
-        let mut lines: Vec<&str> = Vec::new();
+        let mut items: Vec<InvItem> = Vec::new();
+        let mut add = |name: &str, desc: &'static str| items.push(InvItem { name: name.to_string(), desc });
         if p.flower_received && !p.flower_given {
-            lines.push("보리지꽃");
+            add("보리지꽃", "도어즈에게 줄 진짜 꽃이다. 은은한 향이 난다.");
         }
         if !p.exchanged {
             for kind in MiniKind::ALL {
                 if let Some(name) = carried_item(kind, p.missions[kind.index()]) {
-                    lines.push(name);
+                    let desc = match name {
+                        "금고 절반" => "산만큼 큰 금고의 한쪽이다. 방의 나머지 반쪽과 맞춰야 한다.",
+                        "변기 손잡이" => "화장실 변기에서 떼어 낸 손잡이다. 어딘가에 끼워야 한다.",
+                        "충혈된 눈" => "실핏줄이 선 눈이다. 소파에게 가져다주자.",
+                        "소환 조각(레이싱)" => "레이싱을 끝까지 달리고 얻은 조각이다. 어딘가 맞춰질 것 같다.",
+                        _ => "리듬을 끝까지 맞추고 얻은 조각이다. 아직 따뜻하다.",
+                    };
+                    add(name, desc);
                 }
             }
         }
         if self.has_chip() {
-            lines.push("Mr. POTATO CHIP");
+            add("Mr. POTATO CHIP", "바삭해 보이는 감자칩이다. 누군가 배고파 보였다.");
         }
-        // 소파의 의뢰를 받은 뒤 교환하기 전까지는 재료를 몇 개 모았는지 맨 위에 보여 준다(눈 + 소환 조각 둘 = 3개).
+        items
+    }
+
+    // 왼쪽 위의 작은 안내 — 재료 개수(소파의 의뢰를 받은 뒤 교환 전까지, 눈 + 소환 조각 둘 = 3개)와 가방 단축키.
+    fn draw_inventory(&self, r: &mut Renderer, view: &View) {
+        let p = &self.progress;
         let mut row = 0.0;
         if p.errand_accepted && !p.exchanged {
             let total = MiniKind::ALL.len().to_string();
@@ -517,9 +542,9 @@ impl DoorsGameApp {
             r.text(view.px(10.0), view.py(10.0), &text, 0.8 * view.s * super::game3d::text_scale(), [1.0, 0.9, 0.5, 1.0]);
             row = 1.0;
         }
-        for (i, line) in lines.iter().enumerate() {
-            r.text(view.px(10.0), view.py(10.0 + (i as f32 + row) * 20.0 * super::game3d::text_scale()), &i18n::tr(line), 0.8 * view.s * super::game3d::text_scale(), [0.75, 0.8, 1.0, 1.0]);
-        }
+        let items = self.inventory_items();
+        self.inventory.draw_hint(r, view, row, items.len());
+        self.inventory.draw(r, view, &items);
     }
 }
 

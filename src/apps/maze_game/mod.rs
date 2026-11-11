@@ -25,6 +25,7 @@ use crate::render::mesh3d::{Box3D, Camera};
 use super::game3d::dialogue::{Dialogue, Entry};
 use super::game3d::ena::{ena_time, overshoot};
 use super::game3d::i18n;
+use super::game3d::inventory::{Inventory, ItemInfo};
 use super::game3d::item;
 use super::game3d::player::{aim_score, Player};
 use super::game3d::sprite;
@@ -97,6 +98,7 @@ pub struct MazeGameApp {
     slot: RenderSlot, // 이 창 전용 3D 렌더 타깃(창끼리 화면이 섞이지 않게)
     look: MouseLook,
     dialogue: Dialogue,
+    inventory: Inventory, // 가방(I / Tab)
     aimed: Option<Target>,
     progress: MazeProgress,
     saved: MazeProgress, // 마지막으로 OS 에 저장을 요청한 진행 상황 — 달라지면 다시 요청한다
@@ -145,6 +147,7 @@ impl MazeGameApp {
             slot: RenderSlot::acquire(),
             look: MouseLook::new(),
             dialogue,
+            inventory: Inventory::default(),
             aimed: None,
             saved: progress.clone(),
             progress,
@@ -325,7 +328,7 @@ impl MazeGameApp {
                     self.dialogue.start(vec![Self::line("씨앗이 심겨 있다. 아직 아무 일도 없다.")]);
                 } else {
                     p.pot_checked = true; // 등을 돌리면 사물함이 나타난다(reveal_locker)
-                    self.dialogue.start(vec![Self::line("이미 누가 꺾어간 것 같다."), Self::line("새롭게 심어야 할 것 같은데...")]);
+                    self.dialogue.start(vec![Self::line("이미 누가 꺾어 간 것 같다."), Self::line("새롭게 심어야 할 것 같은데...")]);
                 }
             }
             Target::Locker => {
@@ -394,6 +397,10 @@ impl MazeGameApp {
             self.dialogue.handle_input(win, in_view);
             return;
         }
+        let count = self.inventory_items().len();
+        if self.inventory.handle_input(win.input, count) {
+            return;
+        }
         if super::game3d::keys::pressed(win.input, crate::foundation::Action::Interact)
             && let Some(target) = self.aimed
         {
@@ -454,7 +461,7 @@ impl App for MazeGameApp {
         let mut scene = self.walls.clone();
         scene.extend(items.iter().filter(|it| it.draw).map(Item::to_box));
         scene.extend(self.decor());
-        let frozen = self.dialogue.active() || self.fade.active() || self.can_anim.is_some();
+        let frozen = self.dialogue.active() || self.fade.active() || self.can_anim.is_some() || self.inventory.is_open();
         if !frozen {
             self.look.apply(&mut self.player, win);
             self.player.update(win.input, win.focused, win.dt, &scene);
@@ -522,26 +529,31 @@ impl MazeGameApp {
         }
     }
 
-    // 왼쪽 위에 가진 것들을 한 줄씩.
-    fn draw_inventory(&self, r: &mut Renderer, view: &View) {
+    // 지금 가방에 든 물건들(이름 + 설명).
+    fn inventory_items(&self) -> Vec<ItemInfo> {
         let p = &self.progress;
         let keys = p.keys.iter().filter(|&&k| k).count();
-        let mut lines = Vec::new();
+        let mut items = Vec::new();
         if p.has_can {
-            lines.push("물뿌리개".to_string());
+            items.push(ItemInfo { name: "물뿌리개".to_string(), desc: "화분에 물을 줄 수 있다." });
         }
         if keys > 0 {
-            lines.push(i18n::fmt("열쇠 {}/{}", &[&keys.to_string(), &KEYS_NEEDED.to_string()]));
+            items.push(ItemInfo { name: i18n::fmt("열쇠 {}/{}", &[&keys.to_string(), &KEYS_NEEDED.to_string()]), desc: "문을 여는 데 쓰는 열쇠들이다." });
         }
         if p.seed && !p.planted {
-            lines.push("씨앗".to_string());
+            items.push(ItemInfo { name: "씨앗".to_string(), desc: "화분에 심을 수 있는 작은 씨앗이다." });
         }
         if p.has_flower && !p.flower_sent {
-            lines.push("보리지꽃".to_string());
+            items.push(ItemInfo { name: "보리지꽃".to_string(), desc: "도어즈에게 줄 진짜 꽃이다. 은은한 향이 난다." });
         }
-        for (i, line) in lines.iter().enumerate() {
-            r.text(view.px(10.0), view.py(10.0 + i as f32 * 20.0 * super::game3d::text_scale()), &i18n::tr(line), 0.8 * view.s * super::game3d::text_scale(), [0.75, 0.8, 1.0, 1.0]);
-        }
+        items
+    }
+
+    // 왼쪽 위의 가방 안내와, 열려 있으면 가방 창.
+    fn draw_inventory(&self, r: &mut Renderer, view: &View) {
+        let items = self.inventory_items();
+        self.inventory.draw_hint(r, view, 0.0, items.len());
+        self.inventory.draw(r, view, &items);
     }
 }
 

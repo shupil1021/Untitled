@@ -308,7 +308,7 @@ pub mod lobby {
     pub const CONTINUE: S = S { en: "Continue", ko: "이어하기", ja: "続ける" };
     pub const QUIT: S = S { en: "Quit", ko: "종료", ja: "終了" };
     pub const CONFIRM_QUIT: S =
-        S { en: "Really quit BlackOut?", ko: "정말 BlackOut를 종료하시겠습니까?", ja: "本当にBlackOutを終了しますか?" };
+        S { en: "Really quit BlackOut?", ko: "정말 BlackOut을 종료하시겠습니까?", ja: "本当にBlackOutを終了しますか?" };
 }
 
 // scenes/desktop.rs — 바탕화면/시작 메뉴/작업표시줄/시스템 메시지 패널.
@@ -317,7 +317,7 @@ pub mod desktop {
     pub const SHUT_DOWN: S = S { en: "Shut Down", ko: "시스템 종료", ja: "シャットダウン" };
     pub const ERASE_LINE1: S = S { en: "Erase all saved progress", ko: "저장된 모든 진행 상태를", ja: "保存された進行状況を" };
     pub const ERASE_LINE2: S =
-        S { en: "and restart BlackOut?", ko: "지우고 BlackOut를 다시 시작할까요?", ja: "すべて消去してBlackOutを再起動?" };
+        S { en: "and restart BlackOut?", ko: "지우고 BlackOut을 다시 시작할까요?", ja: "すべて消去してBlackOutを再起動?" };
     pub const ERASE: S = S { en: "Erase", ko: "지우기", ja: "消去" };
     pub const NETWORK: S = S { en: "Network", ko: "네트워크", ja: "ネットワーク" };
     pub const STATUS: S = S { en: "Status", ko: "상태", ja: "状態" };
@@ -331,7 +331,7 @@ pub mod desktop {
     // PC 시계가 크게 바뀐 걸 알아챘을 때의 안내(서브 게임의 "시간이 1년은 필요하다").
     pub const CLOCK_NOTICE: S = S { en: "System Clock", ko: "시스템 시계", ja: "システム時計" };
     pub const CLOCK_AHEAD_LINE1: S = S { en: "The clock moved far ahead.", ko: "시계가 많이 앞으로 갔어요.", ja: "時計が大きく進みました。" };
-    pub const CLOCK_AHEAD_LINE2: S = S { en: "Check the flower in test2.", ko: "test2 에서 꽃을 확인해 보세요.", ja: "test2で花を確認して。" };
+    pub const CLOCK_AHEAD_LINE2: S = S { en: "Check the flower in test2.", ko: "test2에서 꽃을 확인해 보세요.", ja: "test2で花を確認して。" };
     pub const CLOCK_BACK_LINE1: S = S { en: "The flower has bloomed.", ko: "꽃이 피었어요.", ja: "花が咲きました。" };
     pub const CLOCK_BACK_LINE2: S = S { en: "You can set the clock back.", ko: "시계를 원래대로 돌려도 돼요.", ja: "時計を元に戻して大丈夫。" };
     pub const SAVE_FAILED: S = S { en: "Save Failed", ko: "저장 실패", ja: "保存失敗" };
@@ -350,7 +350,7 @@ pub mod datetime {
     pub const RESET: S = S { en: "Reset", ko: "되돌리기", ja: "リセット" };
     pub const NOTE: S = S {
         en: "The flower in test2 grows by the game clock.",
-        ko: "test2 의 꽃은 게임 시계로 자라요.",
+        ko: "test2의 꽃은 게임 시계로 자라요.",
         ja: "test2の花はゲーム時計で育ちます。",
     };
     // 바탕화면 시계 팝업의 버튼.
@@ -455,7 +455,7 @@ pub mod minigame {
     ];
     pub const DRIVE_INTRO: [S; 3] = [
         S { en: "A / D (or arrows): change lane   S / Down: brake", ko: "A·D(또는 ←→): 차선 변경   S·↓: 브레이크", ja: "A·D(または←→): 車線変更   S·↓: ブレーキ" },
-        S { en: "Auto-run. Reach 1,000 m within 60 seconds.", ko: "자동으로 달린다. 60초 안에 1,000m 에 닿아라.", ja: "自動で走る。60秒以内に1,000mへ。" },
+        S { en: "Auto-run. Reach 1,000 m within 60 seconds.", ko: "자동으로 달린다. 60초 안에 1,000m에 닿아라.", ja: "自動で走る。60秒以内に1,000mへ。" },
         S { en: "A crash stops you for 2s. 3 crashes: fail.", ko: "부딪히면 2초 멈춘다. 3번 부딪히면 실패.", ja: "ぶつかると2秒止まる。3回ぶつかると失敗。" },
     ];
     pub const PACK_INTRO: [S; 3] = [
@@ -488,8 +488,8 @@ pub mod minigame {
         ja: "送った。このウィンドウを閉じて元のゲームに戻ろう。",
     };
     pub const ITEM_EYE: S = S { en: "Bloodshot eye", ko: "충혈된 눈", ja: "充血した目" };
-    pub const ITEM_BRAIN: S = S { en: "Half of a vault", ko: "금고 절반", ja: "金庫の半分" };
-    pub const ITEM_FINGER: S = S { en: "Toilet handle", ko: "변기 손잡이", ja: "トイレのレバー" };
+    pub const ITEM_BRAIN: S = S { en: "Half a vault", ko: "금고 절반", ja: "金庫の半分" };
+    pub const ITEM_FINGER: S = S { en: "Toilet handle", ko: "변기 손잡이", ja: "便器のハンドル" };
     pub const GOT_ITEM: S = S { en: "You got:", ko: "얻었다:", ja: "手に入れた:" };
 
     // 엔딩 안내(ending.rs) — 레이싱: 트랙 탈출 → 금고 절반 → 프린터 우편함 / 리듬: 주체 처치 → 손잡이 → 호수.
@@ -516,12 +516,12 @@ pub mod minigame {
     pub const ROCK_PROMPT: S = S {
         en: "A toilet handle is stuck in the rock like a legendary sword.",
         ko: "바위에 변기 손잡이가 전설의 검처럼 꽂혀 있다.",
-        ja: "岩にトイレのレバーが伝説の剣のように刺さっている。",
+        ja: "岩に便器のハンドルが伝説の剣のように刺さっている。",
     };
     pub const LAKE_PROMPT: S = S {
         en: "Put the handle into the lake beside it.",
         ko: "옆의 호수에 손잡이를 넣어 보자.",
-        ja: "隣の湖にレバーを入れてみよう。",
+        ja: "隣の湖にハンドルを入れてみよう。",
     };
 }
 

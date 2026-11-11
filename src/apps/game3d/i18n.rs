@@ -130,6 +130,20 @@ pub static TABLE: &[Row] = &[
     ("화장실 문", "the bathroom door", "トイレのドア"),
     ("물뿌리개", "Watering can", "じょうろ"),
     ("씨앗", "Seed", "種"),
+    ("가방", "Bag", "バッグ"),
+    ("닫기", "Close", "閉じる"),
+    ("고르기", "Select", "選ぶ"),
+    ("아무것도 없다.", "Nothing here.", "何もない。"),
+    ("도어즈에게 줄 진짜 꽃이다. 은은한 향이 난다.", "A real flower for Doors. It has a faint scent.", "ドアーズにあげる本物の花。ほのかに、いいにおいがする。"),
+    ("실핏줄이 선 눈이다. 소파에게 가져다주자.", "An eye full of red veins. Let's bring it to the sofa.", "あかいすじの走った目。ソファに持っていこう。"),
+    ("레이싱을 끝까지 달리고 얻은 조각이다. 어딘가 맞춰질 것 같다.", "A fragment earned by finishing the race. It feels like it fits somewhere.", "レースを走りきって手に入れた欠片。どこかにはまりそうだ。"),
+    ("리듬을 끝까지 맞추고 얻은 조각이다. 아직 따뜻하다.", "A fragment earned by finishing the rhythm game. It is still warm.", "リズムを最後まで合わせて手に入れた欠片。まだあたたかい。"),
+    ("산만큼 큰 금고의 한쪽이다. 방의 나머지 반쪽과 맞춰야 한다.", "One half of a mountain-sized vault. It has to match the other half in the room.", "山ほど大きな金庫の片方。部屋のもう半分と合わせなければ。"),
+    ("화장실 변기에서 떼어 낸 손잡이다. 어딘가에 끼워야 한다.", "A handle taken off the toilet. It has to be fitted somewhere.", "トイレからはずしたハンドル。どこかにはめなければ。"),
+    ("바삭해 보이는 감자칩이다. 누군가 배고파 보였다.", "A crispy-looking potato chip. Somebody looked hungry.", "サクサクして見えるポテトチップス。誰かがおなかをすかせていた。"),
+    ("화분에 물을 줄 수 있다.", "It can water the pot.", "植木鉢に水をやれる。"),
+    ("문을 여는 데 쓰는 열쇠들이다.", "Keys used to open the door.", "ドアを開けるのに使う鍵たち。"),
+    ("화분에 심을 수 있는 작은 씨앗이다.", "A small seed that can be planted in the pot.", "植木鉢に植えられる小さな種。"),
     ("열쇠 {}/{}", "Keys {}/{}", "鍵 {}/{}"),
     ("재료 {}/{}", "Ingredients {}/{}", "材料 {}/{}"),
     // ---- 플레이어가 고친 game.ini 에 대한 문의 반응 ----
@@ -336,7 +350,7 @@ pub static TABLE: &[Row] = &[
     ("화분에 씨앗을 심었다.", "I planted the seed in the pot.", "植木鉢に種を植えた。"),
     ("시간이 1년은 필요할 것 같다...", "It probably needs a year...", "時間が1年は必要そうだ..."),
     ("씨앗이 심겨 있다. 아직 아무 일도 없다.", "A seed is planted. Nothing has happened yet.", "種が植えてある。まだ何も起きていない。"),
-    ("이미 누가 꺾어간 것 같다.", "Someone seems to have picked it already.", "もう誰かが摘んでいったようだ。"),
+    ("이미 누가 꺾어 간 것 같다.", "Someone seems to have picked it already.", "もう誰かが摘んでいったようだ。"),
     ("새롭게 심어야 할 것 같은데...", "I think I'll have to plant a new one...", "新しく植えないといけないようだけど..."),
     ("열쇠로 자물쇠 3개를 풀었다.", "I opened the three locks with the keys.", "鍵で三つの錠を外した。"),
     ("씨앗을 얻었다.", "Got a seed.", "種を手に入れた。"),
@@ -374,6 +388,7 @@ mod tests {
         ("maze_game/mod.rs", include_str!("../maze_game/mod.rs")),
         ("game3d/dialogue.rs", include_str!("dialogue.rs")),
         ("game3d/mod.rs", include_str!("mod.rs")),
+        ("game3d/inventory.rs", include_str!("inventory.rs")),
     ];
 
     fn has_hangul(s: &str) -> bool {

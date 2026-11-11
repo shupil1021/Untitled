@@ -31,6 +31,10 @@ fn extract() -> Option<String> {
 }
 
 impl Bgm {
+    pub(super) fn stop(&mut self) {
+        self.audio = None;
+    }
+
     // 매 프레임 — want 가 켜져 있으면 틀고(이미 틀고 있으면 그대로) 꺼지면 멈춘다. settings 가 없으면(테스트 등) 안 튼다.
     pub(super) fn update(&mut self, want: bool, settings: Option<&Rc<RefCell<Settings>>>) {
         let Some(settings) = settings else { return };

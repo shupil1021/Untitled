@@ -145,6 +145,8 @@ pub trait App {
     fn title(&self) -> Option<String> {
         None
     }
+    // 창이 최소화돼서 update() 가 안 불리는 동안 매 프레임 불린다 — 배경음악처럼 계속 울리던 소리를 멈추는 데 쓴다.
+    fn on_hidden(&mut self) {}
 }
 
 // App::drag_ghost 가 돌려주는 드래그 미리보기 — 이미 클릭 오프셋이 반영된 위치.

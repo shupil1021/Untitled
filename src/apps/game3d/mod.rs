@@ -9,6 +9,7 @@ pub mod boxes;
 pub mod dialogue;
 pub mod ena;
 pub mod i18n;
+pub mod inventory;
 pub mod item;
 pub mod keys;
 pub mod player;

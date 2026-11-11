@@ -184,14 +184,32 @@ impl Dialogue {
         if !self.active() {
             return;
         }
-        let shown: String = self.text().chars().take(self.visible_chars).collect();
         let (x, w) = (ox + SIDE_MARGIN * s, (VIEW_W - SIDE_MARGIN * 2.0) * s);
         let y = oy + (VIEW_H - BOTTOM_MARGIN - HEIGHT) * s;
         let h = HEIGHT * s;
         r.rect(x, y, w, h, [0.0, 0.0, 0.0, 0.82]);
         r.rect(x, y, w, 2.0 * s, [0.6, 0.6, 0.65, 0.9]);
-        r.text(x + 16.0 * s, y + 16.0 * s, &shown, TEXT_SCALE * s, [1.0, 1.0, 1.0, 1.0]);
         let bottom_y = y + h - (LINE_H + 10.0) * s;
+        // 긴 대사는 상자 폭에 맞춰 접고, 그래도 높이에 안 들어가면 글자를 조금씩 줄인다(상자 밖으로 안 튀어나가게).
+        // 줄바꿈은 전체 글 기준으로 먼저 정하고 글자만 차례로 드러내서, 타자 도중에 단어가 이리저리 옮겨 다니지 않는다.
+        let max_w = w - 32.0 * s;
+        let zone_h = bottom_y - (y + 16.0 * s) - 2.0 * s;
+        let mut k = TEXT_SCALE;
+        let mut lines = crate::ui::wrap_lines(r, self.text(), k * s, max_w);
+        while lines.len() as f32 * CELL_H * k * s > zone_h && k > 0.8 {
+            k -= 0.1;
+            lines = crate::ui::wrap_lines(r, self.text(), k * s, max_w);
+        }
+        let mut left = self.visible_chars;
+        for (i, line) in lines.iter().enumerate() {
+            if left == 0 {
+                break;
+            }
+            let n = line.chars().count();
+            let shown: String = line.chars().take(left).collect();
+            left -= n.min(left);
+            r.text(x + 16.0 * s, y + 16.0 * s + i as f32 * CELL_H * k * s, &shown, k * s, [1.0, 1.0, 1.0, 1.0]);
+        }
         if self.choice_ready() {
             let options = match self.entries.get(self.index) {
                 Some(Entry::Ask(_, options)) => options,
