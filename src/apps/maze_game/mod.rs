@@ -2,29 +2,25 @@
 //! 열면 뜨는 게임(시트의 SUB A+a-1 ~ A+a-14). 화면/시점/플레이어/대화창은 doors_game 과
 //! 같은 apps/game3d 의 공용 도구를 쓴다.
 //!
-//! 흐름: (1) 미로(maze.rs)를 걸어 도착 지점의 물뿌리개를 줍는다 → (2) 스테이지 1 방(hub.rs)으로
-//! 올라온다. 화분을 조사하면(이미 누가 꺾어갔다) 플레이어가 등을 돌린 사이 남쪽 벽에 사물함이 생기고, 사물함을 조사하면
-//! 열쇠 3개가 필요하다는 걸 알면서 북쪽 문 3개가 열린다 → (3) 문마다 새 미로로 들어가 도착
-//! 지점의 열쇠를 줍고, 내려온 밧줄을 조사해 방으로 돌아온다(문 3개 반복) → (4) 열쇠 3개로
-//! 사물함을 열어 씨앗을 얻고 화분에 심는다("시간이 1년은 필요할 것 같다") → (5) 심은 뒤 잠깐 있다
-//! 가 OS 로 힌트 메일이 오고("바탕화면에서 물리적으로 시간을 돌려도 괜찮지 않을까?"), 진짜 컴퓨터의
-//! 시스템 시간이 심은 때보다 1년 이상 앞서가면 꽃이 핀다 → (6) 꽃을 꺾어 우체통에 넣으면 OS 로
-//! 꽃 사진이 첨부된 메일이 도착한다(시트의 SUB A+a-15 ~ 18). 진행 상황은 바뀔 때마다 OS 에 저장을
-//! 요청해서(AppAction::SaveMaze) 창을 닫았다 다시 열어도 이어진다.
+//! 흐름(데모): (1) 복잡하게 꼬인 미로(maze.rs) 하나를 걸어 도착 지점의 물뿌리개를 줍는다 → (2) 스테이지 1 방(hub.rs)으로
+//! 올라온다. 화분을 조사하면(이미 누가 꺾어갔다) 플레이어가 등을 돌린 사이 남쪽 벽에 사물함이 생기고, 사물함을 열면
+//! 씨앗이 있다 → (3) 씨앗을 화분에 심는다("시간이 1년은 필요할 것 같다") → (4) 심은 뒤 잠깐 있다가 OS 로 힌트 메일이
+//! 오고("바탕화면에서 물리적으로 시간을 돌려도 괜찮지 않을까?"), 시스템 시간이 심은 때보다 1년 이상 앞서가면 꽃이 핀다
+//! → (5) 꽃을 꺾어 우체통에 넣으면 OS 로 꽃 사진이 첨부된 메일이 도착한다(시트의 SUB A+a-15 ~ 18). 진행 상황은 바뀔
+//! 때마다 OS 에 저장을 요청해서(AppAction::SaveMaze) 창을 닫았다 다시 열어도 이어진다.
 
 mod hub;
 mod maze;
 
 use miniquad::RenderingBackend;
 
-use crate::foundation::{MazeProgress, MAZE_KEYS};
+use crate::foundation::MazeProgress;
 use crate::random::Rng;
 use crate::render::gfx::{Assets, Rect, Renderer};
 use crate::render::mesh3d::{Box3D, Camera};
 
 use super::game3d::dialogue::{Dialogue, Entry};
 use super::game3d::ena::{ena_time, overshoot};
-use super::game3d::i18n;
 use super::game3d::inventory::{Inventory, ItemInfo};
 use super::game3d::item;
 use super::game3d::player::{aim_score, Player};
@@ -34,42 +30,31 @@ use super::{App, AppAction, WinInput};
 use maze::Maze;
 
 const CLEAR_COLOR: [f32; 4] = [0.01, 0.02, 0.02, 1.0];
-const KEYS_NEEDED: usize = MAZE_KEYS;
 const YEAR_SECS: f64 = 365.0 * 86_400.0; // "시간이 1년은 필요하다" — 심은 때보다 시스템 시간이 이만큼 앞서가면 핀다
 
-// 심은 때(planted_at)보다 시스템 시간(now, 유닉스 초)이 1년 이상 앞서갔는지 — 시계를 뒤로 돌린
-// 경우(now < planted_at)는 당연히 아니다.
+// 심은 때(planted_at)보다 시스템 시간(now, 유닉스 초)이 "딱 1년"(365일 이상 367일 미만) 앞선 순간에만 핀다 —
+// 시계를 뒤로 돌렸거나(now < planted_at) 너무 많이 앞으로 보냈으면 아니다(날짜 창의 고장 난 버튼으로 직접 맞춘다).
 fn year_passed(planted_at: f64, now: f64) -> bool {
-    now - planted_at >= YEAR_SECS
+    let d = now - planted_at;
+    (YEAR_SECS..YEAR_SECS + 2.0 * 86_400.0).contains(&d)
 }
 
 // ---- ENA 식 연출(game3d/ena.rs: 뚝뚝 끊는 프레임 + 오버슈트) ----
-const ROPE_DROP_SECS: f32 = 1.25; // 밧줄이 내려오는 데 걸리는 시간
-const ROPE_LEN: f32 = 2.6;
 const CAN_ANIM_SECS: f32 = 1.2; // 물뿌리개가 튀어 오르며 사라지는 시간
 
 // 지금 있는 곳.
 enum Place {
-    // 미로 — kind 는 도착 지점에 뭐가 놓였는지, goal 은 그 자리.
-    Maze { kind: MazeKind, goal: [f32; 3] },
+    // 미로 — goal 은 도착 지점(물뿌리개가 놓인 자리).
+    Maze { goal: [f32; 3] },
     Hub,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum MazeKind {
-    Round1,      // 도착 지점에 물뿌리개
-    Key(usize),  // 도착 지점에 i+1 번 열쇠 (줍고 나면 밧줄이 내려온다)
 }
 
 // 조준해서 E 로 조사할 수 있는 것.
 #[derive(Clone, Copy, PartialEq)]
 enum Target {
     Can,
-    Key(usize),
-    Rope,
     Pot,
     Locker,
-    Door(usize),
     Flower,
     Mailbox,
 }
@@ -81,7 +66,6 @@ type Item = item::Item<Target>;
 #[derive(Clone, Copy)]
 enum Move {
     ToHub,
-    ToMaze(usize), // 문 i+1 번 미로로
 }
 
 // 대화가 다 끝난 뒤 OS 에 알릴 일 — AppAction 으로 돌려준다.
@@ -106,19 +90,13 @@ pub struct MazeGameApp {
     pending_notify: Option<Notify>,
     fade: Fade,          // 미로 ↔ 방으로 장면이 바뀔 때 화면을 어둡게 덮었다 걷는다
     clock: f32,          // 이 창이 열린 뒤 흐른 시간 — ENA 식 연출의 기준
-    rope_since: Option<f32>, // 밧줄이 내려오기 시작한 시각(clock 기준) — None 이면 이미 다 내려와 있다
     can_anim: Option<f32>,   // 물뿌리개를 집은 뒤 흐른 시간 — 도는 동안 플레이어는 멈춘다
 }
 
-fn new_maze(kind: MazeKind) -> (Vec<Box3D>, Place, Player) {
-    // 미로마다 크기와 색이 다르다 — 물뿌리개 미로가 0번, 열쇠 미로가 1~3번.
-    let stage = match kind {
-        MazeKind::Round1 => 0,
-        MazeKind::Key(i) => i + 1,
-    };
-    let maze = Maze::generate(&mut Rng::from_time(), &maze::style_for(stage));
+fn new_maze() -> (Vec<Box3D>, Place, Player) {
+    let maze = Maze::generate(&mut Rng::from_time(), &maze::style());
     let player = Player::at(maze.start, maze.start_yaw);
-    (maze.boxes, Place::Maze { kind, goal: maze.goal }, player)
+    (maze.boxes, Place::Maze { goal: maze.goal }, player)
 }
 
 impl MazeGameApp {
@@ -126,7 +104,7 @@ impl MazeGameApp {
     // 미로는 열 때마다 새로 만들어지고, 열쇠 미로 도중에 닫았다면 방으로 돌아온 걸로 이어진다.
     pub(super) fn new(progress: MazeProgress) -> MazeGameApp {
         let resume = progress.has_can;
-        let (walls, place, player) = if resume { (hub::build_walls(), Place::Hub, Player::at(hub::SPAWN, 0.0)) } else { new_maze(MazeKind::Round1) };
+        let (walls, place, player) = if resume { (hub::build_walls(), Place::Hub, Player::at(hub::SPAWN, 0.0)) } else { new_maze() };
         let mut dialogue = Dialogue::new();
         if !resume {
             // 열자마자 낯선 곳에 서 있는 이유와 할 일을 한마디로 알려준다.
@@ -155,7 +133,6 @@ impl MazeGameApp {
             pending_notify,
             fade: Fade::new(),
             clock: 0.0,
-            rope_since: None,
             can_anim: None,
         }
     }
@@ -164,26 +141,15 @@ impl MazeGameApp {
     fn items(&self) -> Vec<Item> {
         let p = &self.progress;
         match &self.place {
-            Place::Maze { kind, goal } => {
-                let at = |dx: f32, y: f32| [goal[0] + dx, y, goal[2]];
-                match *kind {
-                    // 물뿌리개는 ENA 식으로 뚝뚝 끊어 위아래로 까딱이며 돈다.
-                    MazeKind::Round1 if !p.has_can => {
-                        let t = ena_time(self.clock);
-                        let mut can = Item::new(Target::Can, at(0.0, 0.2 + 0.06 * (t * 5.0).sin()), [0.15, 0.2, 0.15], [0.35, 0.55, 0.85, 1.0], "[E] Watering can");
-                        can.yaw = t * 2.2;
-                        vec![can]
-                    }
-                    MazeKind::Key(i) if !p.keys[i] => {
-                        vec![Item::new(Target::Key(i), at(0.0, 0.08), [0.12, 0.08, 0.2], [0.9, 0.8, 0.2, 1.0], "[E] Key")]
-                    }
-                    // 열쇠를 줍고 나면 위에서 밧줄이 내려온다(모양은 decor()가 그리고, 다 내려온 뒤에야 조사할 수 있다).
-                    MazeKind::Key(_) if self.rope_ready() => {
-                        vec![Item::marker(Target::Rope, at(0.7, 1.3), [0.1, 1.3, 0.1], "[E] Rope")]
-                    }
-                    MazeKind::Key(_) => Vec::new(),
-                    MazeKind::Round1 => Vec::new(),
+            Place::Maze { goal } => {
+                if p.has_can {
+                    return Vec::new();
                 }
+                // 물뿌리개는 ENA 식으로 뚝뚝 끊어 위아래로 까딱이며 돈다.
+                let t = ena_time(self.clock);
+                let mut can = Item::new(Target::Can, [goal[0], 0.2 + 0.06 * (t * 5.0).sin(), goal[2]], [0.15, 0.2, 0.15], [0.35, 0.55, 0.85, 1.0], "[E] Watering can");
+                can.yaw = t * 2.2;
+                vec![can]
             }
             Place::Hub => {
                 let mut items = vec![Item::new(Target::Pot, hub::POT.center, hub::POT.half, [0.6, 0.35, 0.2, 1.0], "[E] Flower pot")];
@@ -195,46 +161,15 @@ impl MazeGameApp {
                     // 꽃은 스프라이트로 그린다 — 여기선 조준 대상일 뿐.
                     items.push(Item::marker(Target::Flower, hub::FLOWER.center, hub::FLOWER.half, "[E] Flower"));
                 }
-                const DOOR_LABELS: [&str; KEYS_NEEDED] = ["[E] Door 1", "[E] Door 2", "[E] Door 3"];
-                for (i, slot) in hub::DOORS.iter().enumerate() {
-                    // 잠겨 있을 땐 어두운 나무색, 열리면 밝아진다.
-                    let color = if p.locker_checked { [0.5, 0.34, 0.2, 1.0] } else { [0.28, 0.2, 0.15, 1.0] };
-                    items.push(Item::new(Target::Door(i), slot.center, slot.half, color, DOOR_LABELS[i]));
-                }
                 items
             }
         }
     }
 
-    // 밧줄이 다 내려와서 잡을 수 있는지.
-    fn rope_ready(&self) -> bool {
-        self.rope_since.is_none_or(|t0| self.clock - t0 >= ROPE_DROP_SECS)
-    }
-
-    // 그리기만 하는 장식 상자들(충돌/조사 없음) — 밧줄 마디, 집어 올린 물뿌리개.
+    // 그리기만 하는 장식 상자들(충돌/조사 없음) — 집어 올린 물뿌리개.
     fn decor(&self) -> Vec<Box3D> {
-        let Place::Maze { kind, goal } = &self.place else { return Vec::new() };
+        let Place::Maze { goal } = &self.place else { return Vec::new() };
         let mut out = Vec::new();
-        if let MazeKind::Key(i) = *kind
-            && self.progress.keys[i]
-        {
-            // 밧줄 — 그냥 긴 막대 하나가 천장에서 뚝뚝 끊겨 내려오고(ENA 식), 도착할 때 한 번 더 길게 늘어났다 돌아온다.
-            let elapsed = self.rope_since.map_or(ROPE_DROP_SECS, |t0| ena_time(self.clock - t0).max(0.0));
-            let len = (overshoot(elapsed / ROPE_DROP_SECS) * ROPE_LEN).max(0.0); // 지금 길이
-            if len > 0.01 {
-                out.push(Box3D {
-                    center: [goal[0] + 0.7, ROPE_LEN - len / 2.0, goal[2]],
-                    half: [0.045, len / 2.0, 0.045],
-                    yaw: 0.0,
-                    pitch: 0.0,
-                    roll: 0.0,
-                    color: [0.7, 0.57, 0.36, 1.0],
-                    texture: None,
-                    walkable: false,
-                    solid: false,
-                });
-            }
-        }
         if let Some(a) = self.can_anim {
             // 물뿌리개 — 주워 든 순간 위로 튀어 오르며(오버슈트) 세로로 길게 늘어났다 납작해지고, 돌면서 사라진다.
             let x = ena_time(a) / CAN_ANIM_SECS;
@@ -277,7 +212,7 @@ impl MazeGameApp {
     // 물뿌리개가 사라지는 연출이 끝나면 대화와 방으로의 이동이 이어진다.
     fn finish_can(&mut self) {
         self.can_anim = None;
-        self.dialogue.start(vec![Self::line("물뿌리개를 발견했다."), Self::line("1라운드 클리어."), Self::line("그 순간 주위가 하얗게 흐려졌다...")]);
+        self.dialogue.start(vec![Self::line("물뿌리개를 발견했다."), Self::line("그 순간 주위가 하얗게 흐려졌다...")]);
         self.pending_move = Some(Move::ToHub);
     }
 
@@ -296,11 +231,6 @@ impl MazeGameApp {
         }
     }
 
-    fn go_maze(&mut self, door: usize) {
-        (self.walls, self.place, self.player) = new_maze(MazeKind::Key(door));
-        self.dialogue.start(vec![Self::line("문 너머는 또 다른 어두운 복도였다.")]);
-    }
-
     // E — 조준 중인 대상을 조사한다.
     fn interact(&mut self, target: Target) {
         let p = &mut self.progress;
@@ -308,15 +238,6 @@ impl MazeGameApp {
             Target::Can => {
                 p.has_can = true;
                 self.can_anim = Some(0.0);
-            }
-            Target::Key(i) => {
-                p.keys[i] = true;
-                self.rope_since = Some(self.clock);
-                self.dialogue.start(vec![Self::line(&i18n::fmt("열쇠 {}번을 얻었다.", &[&(i + 1).to_string()])), Self::line("위에서 밧줄이 내려왔다.")]);
-            }
-            Target::Rope => {
-                self.dialogue.start(vec![Self::line("밧줄을 타고 올라갔다...")]);
-                self.pending_move = Some(Move::ToHub);
             }
             Target::Pot => {
                 if p.seed && !p.planted {
@@ -332,17 +253,12 @@ impl MazeGameApp {
                 }
             }
             Target::Locker => {
-                let got = p.keys.iter().filter(|&&k| k).count();
-                if got == KEYS_NEEDED && !p.seed {
+                if !p.seed {
                     p.seed = true;
-                    self.dialogue.start(vec![Self::line("열쇠로 자물쇠 3개를 풀었다."), Self::line("씨앗을 얻었다.")]);
-                } else if p.seed {
-                    self.dialogue.start(vec![Self::line("사물함은 비어 있다.")]);
-                } else if !p.locker_checked {
-                    p.locker_checked = true; // 문 3개가 열린다
-                    self.dialogue.start(vec![Self::line("잠겨 있다. 열쇠 3개가 필요할 것 같다."), Self::line("어디선가 문이 열리는 소리가 들렸다.")]);
+                    p.locker_checked = true;
+                    self.dialogue.start(vec![Self::line("사물함을 열었다."), Self::line("씨앗을 얻었다.")]);
                 } else {
-                    self.dialogue.start(vec![Self::line(&i18n::fmt("열쇠가 부족하다. ({}/{})", &[&got.to_string(), &KEYS_NEEDED.to_string()]))]);
+                    self.dialogue.start(vec![Self::line("사물함은 비어 있다.")]);
                 }
             }
             Target::Flower => {
@@ -358,16 +274,6 @@ impl MazeGameApp {
                     self.dialogue.start(vec![Self::line("우체통은 비어 있다.")]);
                 } else {
                     self.dialogue.start(vec![Self::line("우체통이다. 지금은 보낼 게 없다.")]);
-                }
-            }
-            Target::Door(i) => {
-                if !p.locker_checked {
-                    self.dialogue.start(vec![Self::line("잠겨 있다.")]);
-                } else if p.keys[i] {
-                    self.dialogue.start(vec![Self::line("이미 다녀온 문이다.")]);
-                } else {
-                    self.dialogue.start(vec![Self::line("문이 열려 있다."), Self::line("안으로 들어간다...")]);
-                    self.pending_move = Some(Move::ToMaze(i));
                 }
             }
         }
@@ -439,7 +345,7 @@ impl App for MazeGameApp {
         // 순간에 장면을 바꾼다(그래서 화면이 확 바뀌어 보이지 않는다).
         if !self.dialogue.active() && self.pending_move.is_some() {
             // 물뿌리개를 줍고 옮겨질 땐 "하얗게 흐려진다"는 대사대로 흰색으로 덮는다.
-            if matches!(self.pending_move, Some(Move::ToHub)) && matches!(self.place, Place::Maze { kind: MazeKind::Round1, .. }) {
+            if matches!(self.pending_move, Some(Move::ToHub)) && matches!(self.place, Place::Maze { .. }) {
                 self.fade.start_colored([1.0, 1.0, 1.0]);
             } else {
                 self.fade.start();
@@ -450,7 +356,6 @@ impl App for MazeGameApp {
         {
             match mv {
                 Move::ToHub => self.go_hub(),
-                Move::ToMaze(i) => self.go_maze(i),
             }
         }
 
@@ -532,13 +437,9 @@ impl MazeGameApp {
     // 지금 가방에 든 물건들(이름 + 설명).
     fn inventory_items(&self) -> Vec<ItemInfo> {
         let p = &self.progress;
-        let keys = p.keys.iter().filter(|&&k| k).count();
         let mut items = Vec::new();
         if p.has_can {
             items.push(ItemInfo { name: "물뿌리개".to_string(), desc: "화분에 물을 줄 수 있다." });
-        }
-        if keys > 0 {
-            items.push(ItemInfo { name: i18n::fmt("열쇠 {}/{}", &[&keys.to_string(), &KEYS_NEEDED.to_string()]), desc: "문을 여는 데 쓰는 열쇠들이다." });
         }
         if p.seed && !p.planted {
             items.push(ItemInfo { name: "씨앗".to_string(), desc: "화분에 심을 수 있는 작은 씨앗이다." });
@@ -565,7 +466,7 @@ mod tests {
         app.items().iter().any(|it| it.target == target)
     }
 
-    // 시트의 흐름(물뿌리개 → 화분 → 사물함 → 문/열쇠 3번 → 씨앗 → 심기)을 처음부터 끝까지 따라가 본다.
+    // 데모의 흐름(미로 → 물뿌리개 → 화분 → 사물함 → 씨앗 → 심기 → 꽃 → 우체통)을 처음부터 끝까지 따라가 본다.
     #[test]
     fn full_progression() {
         let mut app = MazeGameApp::new(MazeProgress::default());
@@ -580,49 +481,18 @@ mod tests {
         app.go_hub();
         assert!(has(&app, Target::Pot) && !has(&app, Target::Locker), "사물함은 화분을 조사한 뒤에 나타난다");
 
-        // 문은 사물함을 조사하기 전엔 잠겨 있다.
-        app.interact(Target::Door(0));
-        assert!(app.pending_move.is_none());
-
         app.interact(Target::Pot);
         assert!(app.progress.pot_checked && !has(&app, Target::Locker), "화분을 조사한 직후엔 아직 없다");
         app.dialogue = Dialogue::new();
         // 사물함 쪽을 보고 있는 동안엔 안 생기고, 등을 돌리면 생긴다.
         let toward = Camera { pos: [0.0, 1.55, 0.0], yaw: std::f32::consts::PI, pitch: 0.0 }; // +Z(남쪽 벽) 쪽
         assert!(!app.reveal_locker(&toward) && !has(&app, Target::Locker));
-        let away = Camera { pos: [0.0, 1.55, 0.0], yaw: 0.0, pitch: 0.0 }; // 문들 쪽
+        let away = Camera { pos: [0.0, 1.55, 0.0], yaw: 0.0, pitch: 0.0 }; // 북쪽 벽 쪽
         assert!(app.reveal_locker(&away) && has(&app, Target::Locker));
         app.dialogue = Dialogue::new();
-        app.interact(Target::Locker);
-        assert!(app.progress.locker_checked && !app.progress.seed);
-
-        for i in 0..KEYS_NEEDED {
-            app.interact(Target::Door(i));
-            assert!(matches!(app.pending_move, Some(Move::ToMaze(d)) if d == i));
-            app.pending_move = None;
-            app.go_maze(i);
-            assert!(has(&app, Target::Key(i)) && !has(&app, Target::Rope));
-            app.interact(Target::Key(i));
-            assert!(app.progress.keys[i] && !has(&app, Target::Key(i)));
-            app.clock += 0.5;
-            assert!(!has(&app, Target::Rope) && !app.decor().is_empty(), "밧줄은 뚝뚝 내려오는 중엔 아직 못 잡는다");
-            app.clock += ROPE_DROP_SECS;
-            assert!(has(&app, Target::Rope), "다 내려오면 밧줄을 조사할 수 있다");
-            app.interact(Target::Rope);
-            assert!(matches!(app.pending_move, Some(Move::ToHub)));
-            app.pending_move = None;
-            app.go_hub();
-            // 이미 다녀온 문은 다시 안 들어가진다.
-            app.interact(Target::Door(i));
-            assert!(app.pending_move.is_none());
-            if i + 1 < KEYS_NEEDED {
-                app.interact(Target::Locker);
-                assert!(!app.progress.seed, "열쇠가 모자라면 안 열린다");
-            }
-        }
 
         app.interact(Target::Locker);
-        assert!(app.progress.seed);
+        assert!(app.progress.seed, "사물함을 열면 곧장 씨앗이 나온다");
         app.interact(Target::Pot);
         assert!(app.progress.planted);
         assert!(matches!(app.pending_notify, Some(Notify::SeedPlanted)), "씨앗을 심으면 OS 에 알린다");
@@ -634,6 +504,7 @@ mod tests {
         assert!(!app.bloom_if_due(t0 + YEAR_SECS - 1.0));
         assert!(!has(&app, Target::Flower));
         assert!(!app.bloom_if_due(t0 - YEAR_SECS), "시계를 뒤로 돌려도 안 핀다");
+        assert!(!app.bloom_if_due(t0 + 13.0 * 30.0 * 86_400.0), "13개월(390일)처럼 지나치면 안 핀다");
         assert!(app.bloom_if_due(t0 + YEAR_SECS) && has(&app, Target::Flower));
 
         // 꽃을 꺾어 우체통에 넣으면 OS 에 알린다. 꽃이 없으면 보낼 게 없다.
@@ -650,7 +521,7 @@ mod tests {
     #[test]
     fn resuming_starts_in_the_hub() {
         let fresh = MazeGameApp::new(MazeProgress::default());
-        assert!(matches!(fresh.place, Place::Maze { kind: MazeKind::Round1, .. }) && fresh.dialogue.active());
+        assert!(matches!(fresh.place, Place::Maze { .. }) && fresh.dialogue.active());
 
         let saved = MazeProgress { has_can: true, hub_visited: true, planted: true, flower_sent: true, ..MazeProgress::default() };
         let app = MazeGameApp::new(saved.clone());
@@ -665,5 +536,7 @@ mod tests {
         assert!(year_passed(0.0, YEAR_SECS));
         assert!(!year_passed(0.0, YEAR_SECS - 1.0));
         assert!(!year_passed(100.0, 50.0));
+        assert!(year_passed(0.0, YEAR_SECS + 86_400.0), "하루 정도 어긋나도 핀다");
+        assert!(!year_passed(0.0, YEAR_SECS + 3.0 * 86_400.0), "사흘 넘게 지나치면 안 핀다");
     }
 }

@@ -293,6 +293,13 @@ impl DesktopScene {
                 // 보이던 문제).
                 self.refresh_explorer_if_open(settings);
                 self.refresh_mail_attachable_if_open();
+                // 다운로드가 끝났다는 시스템 알림 — 설치 파일이면 열어서 설치하라고 한 줄 덧붙인다.
+                let lang = settings.borrow().language;
+                let is_setup = matches!(self.fs.get(id).kind, FileKind::GameSetup | FileKind::MiniSetup(_));
+                let hint = if is_setup { t(lang, s::DOWNLOAD_OPEN_TO_INSTALL) } else { "" };
+                let name = self.fs.get(id).name.clone();
+                self.toast = Some(Toast::notice(s::DOWNLOAD_COMPLETE, &name, hint));
+                self.toast_timer = TOAST_DURATION;
                 // 다운로드 직후 그 즉시 저장 — 5초 자동저장을 기다리는 사이 창이
                 // 닫히면 방금 다운로드한 기록이 통째로 사라지는 문제가 있었다.
                 // (예전엔 게임 설치 파일이면 다운로드 즉시 마법사가 자동으로 열렸는데,

@@ -64,6 +64,7 @@ fn letter_loop_gates_the_flower_check() {
 fn flower_unlocks_the_door_and_leads_outside() {
     let progress = DoorsProgress { quest_accepted: true, has_letter: true, letter_sent: true, door_changed: true, flower_absence_checked: true, ..DoorsProgress::default() };
     let mut app = DoorsGameApp::new(progress);
+    app.demo = false; // 데모가 아닌 전체 흐름(문이 열려 정글로)을 확인한다
     quiet(&mut app);
 
     assert!(!app.receive_flower(false, true), "꽃을 아직 내려받지 않았으면 안 들어온다");
@@ -508,3 +509,25 @@ fn the_door_comments_on_an_edited_ini_once() {
     assert_eq!(app.progress, before, "문은 속지 않는다 — 진행은 그대로다");
 }
 
+
+// 데모 — 꽃을 건네면 문은 열리지 않고 엔딩 카드가 뜬다. 다시 말을 걸어도 문은 닫힌 채이고 카드가 다시 뜬다.
+#[test]
+fn the_demo_ends_when_the_flower_is_given() {
+    let progress = DoorsProgress { quest_accepted: true, door_changed: true, flower_absence_checked: true, flower_received: true, ..DoorsProgress::default() };
+    let mut app = DoorsGameApp::new(progress);
+    assert!(app.demo, "기본은 데모 빌드");
+    quiet(&mut app);
+    app.interact_room(Some(Target::Door));
+    quiet(&mut app);
+    app.advance_scene(0.1);
+    assert!(app.progress.flower_given && !app.progress.tutorial_done && app.door_anim.is_none(), "문은 열리지 않는다");
+    assert!(app.pending_end_card);
+    app.update_end_card(0.1);
+    assert_eq!(app.end_card, Some(0.0));
+    assert!(app.pending_mail.is_none(), "2층 끝 메일은 가지 않는다");
+
+    app.end_card = None;
+    quiet(&mut app);
+    app.interact_room(Some(Target::Door));
+    assert!(app.pending_end_card && app.pending_move.is_none());
+}

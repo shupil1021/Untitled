@@ -1,6 +1,6 @@
-//! 미로 생성 — 셀 n x n 짜리 완전 미로(어느 두 칸 사이든 길이 딱 하나)를 깊이 우선 탐색
-//! (재귀 백트래커)으로 만들고, 벽/바닥/천장을 `Box3D` 로 세운다. 출발 칸에서 가장 먼 칸이
-//! 도착 지점이다. 미로마다 크기와 색(MazeStyle)이 달라서, 같은 복도를 또 걷는 느낌이 들지 않게 한다.
+//! 미로 생성 — 셀 n x n 짜리 완전 미로를 깊이 우선 탐색(재귀 백트래커)으로 만든 뒤, 벽 몇 개를 더 허물어
+//! 갈림길/순환 길(loops)을 늘려서 막다른 길과 돌아가는 길이 많은 복잡한 미로로 만들고, 벽/바닥/천장을
+//! `Box3D` 로 세운다. 출발 칸에서 걸어서 가장 먼 칸(너비 우선 탐색)이 도착 지점이다.
 
 use crate::random::Rng;
 use crate::render::mesh3d::Box3D;
@@ -13,20 +13,16 @@ const WALL_HALF_Y: f32 = 1.3;
 // 미로 하나의 크기와 색.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MazeStyle {
-    pub n: usize, // 셀 개수(한 변)
+    pub n: usize,     // 셀 개수(한 변)
+    pub loops: usize, // 완전 미로에서 추가로 허무는 벽 개수 — 많을수록 갈림길/순환 길이 늘어 복잡해진다
     pub wall: [f32; 4],
     pub floor: [f32; 4],
     pub ceiling: [f32; 4],
 }
 
-// 몇 번째 미로인지(0 = 물뿌리개 미로, 1~3 = 열쇠 미로) — 뒤로 갈수록 커지고 색이 불길해진다.
-pub fn style_for(stage: usize) -> MazeStyle {
-    match stage {
-        0 => MazeStyle { n: 5, wall: [0.25, 0.32, 0.27, 1.0], floor: [0.2, 0.2, 0.18, 1.0], ceiling: [0.15, 0.17, 0.16, 1.0] }, // 이끼 낀 회녹색
-        1 => MazeStyle { n: 4, wall: [0.22, 0.28, 0.4, 1.0], floor: [0.14, 0.16, 0.22, 1.0], ceiling: [0.1, 0.12, 0.18, 1.0] }, // 작고 차가운 청회색
-        2 => MazeStyle { n: 6, wall: [0.4, 0.27, 0.2, 1.0], floor: [0.22, 0.16, 0.12, 1.0], ceiling: [0.15, 0.11, 0.09, 1.0] }, // 녹슨 갈색
-        _ => MazeStyle { n: 7, wall: [0.38, 0.2, 0.26, 1.0], floor: [0.2, 0.1, 0.14, 1.0], ceiling: [0.13, 0.07, 0.1, 1.0] },  // 가장 크고 검붉은 미로
-    }
+// 데모의 단 하나뿐인 미로 — 일곱 칸 한 변에 순환 길을 여섯 개 뚫어서, 짧지만 헷갈리게 만든다.
+pub fn style() -> MazeStyle {
+    MazeStyle { n: 7, loops: 6, wall: [0.25, 0.32, 0.27, 1.0], floor: [0.2, 0.2, 0.18, 1.0], ceiling: [0.15, 0.17, 0.16, 1.0] } // 이끼 낀 회녹색
 }
 
 pub struct Maze {
@@ -44,11 +40,10 @@ fn tile_center(tx: usize, tz: usize) -> (f32, f32) {
 type Walls = Vec<Vec<bool>>; // walls[tz][tx] — true 면 벽
 
 // 미로를 파낸다 — (벽 지도, 도착 칸 (gx, gz)). n 은 셀 개수(한 변), 타일은 벽까지 포함해 2n+1 개다.
-fn carve(rng: &mut Rng, n: usize) -> (Walls, (usize, usize)) {
+fn carve(rng: &mut Rng, n: usize, loops: usize) -> (Walls, (usize, usize)) {
     let tiles = 2 * n + 1;
     let mut wall = vec![vec![true; tiles]; tiles]; // wall[tz][tx]
     let mut visited = vec![vec![false; n]; n]; // visited[cz][cx]
-    let mut depth = vec![vec![0usize; n]; n];
     let mut stack = vec![(0usize, 0usize)];
     visited[0][0] = true;
     wall[1][1] = false;
@@ -75,16 +70,42 @@ fn carve(rng: &mut Rng, n: usize) -> (Walls, (usize, usize)) {
         visited[nz][nx] = true;
         wall[2 * nz + 1][2 * nx + 1] = false; // 새 칸
         wall[cz + nz + 1][cx + nx + 1] = false; // 두 칸 사이 벽
-        depth[nz][nx] = depth[cz][cx] + 1;
         stack.push((nx, nz));
     }
 
-    // 가장 깊은(=출발에서 가장 먼) 칸이 도착 지점.
+    // 두 칸 사이의 벽 중 몇 개를 허물어 순환 길을 만든다(완전 미로의 "길이 딱 하나"를 깬다).
+    let mut candidates = Vec::new();
+    for tz in 1..tiles - 1 {
+        for tx in 1..tiles - 1 {
+            if !wall[tz][tx] || (tx % 2 == 1) == (tz % 2 == 1) {
+                continue; // 이미 뚫렸거나, 칸/기둥 자리(칸 사이 벽이 아니다)
+            }
+            let (a, b) = if tx % 2 == 0 { ((tx - 1, tz), (tx + 1, tz)) } else { ((tx, tz - 1), (tx, tz + 1)) };
+            if !wall[a.1][a.0] && !wall[b.1][b.0] {
+                candidates.push((tx, tz));
+            }
+        }
+    }
+    for _ in 0..loops.min(candidates.len()) {
+        let i = rng.next_u32() as usize % candidates.len();
+        let (tx, tz) = candidates.swap_remove(i);
+        wall[tz][tx] = false;
+    }
+
+    // 도착 지점 = 출발 칸에서 걸어서 가장 먼 칸(너비 우선 탐색 — 순환 길이 생겼으니 깊이 우선 깊이로는 틀린다).
+    let mut dist = vec![vec![usize::MAX; tiles]; tiles];
+    let mut queue = std::collections::VecDeque::from([(1usize, 1usize)]);
+    dist[1][1] = 0;
     let (mut gx, mut gz, mut best) = (0, 0, 0);
-    for (cz, row) in depth.iter().enumerate() {
-        for (cx, &d) in row.iter().enumerate() {
-            if d > best {
-                (gx, gz, best) = (cx, cz, d);
+    while let Some((x, z)) = queue.pop_front() {
+        let d = dist[z][x];
+        if x % 2 == 1 && z % 2 == 1 && d > best {
+            (gx, gz, best) = ((x - 1) / 2, (z - 1) / 2, d);
+        }
+        for (nx, nz) in [(x - 1, z), (x + 1, z), (x, z - 1), (x, z + 1)] {
+            if !wall[nz][nx] && dist[nz][nx] == usize::MAX {
+                dist[nz][nx] = d + 1;
+                queue.push_back((nx, nz));
             }
         }
     }
@@ -93,7 +114,7 @@ fn carve(rng: &mut Rng, n: usize) -> (Walls, (usize, usize)) {
 
 impl Maze {
     pub fn generate(rng: &mut Rng, style: &MazeStyle) -> Maze {
-        let (wall, (gx, gz)) = carve(rng, style.n);
+        let (wall, (gx, gz)) = carve(rng, style.n, style.loops);
 
         let tiles = 2 * style.n + 1;
         let mut boxes = Vec::new();
@@ -122,51 +143,52 @@ impl Maze {
 mod tests {
     use super::*;
 
-    // 어떤 시드/크기로 만들어도 출발 칸에서 도착 칸까지 벽 없이 걸어갈 수 있어야 하고, 도착은 출발과 달라야 한다.
+    // 어떤 시드로 만들어도 출발 칸에서 도착 칸까지 벽 없이 걸어갈 수 있어야 하고, 도착은 출발과 달라야 한다.
     #[test]
     fn goal_is_reachable_from_start() {
-        for n in 4..=7 {
-            for seed in 1..120u64 {
-                let (wall, (gx, gz)) = carve(&mut Rng::new(seed), n);
-                assert_ne!((gx, gz), (0, 0), "n {n} seed {seed}");
-                let tiles = 2 * n + 1;
-                let mut seen = vec![vec![false; tiles]; tiles];
-                let mut stack = vec![(1usize, 1usize)];
-                seen[1][1] = true;
-                while let Some((x, z)) = stack.pop() {
-                    for (nx, nz) in [(x - 1, z), (x + 1, z), (x, z - 1), (x, z + 1)] {
-                        if !wall[nz][nx] && !seen[nz][nx] {
-                            seen[nz][nx] = true;
-                            stack.push((nx, nz));
-                        }
+        let st = style();
+        for seed in 1..200u64 {
+            let (wall, (gx, gz)) = carve(&mut Rng::new(seed), st.n, st.loops);
+            assert_ne!((gx, gz), (0, 0), "seed {seed}");
+            let tiles = 2 * st.n + 1;
+            let mut seen = vec![vec![false; tiles]; tiles];
+            let mut stack = vec![(1usize, 1usize)];
+            seen[1][1] = true;
+            while let Some((x, z)) = stack.pop() {
+                for (nx, nz) in [(x - 1, z), (x + 1, z), (x, z - 1), (x, z + 1)] {
+                    if !wall[nz][nx] && !seen[nz][nx] {
+                        seen[nz][nx] = true;
+                        stack.push((nx, nz));
                     }
                 }
-                assert!(seen[2 * gz + 1][2 * gx + 1], "n {n} seed {seed}: goal unreachable");
-                // 출발 칸에서 시선 방향(열린 쪽)이 실제로 열려 있는지 — start_yaw 계산과 같은 규칙.
-                assert!(!wall[2][1] || !wall[1][2], "n {n} seed {seed}: start is boxed in");
             }
+            assert!(seen[2 * gz + 1][2 * gx + 1], "seed {seed}: goal unreachable");
+            // 출발 칸에서 시선 방향(열린 쪽)이 실제로 열려 있는지 — start_yaw 계산과 같은 규칙.
+            assert!(!wall[2][1] || !wall[1][2], "seed {seed}: start is boxed in");
         }
     }
 
-    // 미로가 뒤로 갈수록 커지고(첫 미로 제외 작은 것에서 큰 것으로) 색이 서로 다르다.
+    // 벽을 더 허물면 순환 길이 생긴다 — 열린 칸 사이 연결 수가 "칸 수 - 1"(완전 미로)보다 많아진다.
     #[test]
-    fn each_maze_looks_and_measures_differently() {
-        let styles: Vec<MazeStyle> = (0..4).map(style_for).collect();
-        let sizes: Vec<usize> = styles.iter().map(|s| s.n).collect();
-        assert_eq!(sizes.iter().copied().max(), Some(7));
-        assert!(sizes.windows(2).any(|w| w[1] > w[0]) && sizes[1..].windows(2).all(|w| w[1] > w[0]), "열쇠 미로는 갈수록 커진다: {sizes:?}");
-        for (i, a) in styles.iter().enumerate() {
-            for b in &styles[i + 1..] {
-                assert_ne!(a.wall, b.wall, "벽 색이 겹친다");
-            }
-        }
+    fn extra_openings_make_loops() {
+        let n = 7;
+        let count = |wall: &Walls| -> (usize, usize) {
+            let tiles = 2 * n + 1;
+            let open = wall.iter().flatten().filter(|&&w| !w).count();
+            (open, tiles)
+        };
+        let (perfect, _) = count(&carve(&mut Rng::new(5), n, 0).0);
+        let (braided, _) = count(&carve(&mut Rng::new(5), n, 6).0);
+        assert_eq!(braided, perfect + 6, "허문 만큼 열린 칸이 늘어난다");
     }
 
+    // 도착 지점은 출발에서 충분히 멀다(너무 짧지도, 한 줄 길도 아니게).
     #[test]
-    fn a_bigger_maze_has_more_floor() {
-        let small = Maze::generate(&mut Rng::new(9), &style_for(1));
-        let big = Maze::generate(&mut Rng::new(9), &style_for(3));
-        assert!(big.boxes.len() > small.boxes.len());
-        assert!(big.goal[0].max(big.goal[2]) >= small.goal[0].max(small.goal[2]) || big.boxes.len() > small.boxes.len());
+    fn the_goal_is_far_but_not_endless() {
+        let st = style();
+        let maze = Maze::generate(&mut Rng::new(9), &st);
+        let d = (maze.goal[0] - maze.start[0]).abs() + (maze.goal[2] - maze.start[2]).abs();
+        assert!(d >= 2.0 * 6.0, "직선거리로도 여섯 칸 이상: {d}");
+        assert!(maze.boxes.len() > 40);
     }
 }

@@ -59,6 +59,8 @@ use texts::item_name;
 use world::{Target, DOOR_LIFT, EXIT_POS, HANDLE_POS, PROPS, SPAWN};
 
 const ROOM_CLEAR: [f32; 4] = [0.02, 0.02, 0.03, 1.0];
+// 데모 빌드 — 켜져 있으면 1스테이지(꽃을 문에게 건네는 곳)에서 이야기가 끝난다. 끄면 문이 열려 2층(정글)으로 이어진다.
+pub(super) const DEMO: bool = true;
 const END_CARD_FADE_SECS: f32 = 1.5; // 엔딩 카드가 어둡게 덮이는 데 걸리는 시간
 const END_CARD_MIN_SECS: f32 = 2.0; // 이만큼 지나야 키로 닫을 수 있다(바로 넘겨 버리지 않게)
 const DOOR_OPEN_SECS: f32 = 1.4; // 자물쇠가 풀리고 문이 올라가는 데 걸리는 시간
@@ -117,6 +119,7 @@ pub struct DoorsGameApp {
     clock: f32,
     // 2층을 처음 끝낸 순간의 엔딩 카드 — 대화가 끝나면 pending → 켜지고(end_card = 뜬 뒤 흐른 시간), 아무 키나 누르면 닫힌다.
     pending_end_card: bool,
+    demo: bool, // 데모 빌드(DEMO) — 꽃을 건네는 곳에서 이야기가 끝난다. 테스트에서는 끄고 전체 흐름을 따라간다.
     end_card: Option<f32>,
     was_focused: bool,
     // 정글은 한 번만 만들어 둔다(나무가 많다).
@@ -185,6 +188,7 @@ impl DoorsGameApp {
             unfold_anim: None,
             clock: 0.0,
             pending_end_card: false,
+            demo: DEMO,
             end_card: None,
             was_focused: true,
             jungle,
@@ -222,7 +226,9 @@ impl DoorsGameApp {
         if self.pending_end_card && !self.dialogue.active() {
             self.pending_end_card = false;
             self.end_card = Some(0.0);
-            self.pending_mail = Some(MailId::End2F);
+            if self.progress.floor2_done {
+                self.pending_mail = Some(MailId::End2F);
+            }
         } else if let Some(t) = self.end_card.as_mut() {
             *t += dt;
         }
@@ -427,8 +433,8 @@ impl App for DoorsGameApp {
             view.draw_end_card(
                 r,
                 t / END_CARD_FADE_SECS,
-                &i18n::tr("2층 끝"),
-                &i18n::tr("이 아래는 아직 준비 중이에요."),
+                &i18n::tr(if self.progress.floor2_done { "2층 끝" } else { "데모 끝" }),
+                &i18n::tr(if self.progress.floor2_done { "이 아래는 아직 준비 중이에요." } else { "플레이해 주셔서 감사합니다. 이야기는 계속돼요." }),
                 &i18n::tr("아무 키나 눌러 닫기"),
                 win.time,
             );

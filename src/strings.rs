@@ -158,9 +158,12 @@ pub mod mail {
     // 세 번째 메일 — 씨앗을 심은 뒤 오는 힌트(시트의 "메일 가이딩").
     pub const HINT_MAIL_SUBJECT: S = S { en: "hmm...", ko: "음...", ja: "うーん..." };
     pub const HINT_MAIL_BODY: S = S {
-        en: "Hmm... maybe I could turn the clock on the desktop forward, physically?\nYour PC's own clock works, or click the clock here and open Date and Time.\nOnce the flower blooms, set the clock back. The flower will stay.",
-        ko: "음... 바탕화면에서 물리적으로 시간을 돌려도 괜찮지 않을까?\n진짜 PC 시계를 돌려도 되고, 여기 시계를 눌러서 '날짜 및 시간'을 열어도 돼.\n꽃이 핀 뒤에는 시계를 원래대로 돌려놔. 꽃은 그대로 남아 있을 테니까.",
-        ja: "うーん... デスクトップの時計を、物理的に進めてみてもいいんじゃないかな?\n本物のPCの時計でも、ここの時計を押して「日付と時刻」を開いてもいいよ。\n花が咲いたら時計を元に戻してね。花はそのまま残るから。",
+        en: "Hmm... maybe I could turn the clock on the desktop forward, physically?\nYour PC's own clock works, or click the clock here and open Date and Time.\nThe flower only blooms exactly one year (365 days) after planting. Overshoot and you'll have to wind it back.
+Once it blooms, set the clock back. The flower will stay.",
+        ko: "음... 바탕화면에서 물리적으로 시간을 돌려도 괜찮지 않을까?\n진짜 PC 시계를 돌려도 되고, 여기 시계를 눌러서 '날짜 및 시간'을 열어도 돼.\n꽃은 심은 지 딱 1년(365일)이 되는 날에만 피어. 지나치면 다시 되돌려야 해.
+핀 뒤에는 시계를 원래대로 돌려놔. 꽃은 그대로 남아 있을 테니까.",
+        ja: "うーん... デスクトップの時計を、物理的に進めてみてもいいんじゃないかな?\n本物のPCの時計でも、ここの時計を押して「日付と時刻」を開いてもいいよ。\n花は植えてちょうど1年(365日)の日にだけ咲くよ。いきすぎたら戻してね。
+咲いたら時計を元に戻してね。花はそのまま残るから。",
     };
 
     // 네 번째 메일 — 꽃을 보낸 뒤 꽃 사진이 첨부돼 온다.
@@ -326,6 +329,7 @@ pub mod desktop {
     pub const UNKNOWN: S = S { en: "(unknown)", ko: "(알 수 없음)", ja: "(不明)" };
     pub const NEW_MAIL: S = S { en: "New Mail", ko: "새 메일", ja: "新着メール" };
     pub const DATE_TIME: S = S { en: "Date and Time", ko: "날짜 및 시간", ja: "日付と時刻" };
+    pub const DOWNLOAD_OPEN_TO_INSTALL: S = S { en: "Double-click it to install.", ko: "더블클릭해서 설치하세요.", ja: "ダブルクリックでインストール。" };
     pub const DOWNLOAD_COMPLETE: S = S { en: "Download Complete", ko: "다운로드 완료", ja: "ダウンロード完了" };
     // 저장에 실패했을 때의 알림(save.rs) — 보통은 폴더 쓰기 권한 문제다.
     // PC 시계가 크게 바뀐 걸 알아챘을 때의 안내(서브 게임의 "시간이 1년은 필요하다").
@@ -349,10 +353,11 @@ pub mod datetime {
     pub const OFFSET_DAYS: S = S { en: "Offset: {n} days", ko: "차이: {n}일", ja: "差: {n}日" };
     pub const RESET: S = S { en: "Reset", ko: "되돌리기", ja: "リセット" };
     pub const NOTE: S = S {
-        en: "The flower in test2 grows by the game clock.",
-        ko: "test2의 꽃은 게임 시계로 자라요.",
-        ja: "test2の花はゲーム時計で育ちます。",
+        en: "The flower in test2 blooms exactly one year (365 days) after planting.",
+        ko: "test2의 꽃은 심은 지 딱 1년(365일) 뒤에 펴요.",
+        ja: "test2の花は植えてちょうど1年(365日)後に咲きます。",
     };
+    pub const BROKEN_BUTTON: S = S { en: "This button is broken.", ko: "이 버튼은 고장 났어요.", ja: "このボタンはこわれています。" };
     // 바탕화면 시계 팝업의 버튼.
     pub const ADJUST_BUTTON: S = S { en: "Adjust date/time...", ko: "날짜/시간 조정...", ja: "日付/時刻の調整..." };
 }

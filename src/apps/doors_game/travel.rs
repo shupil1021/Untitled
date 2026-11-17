@@ -54,8 +54,13 @@ impl DoorsGameApp {
         self.clock += dt;
         if self.unlock_pending && !self.dialogue.active() {
             self.unlock_pending = false;
-            self.progress.tutorial_done = true;
-            self.door_anim = Some(0.0);
+            if self.demo {
+                // 데모는 여기서 끝 — 문은 열리지 않고 엔딩 카드가 뜬다.
+                self.pending_end_card = true;
+            } else {
+                self.progress.tutorial_done = true;
+                self.door_anim = Some(0.0);
+            }
         }
         if let Some(a) = &mut self.door_anim {
             *a += dt;

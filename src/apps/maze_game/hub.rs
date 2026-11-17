@@ -1,6 +1,6 @@
 //! 스테이지 1 방(시트의 "B+a stage-1") — 미로에서 물뿌리개를 얻고 올라오면 나오는 방.
-//! 화분 하나, 화분을 조사한 뒤 플레이어가 등을 돌렸을 때 남쪽 벽에 나타나는 사물함, 북쪽 벽의
-//! 문 3개(미로 1~3으로 이어짐)가 있다. 방은 처음보다 넓게(14x14) 잡았다. 여기서는 배치(상수)와 벽만 만들고, 무엇을 언제 보여줄지는 mod.rs 가 정한다.
+//! 화분 하나, 화분을 조사한 뒤 플레이어가 등을 돌렸을 때 남쪽 벽에 나타나는 사물함, 서쪽 벽의 우체통이 있다.
+//! 방은 처음보다 넓게(14x14) 잡았다. 여기서는 배치(상수)와 벽만 만들고, 무엇을 언제 보여줄지는 mod.rs 가 정한다.
 
 use crate::render::mesh3d::Box3D;
 
@@ -8,7 +8,7 @@ use super::super::game3d::boxes::solid;
 
 const MIN_X: f32 = -7.0;
 const MAX_X: f32 = 7.0;
-const MIN_Z: f32 = -9.0; // 문이 있는 벽
+const MIN_Z: f32 = -9.0; // 북쪽 벽
 const MAX_Z: f32 = 5.0;
 const HEIGHT: f32 = 2.8;
 const WALL_THICK: f32 = 0.15;
@@ -34,13 +34,6 @@ pub const LOCKER: Slot = Slot { center: [-2.5, 0.9, MAX_Z - 0.3], half: [0.5, 0.
 pub const MAILBOX: Slot = Slot { center: [-6.55, 0.6, -3.0], half: [0.25, 0.6, 0.25] };
 // 화분에 꽃이 피면 그 위에 서는 꽃(가는 기둥 하나).
 pub const FLOWER: Slot = Slot { center: [5.5, 0.8, -3.0], half: [0.15, 0.3, 0.15] };
-// 북쪽 벽에 나란히 있는 문 3개(미로 1, 2, 3).
-pub const DOORS: [Slot; 3] = [
-    Slot { center: [-4.5, 1.1, MIN_Z + WALL_THICK + 0.06], half: [0.6, 1.1, 0.06] },
-    Slot { center: [0.0, 1.1, MIN_Z + WALL_THICK + 0.06], half: [0.6, 1.1, 0.06] },
-    Slot { center: [4.5, 1.1, MIN_Z + WALL_THICK + 0.06], half: [0.6, 1.1, 0.06] },
-];
-
 // 바닥/천장/벽 4면.
 pub fn build_walls() -> Vec<Box3D> {
     let (cx, cz) = ((MIN_X + MAX_X) / 2.0, (MIN_Z + MAX_Z) / 2.0);

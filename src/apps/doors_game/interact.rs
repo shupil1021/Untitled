@@ -108,6 +108,11 @@ impl DoorsGameApp {
                     Self::line("철컥, 하고 문 안쪽에서 자물쇠가 풀리는 소리가 났다."),
                 ]);
             }
+            // 데모 — 꽃을 준 뒤엔 문이 열리지 않고, 다시 말을 걸면 데모가 끝났다는 카드가 다시 뜬다.
+            Some(Target::Door) if self.demo && self.progress.flower_given => {
+                self.dialogue.start(vec![Self::line("문은 굳게 닫힌 채 조용하다."), Self::line("이야기는 여기까지다. 아직은.")]);
+                self.pending_end_card = true;
+            }
             // 문이 편지를 읽은 뒤엔 달라진 말을 한다(시트의 "도어즈 대사 변경").
             Some(Target::Door) if self.progress.door_changed => {
                 self.dialogue.start(vec![
